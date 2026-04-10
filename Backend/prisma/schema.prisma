@@ -1,0 +1,301 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  VECINO
+  NEGOCIO
+  EDITOR
+  ADMIN
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  FACEBOOK
+}
+
+enum NewsCategory {
+  SEGURIDAD
+  OBRAS
+  EVENTOS
+  MUNICIPIO
+  COMUNIDAD
+}
+
+enum NewsStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum BusinessCategory {
+  GASTRONOMIA
+  SALUD
+  EDUCACION
+  SERVICIOS
+  HOGAR
+  DEPORTES
+  OTROS
+}
+
+enum MarketplaceCategory {
+  ELECTRONICA
+  ROPA
+  MUEBLES
+  DEPORTES
+  SE_BUSCA
+  SE_REGALA
+  OTROS
+}
+
+enum MarketplaceStatus {
+  ACTIVE
+  SOLD
+  PAUSED
+  REPORTED
+}
+
+enum EventRsvpStatus {
+  GOING
+  INTERESTED
+  NOT_GOING
+}
+
+model Barrio {
+  id               String            @id @default(cuid())
+  name             String
+  slug             String            @unique
+  city             String
+  province         String
+  country          String            @default("AR")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  users            User[]
+  businesses       Business[]
+  news             News[]
+  marketplacePosts MarketplacePost[]
+  forumSubforums   ForumSubforum[]
+  forumThreads     ForumThread[]
+  events           Event[]
+}
+
+model User {
+  id                    String            @id @default(cuid())
+  email                 String            @unique
+  name                  String
+  passwordHash          String?
+  avatarUrl             String?
+  role                  UserRole          @default(VECINO)
+  authProvider          AuthProvider      @default(LOCAL)
+  authProviderAccountId String?
+  barrioId              String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  barrio                Barrio?           @relation(fields: [barrioId], references: [id], onDelete: SetNull)
+  businesses            Business[]
+  news                  News[]
+  marketplacePosts      MarketplacePost[]
+  forumThreads          ForumThread[]
+  forumReplies          ForumReply[]
+  events                Event[]
+  sentMessages          Message[]         @relation("messages_sent")
+  receivedMessages      Message[]         @relation("messages_received")
+  reviews               Review[]
+  eventRsvps            EventRsvp[]
+
+  @@index([barrioId])
+  @@index([role])
+}
+
+model Business {
+  id          String           @id @default(cuid())
+  ownerId     String
+  barrioId    String
+  name        String
+  slug        String           @unique
+  category    BusinessCategory
+  address     String
+  description String?
+  phone       String?
+  whatsapp    String?
+  website     String?
+  instagram   String?
+  facebook    String?
+  verified    Boolean          @default(false)
+  coverImage  String?
+  photos      String[]
+  latitude    Decimal?         @db.Decimal(10, 7)
+  longitude   Decimal?         @db.Decimal(10, 7)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  owner       User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  barrio      Barrio           @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  reviews     Review[]
+
+  @@index([ownerId])
+  @@index([barrioId, category])
+}
+
+model News {
+  id          String       @id @default(cuid())
+  authorId    String
+  barrioId    String
+  title       String
+  slug        String       @unique
+  excerpt     String?
+  content     String
+  category    NewsCategory
+  status      NewsStatus   @default(DRAFT)
+  publishedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  barrio      Barrio       @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+
+  @@index([barrioId, status])
+  @@index([category, publishedAt])
+}
+
+model MarketplacePost {
+  id          String              @id @default(cuid())
+  userId      String
+  barrioId    String
+  title       String
+  description String
+  price       Int?
+  currency    String              @default("ARS")
+  category    MarketplaceCategory
+  status      MarketplaceStatus   @default(ACTIVE)
+  images      String[]
+  location    String?
+  views       Int                 @default(0)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  barrio      Barrio              @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  messages    Message[]
+
+  @@index([userId])
+  @@index([barrioId, status, createdAt])
+}
+
+model ForumSubforum {
+  id          String        @id @default(cuid())
+  barrioId    String
+  name        String
+  slug        String
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  barrio      Barrio        @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  threads     ForumThread[]
+
+  @@unique([barrioId, slug])
+}
+
+model ForumThread {
+  id          String       @id @default(cuid())
+  userId      String
+  barrioId    String
+  subforumId  String
+  title       String
+  content     String
+  upVotes     Int          @default(0)
+  downVotes   Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  barrio      Barrio       @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  subforum    ForumSubforum @relation(fields: [subforumId], references: [id], onDelete: Cascade)
+  replies     ForumReply[]
+
+  @@index([subforumId, createdAt])
+  @@index([barrioId, createdAt])
+}
+
+model ForumReply {
+  id            String       @id @default(cuid())
+  threadId       String
+  userId         String
+  parentReplyId  String?
+  content        String
+  upVotes        Int          @default(0)
+  downVotes      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  thread         ForumThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentReply    ForumReply?  @relation("ReplyHierarchy", fields: [parentReplyId], references: [id], onDelete: SetNull)
+  childReplies   ForumReply[] @relation("ReplyHierarchy")
+
+  @@index([threadId, createdAt])
+  @@index([userId])
+}
+
+model Event {
+  id          String      @id @default(cuid())
+  userId      String
+  barrioId    String
+  title       String
+  description String?
+  date        DateTime
+  location    String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  barrio      Barrio      @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  rsvps       EventRsvp[]
+
+  @@index([barrioId, date])
+}
+
+model EventRsvp {
+  id        String          @id @default(cuid())
+  eventId   String
+  userId    String
+  status    EventRsvpStatus
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  event     Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model Message {
+  id         String           @id @default(cuid())
+  senderId   String
+  receiverId String
+  postId     String?
+  content    String
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+  sender     User             @relation("messages_sent", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver   User             @relation("messages_received", fields: [receiverId], references: [id], onDelete: Cascade)
+  post       MarketplacePost? @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([postId, createdAt])
+}
+
+model Review {
+  id         String    @id @default(cuid())
+  userId     String
+  businessId String
+  rating     Int
+  comment    String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessId])
+  @@index([businessId, rating])
+}
