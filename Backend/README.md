@@ -12,10 +12,26 @@ Backend inicial para la Revista Barrial Digital construido con:
 ```bash
 cp .env.example .env
 npm install
+docker compose up -d postgres
 npx prisma migrate dev --name init
 npx prisma generate
 npm run seed
 npm run dev
+```
+
+## Conexion Prisma + Docker
+
+Este proyecto espera PostgreSQL en Docker con:
+
+- host: `localhost`
+- puerto: `5434`
+- db: `somos-barrio`
+- user/password: `postgres/postgres`
+
+`DATABASE_URL` esperada en `.env`:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5434/somos-barrio?schema=public
 ```
 
 ## 2) Endpoints iniciales

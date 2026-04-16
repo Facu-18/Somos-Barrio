@@ -1,0 +1,18 @@
+name: somos-barrio
+
+services:
+  postgres:
+    container_name: somos-barrio-postgres
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: somos-barrio
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
