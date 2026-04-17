@@ -4,14 +4,23 @@ import helmet from "helmet";
 import morgan from "morgan";
 import pinoHttp from "pino-http";
 import cookieParser from "cookie-parser";
+import swaggerUi from "swagger-ui-express";
 import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { apiRouter } from "./routes";
 import { errorHandler } from "./middlewares/error-handler";
 import { notFoundHandler } from "./middlewares/not-found";
 import { globalRateLimiter } from "./middlewares/rate-limit";
+import { openapiSpec } from "./lib/openapi";
 
 export const app = express();
+
+// Swagger UI antes de Helmet para que pueda servir sus propios assets
+app.use(
+  "/api/docs",
+  swaggerUi.serve,
+  swaggerUi.setup(openapiSpec, { customSiteTitle: "Somos Barrio API Docs" })
+);
 
 app.set("trust proxy", 1);
 app.use(helmet());

@@ -9,10 +9,23 @@ services:
       POSTGRES_DB: somos-barrio
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      # Crear también la BD de tests al iniciar
+      POSTGRES_MULTIPLE_DATABASES: somos-barrio,somos-barrio-test
     ports:
       - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d
+
+  redis:
+    container_name: somos-barrio-redis
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
 
 volumes:
   postgres_data:
+  redis_data:

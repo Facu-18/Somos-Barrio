@@ -25,9 +25,14 @@ export const errorHandler = (error: unknown, _req: Request, res: Response, _next
 
   logger.error({ error }, "Error no controlado");
 
+  const details =
+    env.NODE_ENV === "development" && error instanceof Error
+      ? { message: error.message, stack: error.stack?.split("\n").slice(0, 5) }
+      : null;
+
   res.status(500).json({
     success: false,
     message: "Error interno del servidor",
-    details: env.NODE_ENV === "development" ? error : null
+    details
   });
 };

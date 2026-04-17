@@ -109,6 +109,7 @@ model User {
   receivedMessages      Message[]         @relation("messages_received")
   reviews               Review[]
   eventRsvps            EventRsvp[]
+  forumVotes            ForumVote[]
 
   @@index([barrioId])
   @@index([role])
@@ -215,6 +216,7 @@ model ForumThread {
   barrio      Barrio       @relation(fields: [barrioId], references: [id], onDelete: Cascade)
   subforum    ForumSubforum @relation(fields: [subforumId], references: [id], onDelete: Cascade)
   replies     ForumReply[]
+  votes       ForumVote[]
 
   @@index([subforumId, createdAt])
   @@index([barrioId, createdAt])
@@ -234,9 +236,27 @@ model ForumReply {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   parentReply    ForumReply?  @relation("ReplyHierarchy", fields: [parentReplyId], references: [id], onDelete: SetNull)
   childReplies   ForumReply[] @relation("ReplyHierarchy")
+  votes          ForumVote[]
 
   @@index([threadId, createdAt])
   @@index([userId])
+}
+
+model ForumVote {
+  id       String      @id @default(cuid())
+  userId   String
+  threadId String?
+  replyId  String?
+  value    Int         // 1 = upvote, -1 = downvote
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  thread ForumThread? @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  reply  ForumReply?  @relation(fields: [replyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, threadId])
+  @@unique([userId, replyId])
+  @@index([threadId])
+  @@index([replyId])
 }
 
 model Event {
