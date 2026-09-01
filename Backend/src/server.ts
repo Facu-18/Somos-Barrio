@@ -10,7 +10,7 @@ let shuttingDown = false;
 
 const startServer = async (): Promise<void> => {
   await connectDatabase();
-  await redis.connect();
+  await redis.ping();
 
   server = app.listen(env.PORT, () => {
     logger.info(`Servidor listo en http://localhost:${env.PORT}${env.API_PREFIX}`);
