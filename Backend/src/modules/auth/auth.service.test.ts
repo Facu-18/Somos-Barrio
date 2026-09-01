@@ -3,30 +3,36 @@ import bcrypt from "bcryptjs";
 
 // ── Mocks (deben declararse antes de importar el módulo a testear) ────────────
 
-vi.mock("../../lib/prisma", () => ({
-  prisma: {
-    user: {
-      findUnique: vi.fn(),
-      create: vi.fn()
-    },
-    barrio: {
-      findUnique: vi.fn()
+vi.mock("../../lib/prisma", () => {
+  const user = {
+    findUnique: vi.fn(),
+    create: vi.fn()
+  };
+  return {
+    prisma: {
+      user,
+      barrio: { findUnique: vi.fn() },
+      $transaction: vi.fn(async (callback: (transaction: { user: typeof user }) => unknown) => callback({ user }))
     }
-  }
-}));
+  };
+});
 
 vi.mock("../../lib/redis", () => ({
   redis: {
     set: vi.fn().mockResolvedValue("OK"),
-    get: vi.fn().mockResolvedValue(null),
-    del: vi.fn().mockResolvedValue(1)
+    eval: vi.fn().mockResolvedValue(null),
+    multi: vi.fn(() => ({
+      set: vi.fn().mockReturnThis(),
+      del: vi.fn().mockReturnThis(),
+      exec: vi.fn().mockResolvedValue([])
+    }))
   }
 }));
 
 vi.mock("../../config/env", () => ({
   env: {
     JWT_SECRET: "test-secret-that-is-long-enough-32chars",
-    JWT_EXPIRES_IN: "7d",
+    JWT_EXPIRES_IN: "15m",
     JWT_REFRESH_EXPIRES_DAYS: 30,
     NODE_ENV: "test"
   }
@@ -43,6 +49,9 @@ const mockUser = {
   name: "Test User",
   role: "VECINO" as const,
   barrioId: null,
+  avatarUrl: null,
+  barrio: null,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
   passwordHash: ""
 };
 
@@ -98,6 +107,19 @@ describe("authService.register", () => {
     expect(createCall.data.email).toBe("upper@example.com");
     expect(result.user).toBeDefined();
   });
+
+  it("revierte la transaccion de usuario si no puede persistir la sesion", async () => {
+    const { redis } = await import("../../lib/redis");
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
+    vi.mocked(prisma.user.create).mockResolvedValueOnce({ ...mockUser } as any);
+    vi.mocked(redis.set).mockRejectedValueOnce(new Error("Redis down"));
+
+    await expect(
+      authService.register({ email: "new@example.com", password: "Pass1234!", name: "New User" })
+    ).rejects.toMatchObject({ statusCode: 503 });
+
+    expect(prisma.$transaction).toHaveBeenCalledOnce();
+  });
 });
 
 describe("authService.login", () => {
@@ -138,7 +160,7 @@ describe("authService.refresh", () => {
   it("lanza 401 si el refresh token no está en Redis", async () => {
     vi.mocked(prisma.user.findUnique as any);
     const { redis } = await import("../../lib/redis");
-    vi.mocked(redis.get).mockResolvedValueOnce(null);
+    vi.mocked(redis.eval).mockResolvedValueOnce(null);
 
     await expect(
       authService.refresh("token-invalido")
@@ -147,15 +169,22 @@ describe("authService.refresh", () => {
 
   it("rota el refresh token y devuelve nuevos tokens", async () => {
     const { redis } = await import("../../lib/redis");
-    vi.mocked(redis.get).mockResolvedValueOnce("user-cuid-001");
+    vi.mocked(redis.eval).mockResolvedValueOnce("user-cuid-001");
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ ...mockUser } as any);
 
     const result = await authService.refresh("raw-refresh-token-cualquiera");
 
     expect(result.accessToken).toBeDefined();
     expect(result.refreshToken).toBeDefined();
-    // El viejo token debe haberse borrado
-    expect(redis.del).toHaveBeenCalled();
+    expect(redis.eval).toHaveBeenCalled();
+  });
+
+  it("devuelve 503 sin tratar una falla Redis como token invalido", async () => {
+    const { redis } = await import("../../lib/redis");
+    vi.mocked(redis.eval).mockRejectedValueOnce(new Error("Redis down"));
+
+    await expect(authService.refresh("raw-refresh-token-cualquiera"))
+      .rejects.toMatchObject({ statusCode: 503 });
   });
 });
 
@@ -168,7 +197,8 @@ describe("authService.logout", () => {
 
     await authService.logout("test-jti", futureExp);
 
-    expect(redis.set).toHaveBeenCalledWith(
+    const transaction = vi.mocked(redis.multi).mock.results[0]?.value as any;
+    expect(transaction.set).toHaveBeenCalledWith(
       "bl:test-jti",
       "1",
       "PX",
@@ -182,6 +212,7 @@ describe("authService.logout", () => {
 
     await authService.logout("test-jti-old", pastExp);
 
-    expect(redis.set).not.toHaveBeenCalledWith(expect.stringContaining("bl:"), expect.anything(), expect.anything(), expect.anything());
+    const transaction = vi.mocked(redis.multi).mock.results[0]?.value as any;
+    expect(transaction.set).not.toHaveBeenCalled();
   });
 });

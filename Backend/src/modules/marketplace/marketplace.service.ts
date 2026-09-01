@@ -72,18 +72,17 @@ export const marketplaceService = {
     const barrio = await resolveBarrio(barrioSlug);
 
     const post = await prisma.marketplacePost.findFirst({
-      where: { id: postId, barrioId: barrio.id },
+      where: { id: postId, barrioId: barrio.id, status: MarketplaceStatus.ACTIVE },
       include: { user: { select: userSelect } }
     });
 
     if (!post) throw new ApiError(404, "Publicacion no encontrada");
 
-    await prisma.marketplacePost.update({
+    return prisma.marketplacePost.update({
       where: { id: post.id },
-      data: { views: { increment: 1 } }
+      data: { views: { increment: 1 } },
+      include: { user: { select: userSelect } }
     });
-
-    return post;
   },
 
   async create(barrioSlug: string, userId: string, input: CreatePostInput) {

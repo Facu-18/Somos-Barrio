@@ -28,7 +28,10 @@ type SafeUser = {
   email: string;
   name: string;
   role: UserRole;
+  avatarUrl: string | null;
   barrioId: string | null;
+  barrio: { id: string; name: string; slug: string } | null;
+  createdAt: Date;
 };
 
 type AuthResult = {
@@ -53,22 +56,69 @@ const toSafeUser = (user: {
   email: string;
   name: string;
   role: UserRole;
+  avatarUrl: string | null;
   barrioId: string | null;
+  barrio: { id: string; name: string; slug: string } | null;
+  createdAt: Date;
 }): SafeUser => ({
   id: user.id,
   email: user.email,
   name: user.name,
   role: user.role,
-  barrioId: user.barrioId
+  avatarUrl: user.avatarUrl,
+  barrioId: user.barrioId,
+  barrio: user.barrio,
+  createdAt: user.createdAt
 });
+
+const safeUserSelect = {
+  id: true,
+  email: true,
+  name: true,
+  role: true,
+  avatarUrl: true,
+  barrioId: true,
+  createdAt: true,
+  barrio: { select: { id: true, name: true, slug: true } }
+} as const;
+
+const sessionUnavailable = (): ApiError =>
+  new ApiError(503, "El servicio de sesiones no esta disponible");
 
 async function issueRefreshToken(userId: string): Promise<string> {
   const raw = randomBytes(64).toString("hex");
   const ttl = env.JWT_REFRESH_EXPIRES_DAYS * 24 * 60 * 60;
-  await redis
-    .set(`${RT_PREFIX}${hashToken(raw)}`, userId, "EX", ttl)
-    .catch(() => null); // fail-open si Redis no está disponible
+  try {
+    await redis.set(`${RT_PREFIX}${hashToken(raw)}`, userId, "EX", ttl);
+  } catch {
+    throw sessionUnavailable();
+  }
   return raw;
+}
+
+async function rotateRefreshToken(rawRefreshToken: string): Promise<{ userId: string; refreshToken: string }> {
+  const nextRaw = randomBytes(64).toString("hex");
+  const oldKey = `${RT_PREFIX}${hashToken(rawRefreshToken)}`;
+  const nextKey = `${RT_PREFIX}${hashToken(nextRaw)}`;
+  const ttl = env.JWT_REFRESH_EXPIRES_DAYS * 24 * 60 * 60;
+  const script = `
+    local userId = redis.call("GET", KEYS[1])
+    if not userId then return false end
+    redis.call("DEL", KEYS[1])
+    redis.call("SET", KEYS[2], userId, "EX", ARGV[1])
+    return userId
+  `;
+
+  try {
+    const userId = await redis.eval(script, 2, oldKey, nextKey, ttl.toString());
+    if (typeof userId !== "string") {
+      throw new ApiError(401, "Refresh token invalido o expirado");
+    }
+    return { userId, refreshToken: nextRaw };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw sessionUnavailable();
+  }
 }
 
 // ── service ──────────────────────────────────────────────────────────────────
@@ -88,18 +138,23 @@ export const authService = {
     }
 
     const passwordHash = await bcrypt.hash(input.password, 12);
-    const user = await prisma.user.create({
-      data: { email: input.email.toLowerCase(), name: input.name, passwordHash, barrioId }
+    const { user, refreshToken } = await prisma.$transaction(async (transaction) => {
+      const createdUser = await transaction.user.create({
+        data: { email: input.email.toLowerCase(), name: input.name, passwordHash, barrioId },
+        select: safeUserSelect
+      });
+      const createdRefreshToken = await issueRefreshToken(createdUser.id);
+      return { user: createdUser, refreshToken: createdRefreshToken };
     });
 
     const accessToken = signAccessToken(user.id, user.role);
-    const refreshToken = await issueRefreshToken(user.id);
     return { user: toSafeUser(user), accessToken, refreshToken };
   },
 
   async login(input: LoginInput): Promise<AuthResult> {
     const user = await prisma.user.findUnique({
-      where: { email: input.email.toLowerCase() }
+      where: { email: input.email.toLowerCase() },
+      include: { barrio: { select: { id: true, name: true, slug: true } } }
     });
     if (!user || !user.passwordHash) throw new ApiError(401, "Credenciales invalidas");
 
@@ -112,35 +167,36 @@ export const authService = {
   },
 
   async refresh(rawRefreshToken: string): Promise<AuthResult> {
-    const hashed = hashToken(rawRefreshToken);
-    const userId = await redis.get(`${RT_PREFIX}${hashed}`).catch(() => null);
+    const rotation = await rotateRefreshToken(rawRefreshToken);
 
-    if (!userId) throw new ApiError(401, "Refresh token invalido o expirado");
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ where: { id: rotation.userId }, select: safeUserSelect });
     if (!user) throw new ApiError(401, "Usuario no encontrado");
 
-    // Rotar: borrar el viejo, emitir uno nuevo
-    await redis.del(`${RT_PREFIX}${hashed}`).catch(() => null);
-    const newRefreshToken = await issueRefreshToken(user.id);
     const accessToken = signAccessToken(user.id, user.role);
 
-    return { user: toSafeUser(user), accessToken, refreshToken: newRefreshToken };
+    return { user: toSafeUser(user), accessToken, refreshToken: rotation.refreshToken };
   },
 
   async logout(jti: string, tokenExp: number, rawRefreshToken?: string): Promise<void> {
-    // Blacklist del access token hasta que expire
-    const remainingMs = tokenExp * 1000 - Date.now();
-    if (remainingMs > 0) {
-      await redis
-        .set(`${BL_PREFIX}${jti}`, "1", "PX", Math.ceil(remainingMs))
-        .catch(() => null);
+    try {
+      const transaction = redis.multi();
+      const remainingMs = tokenExp * 1000 - Date.now();
+      if (remainingMs > 0) {
+        transaction.set(`${BL_PREFIX}${jti}`, "1", "PX", Math.ceil(remainingMs));
+      }
+      if (rawRefreshToken) {
+        transaction.del(`${RT_PREFIX}${hashToken(rawRefreshToken)}`);
+      }
+      const results = await transaction.exec();
+      if (results?.some(([error]) => error !== null)) throw sessionUnavailable();
+    } catch {
+      throw sessionUnavailable();
     }
+  },
 
-    // Invalidar refresh token si se envió la cookie
-    if (rawRefreshToken) {
-      const hashed = hashToken(rawRefreshToken);
-      await redis.del(`${RT_PREFIX}${hashed}`).catch(() => null);
-    }
+  async me(userId: string): Promise<SafeUser> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: safeUserSelect });
+    if (!user) throw new ApiError(401, "Usuario no encontrado");
+    return toSafeUser(user);
   }
 };

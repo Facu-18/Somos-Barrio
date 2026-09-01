@@ -3,7 +3,9 @@ import { env } from "../config/env";
 import { logger } from "../config/logger";
 
 export const redis = new Redis(env.REDIS_URL, {
-  maxRetriesPerRequest: null,
+  connectTimeout: 2_000,
+  commandTimeout: 2_000,
+  maxRetriesPerRequest: 1,
   lazyConnect: true,
   retryStrategy: (times) => {
     if (times > 10) return null; // deja de reintentar después de 10 intentos

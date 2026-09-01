@@ -1,67 +1,71 @@
-# Somos Barrio Backend
+# Somos Barrio API
 
-Backend inicial para la Revista Barrial Digital construido con:
+API de la plataforma móvil Somos Barrio. Usa Node.js 20, Express, TypeScript, PostgreSQL, Prisma y Redis.
 
-- Node.js + Express + TypeScript
-- PostgreSQL + Prisma
-- Redis (rate limiting y cache futuro)
-- JWT para autenticacion
-
-## 1) Configuracion rapida
+## Desarrollo local
 
 ```bash
+npm ci
 cp .env.example .env
-npm install
-docker compose up -d postgres
-npx prisma migrate dev --name init
-npx prisma generate
+docker compose up -d
+npx prisma migrate deploy
+npm run prisma:generate
 npm run seed
 npm run dev
 ```
 
-## Conexion Prisma + Docker
+La API queda en `http://localhost:4000/api/v1` y Swagger UI en `http://localhost:4000/api/docs`.
 
-Este proyecto espera PostgreSQL en Docker con:
+Servicios locales:
 
-- host: `localhost`
-- puerto: `5434`
-- db: `somos-barrio`
-- user/password: `postgres/postgres`
+- PostgreSQL: `localhost:5434`, base `somos-barrio`.
+- Redis: `localhost:6379`.
+- Expo suele usar `http://localhost:8081` como origen web. `CORS_ORIGIN` acepta una lista separada por comas.
+- Un dispositivo físico debe usar la IP LAN del equipo, no `localhost`.
 
-`DATABASE_URL` esperada en `.env`:
+## Autenticación móvil
+
+La app nativa debe usar estos endpoints:
+
+- `POST /auth/mobile/register`
+- `POST /auth/mobile/login`
+- `POST /auth/mobile/refresh`
+- `POST /auth/mobile/logout`
+- `GET /auth/me`
+
+Login y registro devuelven `{ user, accessToken, refreshToken }`. Guardar `refreshToken` en almacenamiento seguro del dispositivo y mantener `accessToken` en memoria. Refresh rota el token de manera atómica: un token consumido no puede reutilizarse.
+
+Los endpoints `/auth/register`, `/auth/login`, `/auth/refresh` y `/auth/logout` conservan el transporte por cookie httpOnly para clientes web.
+
+## Verificación
 
 ```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5434/somos-barrio?schema=public
+npm run prisma:generate
+npm run typecheck
+npm test
+npm run build
 ```
 
-## 2) Endpoints iniciales
+El build de producción genera `dist/server.js`; se inicia con `npm start`.
 
-- `GET /` saludo base
-- `GET /api/v1/health` healthcheck
-- `POST /api/v1/auth/register` registro de vecino
-- `POST /api/v1/auth/login` login con email/password
-- `GET /api/v1/auth/me` usuario autenticado (`Authorization: Bearer <token>`)
+## Tests de integración
 
-## 3) Estructura
-
-```text
-prisma/
-  schema.prisma
-  seed.ts
-src/
-  config/
-  lib/
-  middlewares/
-  modules/
-    auth/
-    health/
-  routes/
-  utils/
+```bash
+cp .env.test.example .env.test
+npm run test:integration
 ```
 
-## 4) Proximo paso recomendado
+La suite usa PostgreSQL y Redis reales, corre en serie y elimina los datos de dominio. Existe una protección que bloquea la ejecución salvo que `DATABASE_URL` apunte exactamente a `somos-barrio-test`.
 
-1. Agregar refresh tokens rotativos en Redis.
-2. Crear modulo `news` con permisos `EDITOR/ADMIN`.
-3. Crear modulo `business-directory`.
-4. Crear modulo `marketplace` con limite de publicaciones free.
+Para ejecutar una sola suite:
+
+```bash
+npm run test:integration -- src/modules/auth/auth.integration.test.ts
+```
+
+## Prisma y contrato
+
+- Cambios de schema: `npm run prisma:migrate -- --name <nombre>` y luego `npm run prisma:generate`.
+- CI aplica las migraciones con `prisma migrate deploy`.
+- El contrato OpenAPI se mantiene en `src/lib/openapi.ts`; debe cambiar junto con rutas, schemas, DTOs y códigos de respuesta.
+- Health: `/health/live` comprueba el proceso y `/health/ready` comprueba PostgreSQL y Redis.

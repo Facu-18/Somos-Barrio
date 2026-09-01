@@ -22,7 +22,7 @@ export const globalRateLimiter = rateLimit({
   limit: 200,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  skip: () => isTest,
+  skip: (req) => isTest || req.originalUrl.startsWith(`${env.API_PREFIX}/health`),
   message: {
     success: false,
     message: "Demasiadas solicitudes, intenta nuevamente en unos minutos."
@@ -41,4 +41,18 @@ export const authRateLimiter = rateLimit({
     message: "Demasiados intentos de autenticacion, espera unos minutos."
   },
   store: new RedisStore({ sendCommand })
+});
+
+export const uploadRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 20 : 100,
+  keyGenerator: (req) => req.user?.id ?? req.ip ?? "anonymous",
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skip: () => isTest,
+  message: {
+    success: false,
+    message: "Alcanzaste el limite de imagenes por hora."
+  },
+  store: new RedisStore({ sendCommand, prefix: "rl:upload:" })
 });

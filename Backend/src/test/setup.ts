@@ -2,13 +2,15 @@ import * as dotenv from "dotenv";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll } from "vitest";
+import { assertTestDatabase } from "./assert-test-database";
 
-dotenv.config({ path: path.resolve(process.cwd(), ".env.test") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env.test"), override: true });
+const databaseUrl = assertTestDatabase(process.env["DATABASE_URL"]);
 
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: process.env["DATABASE_URL"] ?? "postgresql://postgres:postgres@localhost:5434/somos-barrio-test?schema=public",
+      url: databaseUrl,
     },
   },
 });

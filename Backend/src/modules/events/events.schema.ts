@@ -7,7 +7,7 @@ export const eventIdParamSchema = z.object({
 });
 
 export const eventsListQuerySchema = z.object({
-  upcoming: z.coerce.boolean().default(true),
+  upcoming: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(50).default(10)
 });

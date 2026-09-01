@@ -3,1393 +3,822 @@ import type { OpenAPIV3 } from "openapi-types";
 type Schema = OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject;
 
 const ref = (name: string): OpenAPIV3.ReferenceObject => ({ $ref: `#/components/schemas/${name}` });
+const cuid = (): OpenAPIV3.SchemaObject => ({
+  type: "string",
+  format: "cuid",
+  pattern: "^c[a-z0-9]+$",
+  example: "clx1a2b3c0000d4e5f6g7h8i9"
+});
+const nullableCuid = (): OpenAPIV3.SchemaObject => ({ ...cuid(), nullable: true });
+const dateTime = (nullable = false): OpenAPIV3.SchemaObject => ({
+  type: "string",
+  format: "date-time",
+  ...(nullable ? { nullable: true } : {})
+});
+const nullableString = (): OpenAPIV3.SchemaObject => ({ type: "string", nullable: true });
+const arrayOf = (schema: Schema): OpenAPIV3.SchemaObject => ({ type: "array", items: schema });
+const envelope = (schema: Schema): OpenAPIV3.SchemaObject => ({
+  type: "object",
+  required: ["success", "data"],
+  properties: {
+    success: { type: "boolean", enum: [true] },
+    data: schema
+  }
+});
+const jsonResponse = (description: string, schema: Schema): OpenAPIV3.ResponseObject => ({
+  description,
+  content: { "application/json": { schema } }
+});
+const ok = (schema: Schema): OpenAPIV3.ResponseObject => jsonResponse("OK", envelope(schema));
+const created = (schema: Schema): OpenAPIV3.ResponseObject => jsonResponse("Created", envelope(schema));
+const noContent: OpenAPIV3.ResponseObject = { description: "No Content" };
+const errorResponse = (description: string): OpenAPIV3.ResponseObject =>
+  jsonResponse(description, ref("Error"));
+const badRequest = errorResponse("Bad Request");
+const unauthorized = errorResponse("Unauthorized");
+const forbidden = errorResponse("Forbidden");
+const notFound = errorResponse("Not Found");
+const conflict = errorResponse("Conflict");
+const unprocessable = errorResponse("Unprocessable Entity");
+const serviceUnavailable = errorResponse("Service Unavailable");
+const bearerSecurity: OpenAPIV3.SecurityRequirementObject[] = [{ bearerAuth: [] }];
 
-const bearerAuth: OpenAPIV3.SecuritySchemeObject = {
-  type: "http",
-  scheme: "bearer",
-  bearerFormat: "JWT",
-};
-
-const barrioSlugParam: OpenAPIV3.ParameterObject = {
-  name: "barrioSlug",
+const jsonBody = (schema: Schema, required = true): OpenAPIV3.RequestBodyObject => ({
+  required,
+  content: { "application/json": { schema } }
+});
+const pathParam = (name: string, schema: Schema = { type: "string" }): OpenAPIV3.ParameterObject => ({
+  name,
   in: "path",
   required: true,
-  schema: { type: "string", example: "palermo" },
-};
-
-// ── Reusable schemas ────────────────────────────────────────────────────────
-
-const UserSchema = {
-  type: "object",
-  properties: {
-    id:        { type: "string", format: "uuid" },
-    email:     { type: "string", format: "email" },
-    name:      { type: "string" },
-    role:      { type: "string", enum: ["VECINO", "NEGOCIO", "EDITOR", "ADMIN"] },
-    barrioId:  { type: "string", format: "uuid", nullable: true },
-    createdAt: { type: "string", format: "date-time" },
-  },
-} satisfies OpenAPIV3.SchemaObject;
-
-const BarrioSchema = {
-  type: "object",
-  properties: {
-    id:          { type: "string", format: "uuid" },
-    name:        { type: "string", example: "Palermo" },
-    slug:        { type: "string", example: "palermo" },
-    city:        { type: "string", example: "Buenos Aires" },
-    province:    { type: "string", example: "Buenos Aires" },
-    description: { type: "string", nullable: true },
-    imageUrl:    { type: "string", nullable: true },
-    createdAt:   { type: "string", format: "date-time" },
-  },
-} satisfies OpenAPIV3.SchemaObject;
-
-const NewsSchema = {
-  type: "object",
-  properties: {
-    id:          { type: "string", format: "uuid" },
-    title:       { type: "string" },
-    slug:        { type: "string" },
-    content:     { type: "string" },
-    summary:     { type: "string", nullable: true },
-    imageUrl:    { type: "string", nullable: true },
-    category:    { type: "string", nullable: true },
-    status:      { type: "string", enum: ["DRAFT", "PUBLISHED", "ARCHIVED"] },
-    publishedAt: { type: "string", format: "date-time", nullable: true },
-    author:      ref("UserSummary"),
-    barrioId:    { type: "string", format: "uuid" },
-    createdAt:   { type: "string", format: "date-time" },
-  },
-};
-
-const BusinessSchema = {
-  type: "object",
-  properties: {
-    id:          { type: "string", format: "uuid" },
-    name:        { type: "string" },
-    slug:        { type: "string" },
-    description: { type: "string", nullable: true },
-    category:    { type: "string", nullable: true },
-    address:     { type: "string", nullable: true },
-    phone:       { type: "string", nullable: true },
-    website:     { type: "string", nullable: true },
-    imageUrl:    { type: "string", nullable: true },
-    verified:    { type: "boolean" },
-    ownerId:     { type: "string", format: "uuid" },
-    barrioId:    { type: "string", format: "uuid" },
-    createdAt:   { type: "string", format: "date-time" },
-  },
-};
-
-const MarketplacePostSchema = {
-  type: "object",
-  properties: {
-    id:          { type: "string", format: "uuid" },
-    title:       { type: "string" },
-    description: { type: "string" },
-    price:       { type: "number", nullable: true },
-    imageUrl:    { type: "string", nullable: true },
-    condition:   { type: "string", enum: ["NEW", "LIKE_NEW", "GOOD", "FAIR", "POOR"], nullable: true },
-    status:      { type: "string", enum: ["ACTIVE", "SOLD", "RESERVED"] },
-    views:       { type: "integer" },
-    author:      ref("UserSummary"),
-    barrioId:    { type: "string", format: "uuid" },
-    createdAt:   { type: "string", format: "date-time" },
-  },
-};
-
-const ForumSubforumSchema = {
-  type: "object",
-  properties: {
-    id:          { type: "string", format: "uuid" },
-    name:        { type: "string" },
-    slug:        { type: "string" },
-    description: { type: "string", nullable: true },
-    barrioId:    { type: "string", format: "uuid" },
-    _count:      { type: "object", properties: { threads: { type: "integer" } } },
-  },
-};
-
-const ForumThreadSchema = {
-  type: "object",
-  properties: {
-    id:         { type: "string", format: "uuid" },
-    title:      { type: "string" },
-    content:    { type: "string" },
-    isPinned:   { type: "boolean" },
-    isLocked:   { type: "boolean" },
-    votes:      { type: "integer" },
-    author:     ref("UserSummary"),
-    subforumId: { type: "string", format: "uuid" },
-    createdAt:  { type: "string", format: "date-time" },
-    _count:     { type: "object", properties: { replies: { type: "integer" } } },
-  },
-};
-
-const EventSchema = {
-  type: "object",
-  properties: {
-    id:          { type: "string", format: "uuid" },
-    title:       { type: "string" },
-    description: { type: "string", nullable: true },
-    location:    { type: "string", nullable: true },
-    startsAt:    { type: "string", format: "date-time" },
-    endsAt:      { type: "string", format: "date-time", nullable: true },
-    imageUrl:    { type: "string", nullable: true },
-    organizer:   ref("UserSummary"),
-    barrioId:    { type: "string", format: "uuid" },
-    _count:      { type: "object", properties: { rsvps: { type: "integer" } } },
-    createdAt:   { type: "string", format: "date-time" },
-  },
-};
-
-const MessageSchema = {
-  type: "object",
-  properties: {
-    id:         { type: "string", format: "uuid" },
-    subject:    { type: "string" },
-    body:       { type: "string" },
-    readAt:     { type: "string", format: "date-time", nullable: true },
-    sender:     ref("UserSummary"),
-    recipient:  ref("UserSummary"),
-    createdAt:  { type: "string", format: "date-time" },
-  },
-};
-
-const ReviewSchema = {
-  type: "object",
-  properties: {
-    id:         { type: "string", format: "uuid" },
-    rating:     { type: "integer", minimum: 1, maximum: 5 },
-    comment:    { type: "string", nullable: true },
-    author:     ref("UserSummary"),
-    businessId: { type: "string", format: "uuid" },
-    createdAt:  { type: "string", format: "date-time" },
-  },
-};
-
-const UserSummarySchema = {
-  type: "object",
-  properties: {
-    id:   { type: "string", format: "uuid" },
-    name: { type: "string" },
-  },
-} satisfies OpenAPIV3.SchemaObject;
-
-const ErrorSchema = {
-  type: "object",
-  properties: {
-    message: { type: "string" },
-  },
-} satisfies OpenAPIV3.SchemaObject;
-
-const PaginationSchema = {
-  type: "object",
-  properties: {
-    total:  { type: "integer" },
-    page:   { type: "integer" },
-    limit:  { type: "integer" },
-    pages:  { type: "integer" },
-  },
-} satisfies OpenAPIV3.SchemaObject;
-
-// ── Helper factories ────────────────────────────────────────────────────────
-
-const ok = (schema: Schema): OpenAPIV3.ResponseObject => ({
-  description: "OK",
-  content: { "application/json": { schema } },
+  schema
+});
+const queryParam = (
+  name: string,
+  schema: Schema,
+  required = false,
+  description?: string
+): OpenAPIV3.ParameterObject => ({
+  name,
+  in: "query",
+  required,
+  schema,
+  ...(description ? { description } : {})
 });
 
-const created = (schema: Schema): OpenAPIV3.ResponseObject => ({
-  description: "Created",
-  content: { "application/json": { schema } },
-});
+const barrioSlugParam = pathParam("barrioSlug", { type: "string", minLength: 1, example: "palermo" });
+const businessSlugParam = pathParam("businessSlug", { type: "string", minLength: 1 });
+const subforumSlugParam = pathParam("subforumSlug", { type: "string", minLength: 1 });
+const newsSlugParam = pathParam("newsSlug", { type: "string", minLength: 1 });
+const pageParam = queryParam("page", { type: "integer", minimum: 1, default: 1 });
+const limit10Param = queryParam("limit", { type: "integer", minimum: 1, maximum: 50, default: 10 });
 
-const noContent: OpenAPIV3.ResponseObject = { description: "No Content" };
-
-const unauthorized: OpenAPIV3.ResponseObject = {
-  description: "Unauthorized",
-  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+const userSummary: OpenAPIV3.SchemaObject = {
+  type: "object",
+  required: ["id", "name"],
+  description: "Resumen de usuario; las respuestas públicas incluyen avatarUrl y las vistas administrativas incluyen email.",
+  properties: {
+    id: cuid(), name: { type: "string" }, avatarUrl: nullableString(), email: { type: "string", format: "email" }
+  }
 };
 
-const forbidden: OpenAPIV3.ResponseObject = {
-  description: "Forbidden",
-  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject> = {
+  Error: {
+    type: "object",
+    required: ["success", "message", "details"],
+    properties: {
+      success: { type: "boolean", enum: [false] },
+      message: { type: "string" },
+      details: { nullable: true }
+    }
+  },
+  UserSummary: userSummary,
+  BarrioSummary: {
+    type: "object",
+    required: ["id", "name", "slug"],
+    properties: { id: cuid(), name: { type: "string" }, slug: { type: "string" } }
+  },
+  SearchBarrio: {
+    type: "object",
+    required: ["name", "slug"],
+    properties: { name: { type: "string" }, slug: { type: "string" } }
+  },
+  User: {
+    type: "object",
+    required: ["id", "email", "name", "role", "avatarUrl", "barrioId", "barrio", "createdAt"],
+    properties: {
+      id: cuid(),
+      email: { type: "string", format: "email" },
+      name: { type: "string" },
+      role: { type: "string", enum: ["VECINO", "NEGOCIO", "EDITOR", "ADMIN"] },
+      avatarUrl: nullableString(),
+      barrioId: nullableCuid(),
+      barrio: { ...ref("BarrioSummary"), nullable: true },
+      createdAt: dateTime()
+    }
+  },
+  BrowserAuth: {
+    type: "object",
+    required: ["user", "accessToken"],
+    properties: { user: ref("User"), accessToken: { type: "string" } }
+  },
+  MobileAuth: {
+    type: "object",
+    required: ["user", "accessToken", "refreshToken"],
+    properties: {
+      user: ref("User"),
+      accessToken: { type: "string" },
+      refreshToken: { type: "string", minLength: 64, maxLength: 256 }
+    }
+  },
+  Barrio: {
+    type: "object",
+    required: ["id", "name", "slug", "city", "province", "country", "createdAt"],
+    properties: {
+      id: cuid(), name: { type: "string" }, slug: { type: "string" }, city: { type: "string" },
+      province: { type: "string" }, country: { type: "string", minLength: 2, maxLength: 2 },
+      createdAt: dateTime(), updatedAt: dateTime()
+    }
+  },
+  News: {
+    type: "object",
+    required: ["id", "authorId", "barrioId", "title", "slug", "excerpt", "content", "category", "status", "publishedAt", "createdAt", "updatedAt"],
+    properties: {
+      id: cuid(), authorId: cuid(), barrioId: cuid(), title: { type: "string" }, slug: { type: "string" },
+      excerpt: nullableString(), content: { type: "string" },
+      category: { type: "string", enum: ["SEGURIDAD", "OBRAS", "EVENTOS", "MUNICIPIO", "COMUNIDAD"] },
+      status: { type: "string", enum: ["DRAFT", "PENDING_REVIEW", "PUBLISHED", "ARCHIVED"] },
+      publishedAt: dateTime(true), createdAt: dateTime(), updatedAt: dateTime(),
+      author: ref("UserSummary"), barrio: ref("BarrioSummary")
+    }
+  },
+  NewsListItem: {
+    type: "object",
+    required: ["id", "title", "slug", "excerpt", "category", "status", "publishedAt", "createdAt", "author"],
+    properties: {
+      id: cuid(), title: { type: "string" }, slug: { type: "string" }, excerpt: nullableString(),
+      category: { type: "string", enum: ["SEGURIDAD", "OBRAS", "EVENTOS", "MUNICIPIO", "COMUNIDAD"] },
+      status: { type: "string", enum: ["PUBLISHED"] },
+      publishedAt: dateTime(true), createdAt: dateTime(), author: ref("UserSummary")
+    }
+  },
+  Business: {
+    type: "object",
+    required: ["id", "ownerId", "barrioId", "name", "slug", "category", "address", "description", "phone", "whatsapp", "website", "instagram", "facebook", "verified", "coverImage", "photos", "latitude", "longitude", "createdAt", "updatedAt"],
+    properties: {
+      id: cuid(), ownerId: cuid(), barrioId: cuid(), name: { type: "string" }, slug: { type: "string" },
+      category: { type: "string", enum: ["GASTRONOMIA", "SALUD", "EDUCACION", "SERVICIOS", "HOGAR", "DEPORTES", "OTROS"] },
+      address: { type: "string" }, description: nullableString(), phone: nullableString(), whatsapp: nullableString(),
+      website: nullableString(), instagram: nullableString(), facebook: nullableString(), verified: { type: "boolean" },
+      coverImage: nullableString(), photos: arrayOf({ type: "string", format: "uri" }),
+      latitude: nullableString(), longitude: nullableString(), createdAt: dateTime(), updatedAt: dateTime(),
+      owner: ref("UserSummary"), barrio: ref("BarrioSummary"), reviews: arrayOf(ref("Review"))
+    }
+  },
+  BusinessListItem: {
+    type: "object",
+    required: ["id", "name", "slug", "category", "address", "phone", "whatsapp", "coverImage", "verified", "createdAt", "owner"],
+    properties: {
+      id: cuid(), name: { type: "string" }, slug: { type: "string" },
+      category: { type: "string", enum: ["GASTRONOMIA", "SALUD", "EDUCACION", "SERVICIOS", "HOGAR", "DEPORTES", "OTROS"] },
+      address: { type: "string" }, phone: nullableString(), whatsapp: nullableString(), coverImage: nullableString(),
+      verified: { type: "boolean" }, createdAt: dateTime(), owner: ref("UserSummary")
+    }
+  },
+  Review: {
+    type: "object",
+    required: ["id", "userId", "businessId", "rating", "comment", "createdAt", "updatedAt"],
+    properties: {
+      id: cuid(), userId: cuid(), businessId: cuid(), rating: { type: "integer", minimum: 1, maximum: 5 },
+      comment: nullableString(), createdAt: dateTime(), updatedAt: dateTime(), user: ref("UserSummary")
+    }
+  },
+  MarketplacePost: {
+    type: "object",
+    required: ["id", "userId", "barrioId", "title", "description", "price", "currency", "category", "status", "images", "location", "views", "createdAt", "updatedAt"],
+    properties: {
+      id: cuid(), userId: cuid(), barrioId: cuid(), title: { type: "string" }, description: { type: "string" },
+      price: { type: "integer", nullable: true, minimum: 0 }, currency: { type: "string", minLength: 3, maxLength: 3 },
+      category: { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] },
+      status: { type: "string", enum: ["ACTIVE", "SOLD", "PAUSED", "REPORTED"] },
+      images: arrayOf({ type: "string", format: "uri" }), location: nullableString(), views: { type: "integer" },
+      createdAt: dateTime(), updatedAt: dateTime(), user: ref("UserSummary")
+    }
+  },
+  MarketplaceListItem: {
+    type: "object",
+    required: ["id", "title", "description", "price", "currency", "category", "status", "images", "location", "views", "createdAt", "user"],
+    properties: {
+      id: cuid(), title: { type: "string" }, description: { type: "string" }, price: { type: "integer", nullable: true, minimum: 0 },
+      currency: { type: "string" }, category: { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] },
+      status: { type: "string", enum: ["ACTIVE"] }, images: arrayOf({ type: "string", format: "uri" }),
+      location: nullableString(), views: { type: "integer" }, createdAt: dateTime(), user: ref("UserSummary")
+    }
+  },
+  ForumSubforum: {
+    type: "object",
+    required: ["id", "barrioId", "name", "slug", "description", "createdAt", "updatedAt", "_count"],
+    properties: {
+      id: cuid(), barrioId: cuid(), name: { type: "string" }, slug: { type: "string" }, description: nullableString(),
+      createdAt: dateTime(), updatedAt: dateTime(),
+      _count: { type: "object", required: ["threads"], properties: { threads: { type: "integer" } } }
+    }
+  },
+  ForumReply: {
+    type: "object",
+    required: ["id", "threadId", "userId", "parentReplyId", "content", "upVotes", "downVotes", "createdAt", "updatedAt"],
+    properties: {
+      id: cuid(), threadId: cuid(), userId: cuid(), parentReplyId: nullableCuid(), content: { type: "string" },
+      upVotes: { type: "integer" }, downVotes: { type: "integer" }, createdAt: dateTime(), updatedAt: dateTime(),
+      user: ref("UserSummary"), childReplies: arrayOf(ref("ForumReply"))
+    }
+  },
+  ForumThread: {
+    type: "object",
+    required: ["id", "userId", "barrioId", "subforumId", "title", "content", "upVotes", "downVotes", "createdAt", "updatedAt"],
+    properties: {
+      id: cuid(), userId: cuid(), barrioId: cuid(), subforumId: cuid(), title: { type: "string" }, content: { type: "string" },
+      upVotes: { type: "integer" }, downVotes: { type: "integer" }, createdAt: dateTime(), updatedAt: dateTime(),
+      user: ref("UserSummary"), replies: arrayOf(ref("ForumReply")),
+      _count: { type: "object", required: ["replies"], properties: { replies: { type: "integer" } } }
+    }
+  },
+  EventRsvp: {
+    type: "object",
+    required: ["id", "eventId", "userId", "status", "createdAt", "updatedAt"],
+    properties: {
+      id: cuid(), eventId: cuid(), userId: cuid(),
+      status: { type: "string", enum: ["GOING", "INTERESTED", "NOT_GOING"] },
+      createdAt: dateTime(), updatedAt: dateTime(), user: ref("UserSummary")
+    }
+  },
+  Event: {
+    type: "object",
+    required: ["id", "userId", "barrioId", "title", "description", "date", "location", "createdAt", "updatedAt"],
+    properties: {
+      id: cuid(), userId: cuid(), barrioId: cuid(), title: { type: "string" }, description: nullableString(),
+      date: dateTime(), location: { type: "string" }, createdAt: dateTime(), updatedAt: dateTime(),
+      user: ref("UserSummary"), rsvps: arrayOf(ref("EventRsvp")),
+      _count: { type: "object", required: ["rsvps"], properties: { rsvps: { type: "integer" } } }
+    }
+  },
+  Message: {
+    type: "object",
+    required: ["id", "senderId", "receiverId", "postId", "content", "readAt", "createdAt"],
+    properties: {
+      id: cuid(), senderId: cuid(), receiverId: cuid(), postId: nullableCuid(), content: { type: "string" },
+      readAt: dateTime(true), createdAt: dateTime(), sender: ref("UserSummary"), receiver: ref("UserSummary"),
+      post: {
+        type: "object", nullable: true, required: ["id", "title"],
+        properties: { id: cuid(), title: { type: "string" } }
+      }
+    }
+  },
+  PaginatedNews: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("NewsListItem")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
+  PaginatedAdminNews: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("News")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
+  PaginatedBusinesses: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("BusinessListItem")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
+  PaginatedMarketplace: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("MarketplaceListItem")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
+  PaginatedThreads: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("ForumThread")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
+  PaginatedEvents: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("Event")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
+  PaginatedMessages: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("Message")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  }
 };
 
-const notFound: OpenAPIV3.ResponseObject = {
-  description: "Not Found",
-  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+const registerBody: OpenAPIV3.SchemaObject = {
+  type: "object",
+  required: ["email", "password", "name"],
+  properties: {
+    email: { type: "string", format: "email" }, password: { type: "string", minLength: 8, maxLength: 72 },
+    name: { type: "string", minLength: 2, maxLength: 120 }, barrioSlug: { type: "string", minLength: 2, maxLength: 120 }
+  }
+};
+const loginBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["email", "password"],
+  properties: { email: { type: "string", format: "email" }, password: { type: "string", minLength: 8, maxLength: 72 } }
+};
+const refreshBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["refreshToken"],
+  properties: { refreshToken: { type: "string", minLength: 64, maxLength: 256 } }
+};
+const newsCategory = { type: "string", enum: ["SEGURIDAD", "OBRAS", "EVENTOS", "MUNICIPIO", "COMUNIDAD"] } satisfies OpenAPIV3.SchemaObject;
+const newsStatus = { type: "string", enum: ["DRAFT", "PENDING_REVIEW", "PUBLISHED", "ARCHIVED"] } satisfies OpenAPIV3.SchemaObject;
+const businessCategory = { type: "string", enum: ["GASTRONOMIA", "SALUD", "EDUCACION", "SERVICIOS", "HOGAR", "DEPORTES", "OTROS"] } satisfies OpenAPIV3.SchemaObject;
+const marketplaceCategory = { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] } satisfies OpenAPIV3.SchemaObject;
+const marketplaceStatus = { type: "string", enum: ["ACTIVE", "SOLD", "PAUSED", "REPORTED"] } satisfies OpenAPIV3.SchemaObject;
+const rsvpStatus = { type: "string", enum: ["GOING", "INTERESTED", "NOT_GOING"] } satisfies OpenAPIV3.SchemaObject;
+
+const createNewsBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["title", "slug", "content", "category"],
+  properties: {
+    title: { type: "string", minLength: 3, maxLength: 255 },
+    slug: { type: "string", minLength: 3, maxLength: 255, pattern: "^[a-z0-9-]+$" },
+    excerpt: { type: "string", maxLength: 500 }, content: { type: "string", minLength: 10 }, category: newsCategory
+  }
+};
+const updateNewsBody: OpenAPIV3.SchemaObject = {
+  type: "object",
+  properties: {
+    title: { type: "string", minLength: 3, maxLength: 255 }, excerpt: { type: "string", maxLength: 500 },
+    content: { type: "string", minLength: 10 }, category: newsCategory, status: newsStatus
+  }
+};
+const createBusinessBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["name", "slug", "category", "address"],
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 255 },
+    slug: { type: "string", minLength: 2, maxLength: 255, pattern: "^[a-z0-9-]+$" }, category: businessCategory,
+    address: { type: "string", minLength: 2, maxLength: 255 }, description: { type: "string", maxLength: 1000 },
+    phone: { type: "string", maxLength: 30 }, whatsapp: { type: "string", maxLength: 30 }, website: { type: "string", format: "uri" },
+    instagram: { type: "string", maxLength: 60 }, facebook: { type: "string", maxLength: 60 }, coverImage: { type: "string", format: "uri" },
+    photos: { type: "array", maxItems: 10, default: [], items: { type: "string", format: "uri" } },
+    latitude: { type: "number" }, longitude: { type: "number" }
+  }
+};
+const updateBusinessBody: OpenAPIV3.SchemaObject = {
+  type: "object",
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 255 }, category: businessCategory,
+    address: { type: "string", minLength: 2, maxLength: 255 }, description: { type: "string", maxLength: 1000 },
+    phone: { type: "string", maxLength: 30 }, whatsapp: { type: "string", maxLength: 30 }, website: { type: "string", format: "uri" },
+    instagram: { type: "string", maxLength: 60 }, facebook: { type: "string", maxLength: 60 }, coverImage: { type: "string", format: "uri" },
+    photos: { type: "array", maxItems: 10, items: { type: "string", format: "uri" } },
+    latitude: { type: "number" }, longitude: { type: "number" }
+  }
+};
+const createMarketplaceBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["title", "description", "category"],
+  properties: {
+    title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
+    price: { type: "integer", minimum: 0 }, currency: { type: "string", minLength: 3, maxLength: 3, default: "ARS" },
+    category: marketplaceCategory, images: { type: "array", maxItems: 10, default: [], items: { type: "string", format: "uri" } },
+    location: { type: "string", maxLength: 255 }
+  }
+};
+const updateMarketplaceBody: OpenAPIV3.SchemaObject = {
+  type: "object",
+  properties: {
+    title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
+    price: { type: "integer", minimum: 0 }, category: marketplaceCategory, status: marketplaceStatus,
+    images: { type: "array", maxItems: 10, items: { type: "string", format: "uri" } }, location: { type: "string", maxLength: 255 }
+  }
+};
+const createEventBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["title", "date", "location"],
+  properties: {
+    title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", maxLength: 2000 },
+    date: dateTime(), location: { type: "string", minLength: 2, maxLength: 255 }
+  }
+};
+const updateEventBody: OpenAPIV3.SchemaObject = { ...createEventBody, required: undefined };
+const createBarrioBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["name", "slug", "city", "province"],
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 120 },
+    slug: { type: "string", minLength: 2, maxLength: 120, pattern: "^[a-z0-9-]+$" },
+    city: { type: "string", minLength: 2, maxLength: 120 }, province: { type: "string", minLength: 2, maxLength: 120 },
+    country: { type: "string", minLength: 2, maxLength: 2, default: "AR" }
+  }
+};
+const updateBarrioBody: OpenAPIV3.SchemaObject = {
+  type: "object",
+  properties: {
+    name: { type: "string", minLength: 2, maxLength: 120 }, city: { type: "string", minLength: 2, maxLength: 120 },
+    province: { type: "string", minLength: 2, maxLength: 120 }, country: { type: "string", minLength: 2, maxLength: 2 }
+  }
 };
 
-const conflict: OpenAPIV3.ResponseObject = {
-  description: "Conflict",
-  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
-};
-
-const unprocessable: OpenAPIV3.ResponseObject = {
-  description: "Unprocessable Entity (validation error)",
-  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
-};
-
-// ── Spec ────────────────────────────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const openapiSpec = ({
+export const openapiSpec: OpenAPIV3.Document = {
   openapi: "3.0.3",
   info: {
     title: "Somos Barrio API",
     version: "1.0.0",
-    description:
-      "API para la revista barrial digital Somos Barrio. Multi-barrio, con roles VECINO / NEGOCIO / EDITOR / ADMIN.",
-    contact: { email: "facundomoriconi19@gmail.com" },
+    description: "API de Somos Barrio. Las rutas de este documento están bajo /api/v1."
   },
-  servers: [
-    { url: "http://localhost:4000/api/v1", description: "Desarrollo local" },
+  servers: [{ url: "http://localhost:4000/api/v1", description: "Desarrollo local" }],
+  tags: [
+    { name: "Health" }, { name: "Auth" }, { name: "Upload" }, { name: "Barrios" }, { name: "Noticias" },
+    { name: "Comercios" }, { name: "Reseñas" }, { name: "Marketplace" }, { name: "Foro" }, { name: "Eventos" },
+    { name: "Mensajes" }, { name: "Búsqueda" }, { name: "Admin" }
   ],
   components: {
-    securitySchemes: { bearerAuth },
-    schemas: {
-      User:            UserSchema,
-      UserSummary:     UserSummarySchema,
-      Barrio:          BarrioSchema,
-      News:            NewsSchema,
-      Business:        BusinessSchema,
-      MarketplacePost: MarketplacePostSchema,
-      ForumSubforum:   ForumSubforumSchema,
-      ForumThread:     ForumThreadSchema,
-      Event:           EventSchema,
-      Message:         MessageSchema,
-      Review:          ReviewSchema,
-      Error:           ErrorSchema,
-      Pagination:      PaginationSchema,
-    },
+    securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" } },
+    schemas
   },
   paths: {
-
-    // ── Health ───────────────────────────────────────────────────────────
     "/health": {
       get: {
-        tags: ["Health"],
-        summary: "Verificar estado del servidor",
+        tags: ["Health"], summary: "Estado general de la API",
         responses: {
-          200: ok({ type: "object", properties: { status: { type: "string", example: "ok" } } }),
-        },
-      },
+          200: jsonResponse("OK", {
+            type: "object", required: ["success", "message", "timestamp"],
+            properties: { success: { type: "boolean", enum: [true] }, message: { type: "string", example: "API funcionando" }, timestamp: dateTime() }
+          })
+        }
+      }
     },
-
-    // ── Auth ─────────────────────────────────────────────────────────────
+    "/health/live": {
+      get: {
+        tags: ["Health"], summary: "Sonda de vida",
+        responses: {
+          200: jsonResponse("Alive", {
+            type: "object", required: ["success", "status", "timestamp"],
+            properties: { success: { type: "boolean", enum: [true] }, status: { type: "string", enum: ["alive"] }, timestamp: dateTime() }
+          })
+        }
+      }
+    },
+    "/health/ready": {
+      get: {
+        tags: ["Health"], summary: "Sonda de disponibilidad de PostgreSQL y Redis",
+        responses: {
+          200: jsonResponse("Ready", {
+            type: "object", required: ["success", "status", "timestamp"],
+            properties: { success: { type: "boolean", enum: [true] }, status: { type: "string", enum: ["ready"] }, timestamp: dateTime() }
+          }),
+          503: jsonResponse("Not Ready", {
+            type: "object", required: ["success", "status", "message", "timestamp"],
+            properties: {
+              success: { type: "boolean", enum: [false] }, status: { type: "string", enum: ["not_ready"] },
+              message: { type: "string" }, timestamp: dateTime()
+            }
+          })
+        }
+      }
+    },
     "/auth/register": {
       post: {
-        tags: ["Auth"],
-        summary: "Registrar nuevo usuario",
+        tags: ["Auth"], summary: "Registro para navegador", description: "El refresh token se entrega solamente en la cookie httpOnly refresh_token.",
+        requestBody: jsonBody(registerBody),
+        responses: { 201: created(ref("BrowserAuth")), 400: badRequest, 409: conflict, 503: serviceUnavailable }
+      }
+    },
+    "/auth/login": {
+      post: {
+        tags: ["Auth"], summary: "Inicio de sesión para navegador", description: "El refresh token se entrega solamente en la cookie httpOnly refresh_token.",
+        requestBody: jsonBody(loginBody), responses: { 200: ok(ref("BrowserAuth")), 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+      }
+    },
+    "/auth/refresh": {
+      post: {
+        tags: ["Auth"], summary: "Rotar sesión de navegador", description: "Lee y rota la cookie httpOnly refresh_token. No recibe body.",
+        responses: { 200: ok(ref("BrowserAuth")), 401: unauthorized, 503: serviceUnavailable }
+      }
+    },
+    "/auth/logout": {
+      post: {
+        tags: ["Auth"], summary: "Cerrar sesión de navegador", security: bearerSecurity,
+        responses: { 204: noContent, 401: unauthorized, 503: serviceUnavailable }
+      }
+    },
+    "/auth/me": {
+      get: { tags: ["Auth"], summary: "Usuario autenticado", security: bearerSecurity, responses: { 200: ok(ref("User")), 401: unauthorized, 503: serviceUnavailable } }
+    },
+    "/auth/mobile/register": {
+      post: {
+        tags: ["Auth"], summary: "Registro para cliente móvil", requestBody: jsonBody(registerBody),
+        responses: { 201: created(ref("MobileAuth")), 400: badRequest, 409: conflict, 503: serviceUnavailable }
+      }
+    },
+    "/auth/mobile/login": {
+      post: {
+        tags: ["Auth"], summary: "Inicio de sesión para cliente móvil", requestBody: jsonBody(loginBody),
+        responses: { 200: ok(ref("MobileAuth")), 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+      }
+    },
+    "/auth/mobile/refresh": {
+      post: {
+        tags: ["Auth"], summary: "Rotar sesión móvil", requestBody: jsonBody(refreshBody),
+        responses: { 200: ok(ref("MobileAuth")), 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+      }
+    },
+    "/auth/mobile/logout": {
+      post: {
+        tags: ["Auth"], summary: "Cerrar sesión móvil", security: bearerSecurity, requestBody: jsonBody(refreshBody),
+        responses: { 204: noContent, 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+      }
+    },
+    "/upload": {
+      post: {
+        tags: ["Upload"], summary: "Subir una imagen", security: bearerSecurity,
         requestBody: {
           required: true,
           content: {
-            "application/json": {
+            "multipart/form-data": {
               schema: {
-                type: "object",
-                required: ["email", "password", "name"],
-                properties: {
-                  email:      { type: "string", format: "email" },
-                  password:   { type: "string", minLength: 8, maxLength: 72 },
-                  name:       { type: "string", minLength: 2, maxLength: 120 },
-                  barrioSlug: { type: "string", description: "Barrio inicial del usuario (opcional)" },
-                },
-              },
-            },
-          },
+                type: "object", required: ["file"],
+                properties: { file: { type: "string", format: "binary", description: "JPG, PNG, WebP o GIF; máximo 5 MB" } }
+              }
+            }
+          }
         },
         responses: {
           201: created({
-            type: "object",
-            properties: {
-              accessToken: { type: "string" },
-              user:        { $ref: "#/components/schemas/User" },
-            },
+            type: "object", required: ["url", "publicId"],
+            properties: { url: { type: "string", format: "uri" }, publicId: { type: "string" } }
           }),
-          409: conflict,
-          422: unprocessable,
-        },
-      },
+          400: badRequest, 401: unauthorized, 413: errorResponse("Payload Too Large"), 422: unprocessable, 502: errorResponse("Bad Gateway"), 503: serviceUnavailable
+        }
+      }
     },
-
-    "/auth/login": {
-      post: {
-        tags: ["Auth"],
-        summary: "Iniciar sesión",
-        description: "Devuelve `accessToken` en body y `refresh_token` como httpOnly cookie.",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["email", "password"],
-                properties: {
-                  email:    { type: "string", format: "email" },
-                  password: { type: "string", minLength: 8 },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          200: ok({
-            type: "object",
-            properties: {
-              accessToken: { type: "string" },
-              user:        { $ref: "#/components/schemas/User" },
-            },
-          }),
-          401: unauthorized,
-          422: unprocessable,
-        },
-      },
-    },
-
-    "/auth/refresh": {
-      post: {
-        tags: ["Auth"],
-        summary: "Rotar refresh token",
-        description: "Lee el cookie `refresh_token`, emite nuevo access token y rota el cookie.",
-        responses: {
-          200: ok({ type: "object", properties: { accessToken: { type: "string" } } }),
-          401: unauthorized,
-        },
-      },
-    },
-
-    "/auth/logout": {
-      post: {
-        tags: ["Auth"],
-        summary: "Cerrar sesión",
-        description: "Blacklistea el JWT y elimina el refresh token.",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          200: ok({ type: "object", properties: { message: { type: "string" } } }),
-          401: unauthorized,
-        },
-      },
-    },
-
-    "/auth/me": {
-      get: {
-        tags: ["Auth"],
-        summary: "Obtener usuario autenticado",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          200: ok({ $ref: "#/components/schemas/User" }),
-          401: unauthorized,
-        },
-      },
-    },
-
-    // ── Barrios ──────────────────────────────────────────────────────────
     "/barrios": {
-      get: {
-        tags: ["Barrios"],
-        summary: "Listar todos los barrios",
-        responses: {
-          200: ok({ type: "array", items: { $ref: "#/components/schemas/Barrio" } }),
-        },
-      },
+      get: { tags: ["Barrios"], summary: "Listar barrios", responses: { 200: ok(arrayOf(ref("Barrio"))) } }
     },
-
     "/barrios/{barrioSlug}": {
       parameters: [barrioSlugParam],
-      get: {
-        tags: ["Barrios"],
-        summary: "Obtener barrio por slug",
-        responses: {
-          200: ok({ $ref: "#/components/schemas/Barrio" }),
-          404: notFound,
-        },
-      },
+      get: { tags: ["Barrios"], summary: "Obtener barrio por slug", responses: { 200: ok(ref("Barrio")), 400: badRequest, 404: notFound } }
     },
-
-    // ── News ─────────────────────────────────────────────────────────────
     "/barrios/{barrioSlug}/news": {
       parameters: [barrioSlugParam],
       get: {
-        tags: ["Noticias"],
-        summary: "Listar noticias publicadas",
-        parameters: [
-          { name: "category", in: "query", schema: { type: "string" } },
-          { name: "page",     in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit",    in: "query", schema: { type: "integer", default: 20, maximum: 100 } },
-        ],
-        responses: {
-          200: ok({
-            type: "object",
-            properties: {
-              data:       { type: "array", items: { $ref: "#/components/schemas/News" } },
-              pagination: { $ref: "#/components/schemas/Pagination" },
-            },
-          }),
-        },
+        tags: ["Noticias"], summary: "Listar noticias publicadas",
+        parameters: [queryParam("category", newsCategory), pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedNews")), 400: badRequest, 404: notFound }
       },
       post: {
-        tags: ["Noticias"],
-        summary: "Crear noticia (EDITOR / ADMIN)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["title", "content"],
-                properties: {
-                  title:    { type: "string", maxLength: 255 },
-                  content:  { type: "string" },
-                  summary:  { type: "string", maxLength: 500 },
-                  imageUrl: { type: "string", format: "uri" },
-                  category: { type: "string" },
-                  status:   { type: "string", enum: ["DRAFT", "PUBLISHED"] },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: created({ $ref: "#/components/schemas/News" }),
-          401: unauthorized,
-          403: forbidden,
-          422: unprocessable,
-        },
-      },
+        tags: ["Noticias"], summary: "Crear noticia", security: bearerSecurity, requestBody: jsonBody(createNewsBody),
+        responses: { 201: created(ref("News")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable }
+      }
     },
-
     "/barrios/{barrioSlug}/news/{newsSlug}": {
-      parameters: [
-        barrioSlugParam,
-        { name: "newsSlug", in: "path", required: true, schema: { type: "string" } },
-      ],
-      get: {
-        tags: ["Noticias"],
-        summary: "Obtener noticia por slug",
-        responses: {
-          200: ok({ $ref: "#/components/schemas/News" }),
-          404: notFound,
-        },
-      },
+      parameters: [barrioSlugParam, newsSlugParam],
+      get: { tags: ["Noticias"], summary: "Obtener noticia publicada", responses: { 200: ok(ref("News")), 400: badRequest, 404: notFound } },
       patch: {
-        tags: ["Noticias"],
-        summary: "Actualizar noticia (autor o ADMIN)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  title:    { type: "string" },
-                  content:  { type: "string" },
-                  summary:  { type: "string" },
-                  imageUrl: { type: "string", format: "uri" },
-                  category: { type: "string" },
-                  status:   { type: "string", enum: ["DRAFT", "PUBLISHED", "ARCHIVED"] },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          200: ok({ $ref: "#/components/schemas/News" }),
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
+        tags: ["Noticias"], summary: "Actualizar noticia", security: bearerSecurity, requestBody: jsonBody(updateNewsBody),
+        responses: { 200: ok(ref("News")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       },
-      delete: {
-        tags: ["Noticias"],
-        summary: "Eliminar noticia (autor o ADMIN)",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          204: noContent,
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
-      },
+      delete: { tags: ["Noticias"], summary: "Eliminar noticia", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
     },
-
-    // ── Businesses ────────────────────────────────────────────────────────
     "/barrios/{barrioSlug}/businesses": {
       parameters: [barrioSlugParam],
       get: {
-        tags: ["Comercios"],
-        summary: "Listar comercios del barrio",
-        parameters: [
-          { name: "category", in: "query", schema: { type: "string" } },
-          { name: "verified", in: "query", schema: { type: "boolean" } },
-          { name: "page",     in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit",    in: "query", schema: { type: "integer", default: 20 } },
-        ],
-        responses: {
-          200: ok({ type: "array", items: { $ref: "#/components/schemas/Business" } }),
-        },
+        tags: ["Comercios"], summary: "Listar comercios", parameters: [queryParam("category", businessCategory), pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedBusinesses")), 400: badRequest, 404: notFound }
       },
       post: {
-        tags: ["Comercios"],
-        summary: "Crear comercio",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["name"],
-                properties: {
-                  name:        { type: "string" },
-                  description: { type: "string" },
-                  category:    { type: "string" },
-                  address:     { type: "string" },
-                  phone:       { type: "string" },
-                  website:     { type: "string", format: "uri" },
-                  imageUrl:    { type: "string", format: "uri" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: created({ $ref: "#/components/schemas/Business" }),
-          401: unauthorized,
-          422: unprocessable,
-        },
-      },
+        tags: ["Comercios"], summary: "Crear comercio", security: bearerSecurity, requestBody: jsonBody(createBusinessBody),
+        responses: { 201: created(ref("Business")), 400: badRequest, 401: unauthorized, 404: notFound, 409: conflict, 503: serviceUnavailable }
+      }
     },
-
     "/barrios/{barrioSlug}/businesses/{businessSlug}": {
-      parameters: [
-        barrioSlugParam,
-        { name: "businessSlug", in: "path", required: true, schema: { type: "string" } },
-      ],
-      get: {
-        tags: ["Comercios"],
-        summary: "Obtener comercio por slug",
-        responses: {
-          200: ok({ $ref: "#/components/schemas/Business" }),
-          404: notFound,
-        },
-      },
+      parameters: [barrioSlugParam, businessSlugParam],
+      get: { tags: ["Comercios"], summary: "Obtener comercio", responses: { 200: ok(ref("Business")), 400: badRequest, 404: notFound } },
       patch: {
-        tags: ["Comercios"],
-        summary: "Actualizar comercio (propietario o ADMIN)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  name:        { type: "string" },
-                  description: { type: "string" },
-                  category:    { type: "string" },
-                  address:     { type: "string" },
-                  phone:       { type: "string" },
-                  website:     { type: "string", format: "uri" },
-                  imageUrl:    { type: "string", format: "uri" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          200: ok({ $ref: "#/components/schemas/Business" }),
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
+        tags: ["Comercios"], summary: "Actualizar comercio", security: bearerSecurity, requestBody: jsonBody(updateBusinessBody),
+        responses: { 200: ok(ref("Business")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       },
-      delete: {
-        tags: ["Comercios"],
-        summary: "Eliminar comercio (propietario o ADMIN)",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          204: noContent,
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
-      },
+      delete: { tags: ["Comercios"], summary: "Eliminar comercio", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
     },
-
-    // ── Reviews ───────────────────────────────────────────────────────────
     "/barrios/{barrioSlug}/businesses/{businessSlug}/reviews": {
-      parameters: [
-        barrioSlugParam,
-        { name: "businessSlug", in: "path", required: true, schema: { type: "string" } },
-      ],
+      parameters: [barrioSlugParam, businessSlugParam],
       get: {
-        tags: ["Reseñas"],
-        summary: "Listar reseñas de un comercio",
+        tags: ["Reseñas"], summary: "Listar reseñas",
         responses: {
           200: ok({
-            type: "object",
-            properties: {
-              data:          { type: "array", items: { $ref: "#/components/schemas/Review" } },
-              averageRating: { type: "number" },
-              total:         { type: "integer" },
-            },
+            type: "object", required: ["items", "total", "averageRating"],
+            properties: { items: arrayOf(ref("Review")), total: { type: "integer" }, averageRating: { type: "number", nullable: true } }
           }),
-          404: notFound,
-        },
+          400: badRequest, 404: notFound
+        }
       },
       post: {
-        tags: ["Reseñas"],
-        summary: "Crear reseña (una por usuario por comercio)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["rating"],
-                properties: {
-                  rating:  { type: "integer", minimum: 1, maximum: 5 },
-                  comment: { type: "string", maxLength: 1000 },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: created({ $ref: "#/components/schemas/Review" }),
-          401: unauthorized,
-          409: conflict,
-          422: unprocessable,
-        },
-      },
+        tags: ["Reseñas"], summary: "Crear reseña", security: bearerSecurity,
+        requestBody: jsonBody({
+          type: "object", required: ["rating"],
+          properties: { rating: { type: "integer", minimum: 1, maximum: 5 }, comment: { type: "string", maxLength: 1000 } }
+        }),
+        responses: { 201: created(ref("Review")), 400: badRequest, 401: unauthorized, 404: notFound, 409: conflict, 503: serviceUnavailable }
+      }
     },
-
-    // ── Marketplace ───────────────────────────────────────────────────────
     "/barrios/{barrioSlug}/marketplace": {
       parameters: [barrioSlugParam],
       get: {
-        tags: ["Marketplace"],
-        summary: "Listar publicaciones del marketplace",
-        parameters: [
-          { name: "condition", in: "query", schema: { type: "string", enum: ["NEW", "LIKE_NEW", "GOOD", "FAIR", "POOR"] } },
-          { name: "status",    in: "query", schema: { type: "string", enum: ["ACTIVE", "SOLD", "RESERVED"] } },
-          { name: "page",      in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit",     in: "query", schema: { type: "integer", default: 20 } },
-        ],
-        responses: {
-          200: ok({ type: "array", items: { $ref: "#/components/schemas/MarketplacePost" } }),
-        },
+        tags: ["Marketplace"], summary: "Listar publicaciones activas",
+        parameters: [queryParam("category", marketplaceCategory), pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedMarketplace")), 400: badRequest, 404: notFound }
       },
       post: {
-        tags: ["Marketplace"],
-        summary: "Crear publicación",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["title", "description"],
-                properties: {
-                  title:       { type: "string" },
-                  description: { type: "string" },
-                  price:       { type: "number", minimum: 0 },
-                  imageUrl:    { type: "string", format: "uri" },
-                  condition:   { type: "string", enum: ["NEW", "LIKE_NEW", "GOOD", "FAIR", "POOR"] },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: created({ $ref: "#/components/schemas/MarketplacePost" }),
-          401: unauthorized,
-          422: unprocessable,
-        },
-      },
+        tags: ["Marketplace"], summary: "Crear publicación", security: bearerSecurity, requestBody: jsonBody(createMarketplaceBody),
+        responses: { 201: created(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable }
+      }
     },
-
     "/barrios/{barrioSlug}/marketplace/{postId}": {
-      parameters: [
-        barrioSlugParam,
-        { name: "postId", in: "path", required: true, schema: { type: "string", format: "uuid" } },
-      ],
-      get: {
-        tags: ["Marketplace"],
-        summary: "Obtener publicación (incrementa vistas)",
-        responses: {
-          200: ok({ $ref: "#/components/schemas/MarketplacePost" }),
-          404: notFound,
-        },
-      },
+      parameters: [barrioSlugParam, pathParam("postId", cuid())],
+      get: { tags: ["Marketplace"], summary: "Obtener publicación activa e incrementar vistas", responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 404: notFound } },
       patch: {
-        tags: ["Marketplace"],
-        summary: "Actualizar publicación (autor o ADMIN)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  title:       { type: "string" },
-                  description: { type: "string" },
-                  price:       { type: "number", minimum: 0 },
-                  imageUrl:    { type: "string", format: "uri" },
-                  condition:   { type: "string", enum: ["NEW", "LIKE_NEW", "GOOD", "FAIR", "POOR"] },
-                  status:      { type: "string", enum: ["ACTIVE", "SOLD", "RESERVED"] },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          200: ok({ $ref: "#/components/schemas/MarketplacePost" }),
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
+        tags: ["Marketplace"], summary: "Actualizar publicación", security: bearerSecurity, requestBody: jsonBody(updateMarketplaceBody),
+        responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       },
-      delete: {
-        tags: ["Marketplace"],
-        summary: "Eliminar publicación (autor o ADMIN)",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          204: noContent,
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
-      },
+      delete: { tags: ["Marketplace"], summary: "Eliminar publicación", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
     },
-
-    // ── Forum ─────────────────────────────────────────────────────────────
     "/barrios/{barrioSlug}/forum": {
       parameters: [barrioSlugParam],
-      get: {
-        tags: ["Foro"],
-        summary: "Listar subforos del barrio",
-        responses: {
-          200: ok({ type: "array", items: { $ref: "#/components/schemas/ForumSubforum" } }),
-        },
-      },
+      get: { tags: ["Foro"], summary: "Listar subforos", responses: { 200: ok(arrayOf(ref("ForumSubforum"))), 404: notFound } }
     },
-
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads": {
-      parameters: [
-        barrioSlugParam,
-        { name: "subforumSlug", in: "path", required: true, schema: { type: "string" } },
-      ],
+      parameters: [barrioSlugParam, subforumSlugParam],
       get: {
-        tags: ["Foro"],
-        summary: "Listar hilos del subforo",
-        parameters: [
-          { name: "page",  in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit", in: "query", schema: { type: "integer", default: 20 } },
-        ],
-        responses: {
-          200: ok({
-            type: "object",
-            properties: {
-              data:       { type: "array", items: { $ref: "#/components/schemas/ForumThread" } },
-              pagination: { $ref: "#/components/schemas/Pagination" },
-            },
-          }),
-          404: notFound,
-        },
+        tags: ["Foro"], summary: "Listar hilos", parameters: [pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedThreads")), 400: badRequest, 404: notFound }
       },
       post: {
-        tags: ["Foro"],
-        summary: "Crear hilo",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["title", "content"],
-                properties: {
-                  title:   { type: "string", maxLength: 255 },
-                  content: { type: "string" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: created({ $ref: "#/components/schemas/ForumThread" }),
-          401: unauthorized,
-          422: unprocessable,
-        },
-      },
+        tags: ["Foro"], summary: "Crear hilo", security: bearerSecurity,
+        requestBody: jsonBody({
+          type: "object", required: ["title", "content"],
+          properties: { title: { type: "string", minLength: 3, maxLength: 255 }, content: { type: "string", minLength: 5, maxLength: 5000 } }
+        }),
+        responses: { 201: created(ref("ForumThread")), 400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable }
+      }
     },
-
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}": {
-      parameters: [
-        barrioSlugParam,
-        { name: "subforumSlug", in: "path", required: true, schema: { type: "string" } },
-        { name: "threadId",     in: "path", required: true, schema: { type: "string", format: "uuid" } },
-      ],
-      get: {
-        tags: ["Foro"],
-        summary: "Obtener hilo con respuestas",
-        responses: {
-          200: ok({
-            allOf: [
-              { $ref: "#/components/schemas/ForumThread" },
-              {
-                type: "object",
-                properties: {
-                  replies: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        id:        { type: "string", format: "uuid" },
-                        content:   { type: "string" },
-                        votes:     { type: "integer" },
-                        author:    { $ref: "#/components/schemas/UserSummary" },
-                        parentId:  { type: "string", format: "uuid", nullable: true },
-                        children:  { type: "array", items: { type: "object" } },
-                        createdAt: { type: "string", format: "date-time" },
-                      },
-                    },
-                  },
-                },
-              },
-            ],
-          }),
-          404: notFound,
-        },
-      },
-      delete: {
-        tags: ["Foro"],
-        summary: "Eliminar hilo (autor o ADMIN)",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          204: noContent,
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
-      },
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
+      get: { tags: ["Foro"], summary: "Obtener hilo con respuestas", responses: { 200: ok(ref("ForumThread")), 400: badRequest, 404: notFound } },
+      delete: { tags: ["Foro"], summary: "Eliminar hilo", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
     },
-
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/replies": {
-      parameters: [
-        barrioSlugParam,
-        { name: "subforumSlug", in: "path", required: true, schema: { type: "string" } },
-        { name: "threadId",     in: "path", required: true, schema: { type: "string", format: "uuid" } },
-      ],
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
       post: {
-        tags: ["Foro"],
-        summary: "Responder hilo",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["content"],
-                properties: {
-                  content:  { type: "string" },
-                  parentId: { type: "string", format: "uuid", description: "ID de respuesta padre (para anidamiento)" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: created({
-            type: "object",
-            properties: {
-              id:        { type: "string", format: "uuid" },
-              content:   { type: "string" },
-              author:    { $ref: "#/components/schemas/UserSummary" },
-              threadId:  { type: "string", format: "uuid" },
-              parentId:  { type: "string", format: "uuid", nullable: true },
-              createdAt: { type: "string", format: "date-time" },
-            },
-          }),
-          401: unauthorized,
-        },
-      },
+        tags: ["Foro"], summary: "Crear respuesta", security: bearerSecurity,
+        requestBody: jsonBody({
+          type: "object", required: ["content"],
+          properties: { content: { type: "string", minLength: 1, maxLength: 5000 }, parentReplyId: cuid() }
+        }),
+        responses: { 201: created(ref("ForumReply")), 400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable }
+      }
     },
-
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/vote": {
-      parameters: [
-        barrioSlugParam,
-        { name: "subforumSlug", in: "path", required: true, schema: { type: "string" } },
-        { name: "threadId",     in: "path", required: true, schema: { type: "string", format: "uuid" } },
-      ],
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
       post: {
-        tags: ["Foro"],
-        summary: "Votar hilo (toggle: +1 / -1)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["value"],
-                properties: {
-                  value: { type: "integer", enum: [1, -1], description: "1 = upvote, -1 = downvote (voto duplicado lo elimina)" },
-                },
-              },
-            },
-          },
-        },
+        tags: ["Foro"], summary: "Alternar voto del hilo", security: bearerSecurity,
+        requestBody: jsonBody({ type: "object", required: ["value"], properties: { value: { type: "integer", enum: [1, -1] } } }),
         responses: {
-          200: ok({ type: "object", properties: { votes: { type: "integer" } } }),
-          401: unauthorized,
-          404: notFound,
-        },
-      },
+          200: ok({ type: "object", required: ["voted", "value"], properties: { voted: { type: "boolean" }, value: { type: "integer", enum: [1, -1], nullable: true } } }),
+          400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable
+        }
+      }
     },
-
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/replies/{replyId}/vote": {
-      parameters: [
-        barrioSlugParam,
-        { name: "subforumSlug", in: "path", required: true, schema: { type: "string" } },
-        { name: "threadId",     in: "path", required: true, schema: { type: "string", format: "uuid" } },
-        { name: "replyId",      in: "path", required: true, schema: { type: "string", format: "uuid" } },
-      ],
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid()), pathParam("replyId", cuid())],
       post: {
-        tags: ["Foro"],
-        summary: "Votar respuesta (toggle: +1 / -1)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["value"],
-                properties: {
-                  value: { type: "integer", enum: [1, -1] },
-                },
-              },
-            },
-          },
-        },
+        tags: ["Foro"], summary: "Alternar voto de la respuesta", security: bearerSecurity,
+        requestBody: jsonBody({ type: "object", required: ["value"], properties: { value: { type: "integer", enum: [1, -1] } } }),
         responses: {
-          200: ok({ type: "object", properties: { votes: { type: "integer" } } }),
-          401: unauthorized,
-          404: notFound,
-        },
-      },
+          200: ok({ type: "object", required: ["voted", "value"], properties: { voted: { type: "boolean" }, value: { type: "integer", enum: [1, -1], nullable: true } } }),
+          400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable
+        }
+      }
     },
-
-    // ── Events ────────────────────────────────────────────────────────────
     "/barrios/{barrioSlug}/events": {
       parameters: [barrioSlugParam],
       get: {
-        tags: ["Eventos"],
-        summary: "Listar eventos del barrio",
-        parameters: [
-          { name: "upcoming", in: "query", schema: { type: "boolean" }, description: "Solo eventos futuros" },
-          { name: "page",     in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit",    in: "query", schema: { type: "integer", default: 20 } },
-        ],
-        responses: {
-          200: ok({ type: "array", items: { $ref: "#/components/schemas/Event" } }),
-        },
+        tags: ["Eventos"], summary: "Listar eventos",
+        parameters: [queryParam("upcoming", { type: "string", enum: ["true", "false"], default: "true" }), pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedEvents")), 400: badRequest, 404: notFound }
       },
       post: {
-        tags: ["Eventos"],
-        summary: "Crear evento",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["title", "startsAt"],
-                properties: {
-                  title:       { type: "string" },
-                  description: { type: "string" },
-                  location:    { type: "string" },
-                  startsAt:    { type: "string", format: "date-time" },
-                  endsAt:      { type: "string", format: "date-time" },
-                  imageUrl:    { type: "string", format: "uri" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: created({ $ref: "#/components/schemas/Event" }),
-          401: unauthorized,
-          422: unprocessable,
-        },
-      },
+        tags: ["Eventos"], summary: "Crear evento", security: bearerSecurity, requestBody: jsonBody(createEventBody),
+        responses: { 201: created(ref("Event")), 400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable }
+      }
     },
-
     "/barrios/{barrioSlug}/events/{eventId}": {
-      parameters: [
-        barrioSlugParam,
-        { name: "eventId", in: "path", required: true, schema: { type: "string", format: "uuid" } },
-      ],
-      get: {
-        tags: ["Eventos"],
-        summary: "Obtener evento por ID",
-        responses: {
-          200: ok({ $ref: "#/components/schemas/Event" }),
-          404: notFound,
-        },
-      },
+      parameters: [barrioSlugParam, pathParam("eventId", cuid())],
+      get: { tags: ["Eventos"], summary: "Obtener evento", responses: { 200: ok(ref("Event")), 400: badRequest, 404: notFound } },
       patch: {
-        tags: ["Eventos"],
-        summary: "Actualizar evento (organizador o ADMIN)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  title:       { type: "string" },
-                  description: { type: "string" },
-                  location:    { type: "string" },
-                  startsAt:    { type: "string", format: "date-time" },
-                  endsAt:      { type: "string", format: "date-time" },
-                  imageUrl:    { type: "string", format: "uri" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          200: ok({ $ref: "#/components/schemas/Event" }),
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
+        tags: ["Eventos"], summary: "Actualizar evento", security: bearerSecurity, requestBody: jsonBody(updateEventBody),
+        responses: { 200: ok(ref("Event")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       },
-      delete: {
-        tags: ["Eventos"],
-        summary: "Eliminar evento (organizador o ADMIN)",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          204: noContent,
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
-      },
+      delete: { tags: ["Eventos"], summary: "Eliminar evento", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
     },
-
     "/barrios/{barrioSlug}/events/{eventId}/rsvp": {
-      parameters: [
-        barrioSlugParam,
-        { name: "eventId", in: "path", required: true, schema: { type: "string", format: "uuid" } },
-      ],
+      parameters: [barrioSlugParam, pathParam("eventId", cuid())],
       post: {
-        tags: ["Eventos"],
-        summary: "Confirmar / cancelar asistencia al evento (upsert)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["status"],
-                properties: {
-                  status: { type: "string", enum: ["GOING", "INTERESTED", "NOT_GOING"] },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          200: ok({
-            type: "object",
-            properties: {
-              status: { type: "string", enum: ["GOING", "INTERESTED", "NOT_GOING"] },
-            },
-          }),
-          401: unauthorized,
-          404: notFound,
-        },
-      },
+        tags: ["Eventos"], summary: "Crear o actualizar RSVP", security: bearerSecurity,
+        requestBody: jsonBody({ type: "object", required: ["status"], properties: { status: rsvpStatus } }),
+        responses: { 200: ok(ref("EventRsvp")), 400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable }
+      }
     },
-
-    // ── Messages ──────────────────────────────────────────────────────────
     "/messages": {
+      get: {
+        tags: ["Mensajes"], summary: "Listar mensajes recibidos o enviados", security: bearerSecurity,
+        parameters: [queryParam("type", { type: "string", enum: ["inbox", "sent"], default: "inbox" }), pageParam, queryParam("limit", { type: "integer", minimum: 1, maximum: 50, default: 20 })],
+        responses: { 200: ok(ref("PaginatedMessages")), 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+      },
       post: {
-        tags: ["Mensajes"],
-        summary: "Enviar mensaje a otro usuario",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["recipientId", "subject", "body"],
-                properties: {
-                  recipientId: { type: "string", format: "uuid" },
-                  subject:     { type: "string", maxLength: 255 },
-                  body:        { type: "string" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: created({ $ref: "#/components/schemas/Message" }),
-          401: unauthorized,
-          422: unprocessable,
-        },
-      },
+        tags: ["Mensajes"], summary: "Enviar mensaje", security: bearerSecurity,
+        requestBody: jsonBody({
+          type: "object", required: ["receiverId", "content"],
+          properties: { receiverId: cuid(), content: { type: "string", minLength: 1, maxLength: 2000 }, postId: cuid() }
+        }),
+        responses: { 201: created(ref("Message")), 400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable }
+      }
     },
-
-    "/messages/inbox": {
-      get: {
-        tags: ["Mensajes"],
-        summary: "Bandeja de entrada",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          { name: "page",  in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit", in: "query", schema: { type: "integer", default: 20 } },
-        ],
-        responses: {
-          200: ok({
-            type: "object",
-            properties: {
-              data:       { type: "array", items: { $ref: "#/components/schemas/Message" } },
-              pagination: { $ref: "#/components/schemas/Pagination" },
-            },
-          }),
-          401: unauthorized,
-        },
-      },
-    },
-
-    "/messages/sent": {
-      get: {
-        tags: ["Mensajes"],
-        summary: "Mensajes enviados",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          { name: "page",  in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit", in: "query", schema: { type: "integer", default: 20 } },
-        ],
-        responses: {
-          200: ok({
-            type: "object",
-            properties: {
-              data:       { type: "array", items: { $ref: "#/components/schemas/Message" } },
-              pagination: { $ref: "#/components/schemas/Pagination" },
-            },
-          }),
-          401: unauthorized,
-        },
-      },
-    },
-
     "/messages/{messageId}/read": {
-      parameters: [
-        { name: "messageId", in: "path", required: true, schema: { type: "string", format: "uuid" } },
-      ],
-      patch: {
-        tags: ["Mensajes"],
-        summary: "Marcar mensaje como leído",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          200: ok({ $ref: "#/components/schemas/Message" }),
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
-      },
+      parameters: [pathParam("messageId", cuid())],
+      patch: { tags: ["Mensajes"], summary: "Marcar mensaje como leído", security: bearerSecurity, responses: { 200: ok(ref("Message")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
     },
-
-    // ── Search ────────────────────────────────────────────────────────────
     "/search": {
       get: {
-        tags: ["Búsqueda"],
-        summary: "Búsqueda global (ILIKE)",
+        tags: ["Búsqueda"], summary: "Búsqueda global",
         parameters: [
-          { name: "q",          in: "query", required: true, schema: { type: "string", minLength: 2 }, description: "Texto a buscar" },
-          { name: "barrioSlug", in: "query", schema: { type: "string" }, description: "Filtrar por barrio" },
-          { name: "types",      in: "query", schema: { type: "string" }, description: "Módulos separados por coma: news,businesses,marketplace,forum" },
+          queryParam("q", { type: "string", minLength: 2, maxLength: 100 }, true),
+          queryParam("barrioSlug", { type: "string" }),
+          queryParam("types", { type: "string", example: "news,businesses,marketplace,forum" }, false, "Valores separados por coma: news, businesses, marketplace, forum"),
+          queryParam("limit", { type: "integer", minimum: 1, maximum: 20, default: 5 })
         ],
         responses: {
           200: ok({
-            type: "object",
+            type: "object", required: ["q", "results"],
             properties: {
-              news:        { type: "array", items: { $ref: "#/components/schemas/News" } },
-              businesses:  { type: "array", items: { $ref: "#/components/schemas/Business" } },
-              marketplace: { type: "array", items: { $ref: "#/components/schemas/MarketplacePost" } },
-              forum:       { type: "array", items: { $ref: "#/components/schemas/ForumThread" } },
-            },
+              q: { type: "string" },
+              results: {
+                type: "object",
+                properties: {
+                  news: arrayOf({
+                    type: "object", required: ["id", "title", "slug", "excerpt", "category", "publishedAt", "barrio"],
+                    properties: { id: cuid(), title: { type: "string" }, slug: { type: "string" }, excerpt: nullableString(), category: newsCategory, publishedAt: dateTime(true), barrio: ref("SearchBarrio") }
+                  }),
+                  businesses: arrayOf({
+                    type: "object", required: ["id", "name", "slug", "category", "address", "verified", "barrio"],
+                    properties: { id: cuid(), name: { type: "string" }, slug: { type: "string" }, category: businessCategory, address: { type: "string" }, verified: { type: "boolean" }, barrio: ref("SearchBarrio") }
+                  }),
+                  marketplace: arrayOf({
+                    type: "object", required: ["id", "title", "description", "price", "currency", "category", "barrio"],
+                    properties: { id: cuid(), title: { type: "string" }, description: { type: "string" }, price: { type: "integer", nullable: true }, currency: { type: "string" }, category: marketplaceCategory, barrio: ref("SearchBarrio") }
+                  }),
+                  forum: arrayOf({
+                    type: "object", required: ["id", "title", "content", "upVotes", "downVotes", "createdAt", "barrio", "subforum"],
+                    properties: {
+                      id: cuid(), title: { type: "string" }, content: { type: "string" }, upVotes: { type: "integer" }, downVotes: { type: "integer" }, createdAt: dateTime(),
+                      barrio: ref("SearchBarrio"), subforum: { type: "object", required: ["name", "slug"], properties: { name: { type: "string" }, slug: { type: "string" } } }
+                    }
+                  })
+                }
+              }
+            }
           }),
-          422: unprocessable,
-        },
-      },
+          400: badRequest, 404: notFound
+        }
+      }
     },
-
-    // ── Admin ─────────────────────────────────────────────────────────────
     "/admin/stats": {
       get: {
-        tags: ["Admin"],
-        summary: "Estadísticas globales (solo ADMIN)",
-        security: [{ bearerAuth: [] }],
+        tags: ["Admin"], summary: "Estadísticas globales", security: bearerSecurity,
         responses: {
           200: ok({
-            type: "object",
-            properties: {
-              users:      { type: "integer" },
-              barrios:    { type: "integer" },
-              news:       { type: "integer" },
-              businesses: { type: "integer" },
-              events:     { type: "integer" },
-              posts:      { type: "integer" },
-              threads:    { type: "integer" },
-            },
+            type: "object", required: ["users", "barrios", "news", "businesses", "marketplacePosts", "events"],
+            properties: { users: { type: "integer" }, barrios: { type: "integer" }, news: { type: "integer" }, businesses: { type: "integer" }, marketplacePosts: { type: "integer" }, events: { type: "integer" } }
           }),
-          401: unauthorized,
-          403: forbidden,
-        },
-      },
+          401: unauthorized, 403: forbidden, 503: serviceUnavailable
+        }
+      }
     },
-
     "/admin/news": {
       get: {
-        tags: ["Admin"],
-        summary: "Listar noticias con filtro de status (moderación)",
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          { name: "status", in: "query", schema: { type: "string", enum: ["DRAFT", "PUBLISHED", "ARCHIVED"] } },
-          { name: "page",   in: "query", schema: { type: "integer", default: 1 } },
-          { name: "limit",  in: "query", schema: { type: "integer", default: 20 } },
-        ],
-        responses: {
-          200: ok({ type: "array", items: { $ref: "#/components/schemas/News" } }),
-          401: unauthorized,
-          403: forbidden,
-        },
-      },
+        tags: ["Admin"], summary: "Listar noticias para moderación", security: bearerSecurity,
+        parameters: [queryParam("status", newsStatus), queryParam("barrioSlug", { type: "string" }), pageParam, queryParam("limit", { type: "integer", minimum: 1, maximum: 100, default: 20 })],
+        responses: { 200: ok(ref("PaginatedAdminNews")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
     },
-
     "/admin/barrios": {
       post: {
-        tags: ["Admin"],
-        summary: "Crear barrio (solo ADMIN)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["name", "slug", "city", "province"],
-                properties: {
-                  name:        { type: "string" },
-                  slug:        { type: "string" },
-                  city:        { type: "string" },
-                  province:    { type: "string" },
-                  description: { type: "string" },
-                  imageUrl:    { type: "string", format: "uri" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: created({ $ref: "#/components/schemas/Barrio" }),
-          401: unauthorized,
-          403: forbidden,
-          409: conflict,
-          422: unprocessable,
-        },
-      },
+        tags: ["Admin"], summary: "Crear barrio", security: bearerSecurity, requestBody: jsonBody(createBarrioBody),
+        responses: { 201: created(ref("Barrio")), 400: badRequest, 401: unauthorized, 403: forbidden, 409: conflict, 503: serviceUnavailable }
+      }
     },
-
     "/admin/barrios/{slug}": {
-      parameters: [
-        { name: "slug", in: "path", required: true, schema: { type: "string" } },
-      ],
+      parameters: [pathParam("slug", { type: "string", minLength: 1 })],
       patch: {
-        tags: ["Admin"],
-        summary: "Actualizar barrio (solo ADMIN)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  name:        { type: "string" },
-                  city:        { type: "string" },
-                  province:    { type: "string" },
-                  description: { type: "string" },
-                  imageUrl:    { type: "string", format: "uri" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          200: ok({ $ref: "#/components/schemas/Barrio" }),
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
+        tags: ["Admin"], summary: "Actualizar barrio", security: bearerSecurity, requestBody: jsonBody(updateBarrioBody),
+        responses: { 200: ok(ref("Barrio")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       },
-      delete: {
-        tags: ["Admin"],
-        summary: "Eliminar barrio en cascada (solo ADMIN)",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          204: noContent,
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
-      },
+      delete: { tags: ["Admin"], summary: "Eliminar barrio", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable } }
     },
-
     "/admin/businesses/{businessId}/verify": {
-      parameters: [
-        { name: "businessId", in: "path", required: true, schema: { type: "string", format: "uuid" } },
-      ],
+      parameters: [pathParam("businessId", cuid())],
       patch: {
-        tags: ["Admin"],
-        summary: "Verificar / desverificar comercio (solo ADMIN)",
-        security: [{ bearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["verified"],
-                properties: {
-                  verified: { type: "boolean" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          200: ok({ $ref: "#/components/schemas/Business" }),
-          401: unauthorized,
-          403: forbidden,
-          404: notFound,
-        },
-      },
-    },
-  },
-}) as unknown as OpenAPIV3.Document;
+        tags: ["Admin"], summary: "Verificar o desverificar comercio", security: bearerSecurity,
+        requestBody: jsonBody({ type: "object", required: ["verified"], properties: { verified: { type: "boolean" } } }),
+        responses: { 200: ok(ref("Business")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
+    }
+  }
+};

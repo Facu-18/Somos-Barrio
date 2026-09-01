@@ -1,5 +1,6 @@
 import { NewsStatus, MarketplaceStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { ApiError } from "../../utils/api-error";
 
 type SearchType = "news" | "businesses" | "marketplace" | "forum";
 
@@ -13,7 +14,8 @@ type SearchOpts = {
 async function resolveBarrioId(slug?: string): Promise<string | undefined> {
   if (!slug) return undefined;
   const barrio = await prisma.barrio.findUnique({ where: { slug }, select: { id: true } });
-  return barrio?.id;
+  if (!barrio) throw new ApiError(404, "Barrio no encontrado");
+  return barrio.id;
 }
 
 export const searchService = {

@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { UserRole } from "@prisma/client";
 import { env } from "../config/env";
 import { redis } from "../lib/redis";
+import { prisma } from "../lib/prisma";
 import { ApiError } from "../utils/api-error";
 
 type JwtPayload = {
@@ -26,18 +27,23 @@ export const requireAuth = async (req: Request, _res: Response, next: NextFuncti
       throw new ApiError(401, "Token invalido o expirado");
     }
 
-    // Verificar blacklist en Redis (fail-open si Redis no responde)
     try {
       const blacklisted = await redis.get(`bl:${payload.jti}`);
       if (blacklisted) throw new ApiError(401, "Token invalido o expirado");
     } catch (err) {
       if (err instanceof ApiError) throw err;
-      // Redis caído → permitir (fail-open)
+      throw new ApiError(503, "El servicio de sesiones no esta disponible");
     }
 
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, role: true }
+    });
+    if (!user) throw new ApiError(401, "Usuario no encontrado");
+
     req.user = {
-      id: payload.sub,
-      role: payload.role,
+      id: user.id,
+      role: user.role,
       jti: payload.jti,
       tokenExp: payload.exp
     };

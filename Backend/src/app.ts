@@ -15,29 +15,31 @@ import { openapiSpec } from "./lib/openapi";
 
 export const app = express();
 
-// Swagger UI antes de Helmet para que pueda servir sus propios assets
-app.use(
-  "/api/docs",
-  swaggerUi.serve,
-  swaggerUi.setup(openapiSpec, { customSiteTitle: "Somos Barrio API Docs" })
-);
-
 app.set("trust proxy", 1);
 app.use(helmet());
 app.use(
   cors({
-    origin: env.CORS_ORIGIN,
+    origin: (origin, callback) => {
+      const allowedOrigins = env.CORS_ORIGIN.split(",").map((value) => value.trim());
+      callback(null, !origin || allowedOrigins.includes(origin));
+    },
     credentials: true
   })
 );
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(globalRateLimiter);
 app.use(
   pinoHttp({
     logger
   })
+);
+app.use(globalRateLimiter);
+
+app.use(
+  "/api/docs",
+  swaggerUi.serve,
+  swaggerUi.setup(openapiSpec, { customSiteTitle: "Somos Barrio API Docs" })
 );
 
 if (env.NODE_ENV === "development") {

@@ -97,4 +97,41 @@ describe("Auth — integration", () => {
 
     expect(meRes.status).toBe(401);
   });
+
+  it("flujo mobile — entrega, rota una sola vez y revoca refresh token", async () => {
+    const loginRes = await request(app)
+      .post(`${API}/auth/mobile/login`)
+      .send({ email, password });
+
+    expect(loginRes.status).toBe(200);
+    expect(loginRes.body.data.user.email).toBe(email);
+    expect(loginRes.body.data.user.createdAt).toBeTruthy();
+    expect(loginRes.body.data.accessToken).toBeTruthy();
+    expect(loginRes.body.data.refreshToken).toBeTruthy();
+    expect(loginRes.headers["set-cookie"]).toBeUndefined();
+
+    const firstRefreshToken = loginRes.body.data.refreshToken as string;
+    const refreshRes = await request(app)
+      .post(`${API}/auth/mobile/refresh`)
+      .send({ refreshToken: firstRefreshToken });
+
+    expect(refreshRes.status).toBe(200);
+    expect(refreshRes.body.data.refreshToken).not.toBe(firstRefreshToken);
+
+    const reusedRes = await request(app)
+      .post(`${API}/auth/mobile/refresh`)
+      .send({ refreshToken: firstRefreshToken });
+    expect(reusedRes.status).toBe(401);
+
+    const logoutRes = await request(app)
+      .post(`${API}/auth/mobile/logout`)
+      .set("Authorization", `Bearer ${refreshRes.body.data.accessToken}`)
+      .send({ refreshToken: refreshRes.body.data.refreshToken });
+    expect(logoutRes.status).toBe(204);
+
+    const revokedRefreshRes = await request(app)
+      .post(`${API}/auth/mobile/refresh`)
+      .send({ refreshToken: refreshRes.body.data.refreshToken });
+    expect(revokedRefreshRes.status).toBe(401);
+  });
 });

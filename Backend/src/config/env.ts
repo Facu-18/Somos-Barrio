@@ -7,15 +7,23 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
   API_PREFIX: z.string().default("/api/v1"),
-  CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  CORS_ORIGIN: z.string().default("http://localhost:8081"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL es obligatoria"),
   REDIS_URL: z.string().default("redis://localhost:6379"),
-  JWT_SECRET: z.string().min(16, "JWT_SECRET debe tener al menos 16 caracteres"),
-  JWT_EXPIRES_IN: z.string().default("7d"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET debe tener al menos 32 caracteres"),
+  JWT_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_DAYS: z.coerce.number().int().positive().default(30),
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY:    z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+}).superRefine((value, context) => {
+  if (value.NODE_ENV === "production" && value.JWT_SECRET.includes("change_me")) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["JWT_SECRET"],
+      message: "JWT_SECRET no puede usar el valor de ejemplo en produccion"
+    });
+  }
 });
 
 const parsed = envSchema.safeParse(process.env);

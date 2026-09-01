@@ -1,15 +1,17 @@
 import { execSync } from "child_process";
 import * as dotenv from "dotenv";
 import path from "path";
+import { assertTestDatabase } from "./assert-test-database";
 
 export default function setup() {
-  dotenv.config({ path: path.resolve(process.cwd(), ".env.test") });
+  dotenv.config({ path: path.resolve(process.cwd(), ".env.test"), override: true });
+  const databaseUrl = assertTestDatabase(process.env["DATABASE_URL"]);
 
   // Aplicar migraciones en la BD de test
   execSync("npx prisma migrate deploy", {
     env: {
       ...process.env,
-      DATABASE_URL: process.env["DATABASE_URL"] ?? "postgresql://postgres:postgres@localhost:5434/somos-barrio-test?schema=public",
+      DATABASE_URL: databaseUrl,
     },
     stdio: "inherit",
   });

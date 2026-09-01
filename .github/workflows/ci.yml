@@ -51,7 +51,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5434/somos-barrio?schema=public
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci_secret_for_testing_that_is_long_enough
-      JWT_EXPIRES_IN: 7d
+      JWT_EXPIRES_IN: 15m
       JWT_REFRESH_EXPIRES_DAYS: 30
       # Cloudinary (CI usa variables de entorno del repositorio)
       CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
@@ -77,6 +77,9 @@ jobs:
 
       - name: Type-check
         run: npm run typecheck
+
+      - name: Build production artifact
+        run: npm run build
 
       - name: Apply migrations (main DB)
         run: npx prisma migrate deploy

@@ -45,7 +45,28 @@ export const authController = {
     res.status(204).send();
   },
 
-  me(req: Request, res: Response): void {
-    res.json({ success: true, data: req.user });
+  async me(req: Request, res: Response): Promise<void> {
+    const user = await authService.me(req.user!.id);
+    res.json({ success: true, data: user });
+  },
+
+  async mobileRegister(req: Request, res: Response): Promise<void> {
+    const result = await authService.register(req.body);
+    res.status(201).json({ success: true, data: result });
+  },
+
+  async mobileLogin(req: Request, res: Response): Promise<void> {
+    const result = await authService.login(req.body);
+    res.json({ success: true, data: result });
+  },
+
+  async mobileRefresh(req: Request, res: Response): Promise<void> {
+    const result = await authService.refresh(req.body.refreshToken);
+    res.json({ success: true, data: result });
+  },
+
+  async mobileLogout(req: Request, res: Response): Promise<void> {
+    await authService.logout(req.user!.jti, req.user!.tokenExp, req.body.refreshToken);
+    res.status(204).send();
   }
 };

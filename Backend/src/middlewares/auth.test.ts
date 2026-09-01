@@ -10,6 +10,14 @@ vi.mock("../lib/redis", () => ({
   }
 }));
 
+vi.mock("../lib/prisma", () => ({
+  prisma: {
+    user: {
+      findUnique: vi.fn().mockResolvedValue({ id: "user-001", role: "VECINO" })
+    }
+  }
+}));
+
 vi.mock("../config/env", () => ({
   env: {
     JWT_SECRET: "test-secret-that-is-long-enough-32chars",
@@ -21,6 +29,7 @@ vi.mock("../config/env", () => ({
 
 import { requireAuth, requireRole } from "./auth";
 import { redis } from "../lib/redis";
+import { prisma } from "../lib/prisma";
 
 const SECRET = "test-secret-that-is-long-enough-32chars";
 
@@ -36,7 +45,10 @@ function mockReqWithToken(token?: string): Partial<Request> {
 }
 
 describe("requireAuth", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ id: "user-001", role: "VECINO" } as any);
+  });
 
   it("llama next(ApiError 401) si no hay token", async () => {
     const req = mockReqWithToken();
@@ -71,6 +83,7 @@ describe("requireAuth", () => {
 
   it("setea req.user y llama next() con token válido no blacklisted", async () => {
     vi.mocked(redis.get).mockResolvedValueOnce(null);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ id: "user-001", role: "ADMIN" } as any);
     const token = makeToken({ role: "ADMIN", jti: "jti-valid-001" });
     const req = mockReqWithToken(token) as Request;
     const next = vi.fn();
@@ -83,7 +96,7 @@ describe("requireAuth", () => {
     expect(req.user?.jti).toBe("jti-valid-001");
   });
 
-  it("permite la solicitud (fail-open) si Redis lanza un error", async () => {
+  it("rechaza temporalmente si Redis lanza un error", async () => {
     vi.mocked(redis.get).mockRejectedValueOnce(new Error("Redis caído"));
     const token = makeToken({ role: "VECINO", jti: "jti-redis-down" });
     const req = mockReqWithToken(token) as Request;
@@ -91,9 +104,19 @@ describe("requireAuth", () => {
 
     await requireAuth(req, {} as Response, next as NextFunction);
 
-    // Fail-open: la solicitud debe pasar igual
-    expect(next).toHaveBeenCalledWith();
-    expect(req.user?.id).toBe("user-001");
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 503 });
+    expect(req.user).toBeUndefined();
+  });
+
+  it("rechaza tokens de usuarios eliminados", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce(null);
+    const token = makeToken({ role: "VECINO", jti: "jti-deleted-user" });
+    const req = mockReqWithToken(token) as Request;
+    const next = vi.fn();
+
+    await requireAuth(req, {} as Response, next as NextFunction);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 401 });
   });
 });
 
