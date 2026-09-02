@@ -12,9 +12,9 @@ leer y escribir cualquier archivo del directorio sin pedir confirmación.
 No hay npm workspace en la raíz. Son dos paquetes independientes, cada uno con su propio lockfile y `node_modules`:
 
 - `Backend/` — API Express + Prisma + PostgreSQL + Redis. Es el paquete cubierto por CI.
-- `app/` — app móvil Expo (Expo Router, React Native 0.81, React 19). **Es un repo git anidado con su propio `.git`** y aparece como `?? app/` sin trackear desde la raíz; los commits de la app se hacen desde adentro de `app/`.
+- `app/` — app móvil Expo (Expo Router, React Native 0.81, React 19). Pertenece al mismo repositorio Git raíz que `Backend/`, aunque conserva su propio manifest y lockfile.
 
-`AGENTS.md` (raíz) y `app/AGENTS.md` contienen notas adicionales; `AGENTS.md` todavía dice que la app móvil debería vivir en `Mobile/` — la realidad es `app/`.
+`AGENTS.md` (raíz) y `app/AGENTS.md` contienen notas adicionales.
 
 **Todos los comandos de abajo se corren desde `Backend/` o desde `app/`, nunca desde la raíz.**
 

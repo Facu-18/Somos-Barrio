@@ -3,7 +3,7 @@
 ## Repository Boundaries
 
 - There is no root npm workspace. Run npm commands from the package they target; `Backend/` and `app/` have separate manifests, lockfiles, and `node_modules`.
-- `app/` is a nested Git repository. Root Git reports it as untracked; inspect and commit mobile changes from inside `app/`, not from the root repository.
+- `Backend/` and `app/` belong to the same root Git repository even though they remain independent npm packages.
 - Root CI watches only `Backend/**` and `.github/workflows/ci.yml`; mobile changes receive no CI verification.
 - Use Node 20 or newer. CI uses Node 20 and `Backend/package.json` requires `>=20`.
 

@@ -1,0 +1,170 @@
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, Alert } from 'react-native';
+import { router } from 'expo-router';
+import { ClayTheme } from '../../constants/ClayTheme';
+import { ClayButton } from '../../components/ClayButton';
+import { useAuth } from '../../hooks/useAuth';
+import { api, setAccessToken } from '../../lib/api';
+import { authStorage } from '../../lib/auth';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
+
+export default function ProfileScreen() {
+  const { data: user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const handleLogout = async () => {
+    Alert.alert(
+      "Cerrar sesión",
+      "¿Estás seguro que querés salir de tu cuenta?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Sí, salir", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Attempt API logout to clear refresh token on backend
+              await api.post('/auth/mobile/logout');
+            } catch (e) {
+              console.log('Error logging out on backend, continuing local logout');
+            }
+            
+            // Clear local storage and tokens
+            await authStorage.deleteRefreshToken();
+            setAccessToken(null);
+            queryClient.clear();
+            
+            // Redirect to login
+            router.replace('/(auth)/login');
+          }
+        }
+      ]
+    );
+  };
+
+  const getInitials = (name: string) => {
+    return name?.substring(0, 2).toUpperCase() || 'XX';
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color={ClayTheme.colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Mi Perfil</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.profileCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{getInitials(user?.name || '')}</Text>
+          </View>
+          <Text style={styles.userName}>{user?.name}</Text>
+          <Text style={styles.userEmail}>{user?.email}</Text>
+          <View style={styles.roleBadge}>
+            <Text style={styles.roleText}>{user?.barrio?.name || 'Cargando...'}</Text>
+          </View>
+        </View>
+
+        <View style={styles.actions}>
+          <ClayButton 
+            title="Cerrar sesión" 
+            onPress={handleLogout} 
+            style={styles.logoutButton}
+          />
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: ClayTheme.colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 22,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 20,
+    backgroundColor: ClayTheme.colors.surface,
+    ...ClayTheme.shadows.elevated,
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: ClayTheme.colors.inputBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontFamily: ClayTheme.typography.fontFamily.extraBold,
+    fontSize: 18,
+    color: ClayTheme.colors.text,
+  },
+  content: {
+    padding: 22,
+    alignItems: 'center',
+  },
+  profileCard: {
+    width: '100%',
+    backgroundColor: ClayTheme.colors.surface,
+    borderRadius: 30,
+    padding: 30,
+    alignItems: 'center',
+    ...ClayTheme.shadows.elevated,
+    marginBottom: 30,
+    marginTop: 20,
+  },
+  avatar: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: ClayTheme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    ...ClayTheme.shadows.elevated,
+  },
+  avatarText: {
+    fontFamily: ClayTheme.typography.fontFamily.extraBold,
+    fontSize: 32,
+    color: ClayTheme.colors.primaryText,
+  },
+  userName: {
+    fontFamily: ClayTheme.typography.fontFamily.extraBold,
+    fontSize: 24,
+    color: ClayTheme.colors.text,
+    marginBottom: 4,
+  },
+  userEmail: {
+    fontFamily: ClayTheme.typography.fontFamily.medium,
+    fontSize: 15,
+    color: ClayTheme.colors.textMuted,
+    marginBottom: 16,
+  },
+  roleBadge: {
+    backgroundColor: '#E1EFE2',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  roleText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    fontSize: 13,
+    color: '#35663A',
+  },
+  actions: {
+    width: '100%',
+  },
+  logoutButton: {
+    backgroundColor: ClayTheme.colors.error,
+  }
+});
