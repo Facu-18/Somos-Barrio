@@ -1,0 +1,238 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #F2F0EB; color: #3B3733; -webkit-font-smoothing: antialiased;
+           font-family: 'Nunito', 'Avenir Next Rounded', 'Trebuchet MS', system-ui, sans-serif; }
+    a { color: #4E8F54; text-decoration: none; }
+    a:hover { color: #3C7042; }
+    .clay      { box-shadow: inset 2px 2px 4px rgba(255,255,255,.95), inset -3px -4px 7px rgba(186,176,161,.32), 9px 13px 26px rgba(176,165,150,.26); }
+    .clay-sm   { box-shadow: inset 1px 1px 2px rgba(255,255,255,.95), inset -2px -2px 4px rgba(186,176,161,.30), 4px 6px 13px rgba(176,165,150,.22); }
+    .clay-sunk { box-shadow: inset 4px 5px 9px rgba(181,171,156,.45), inset -3px -3px 7px rgba(255,255,255,.95); }
+    .clay-green{ box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(74,131,78,.42), 8px 12px 24px rgba(123,196,127,.34); }
+    .clay-terra{ box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(178,110,50,.38), 8px 12px 24px rgba(240,168,104,.32); }
+    .clay-sky  { box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(84,124,164,.35), 8px 12px 24px rgba(143,184,222,.32); }
+    .clay-err  { box-shadow: inset 4px 5px 9px rgba(196,150,140,.42), inset -3px -3px 7px rgba(255,255,255,.92); }
+  </style>
+</helmet>
+<div style="width:980px;height:1240px;background:#F2F0EB;padding:52px 56px;display:flex;flex-direction:column;gap:38px">
+
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <div style="font-size:28px;font-weight:800;line-height:1.1;color:#3B3733">Sistema clay · Somos Barrio</div>
+    <div style="font-size:15px;font-weight:500;color:#8A827A">Claymorfismo minimalista. El color entra en dosis chicas; la jerarquía la hace la elevación y el aire.</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-size:12px;font-weight:800;color:#8A827A;letter-spacing:.1em">COLOR</div>
+    <div style="display:grid;grid-template-columns:repeat(6, minmax(0, 1fr));gap:16px">
+
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="clay" style="height:78px;border-radius:22px;background:#F2F0EB"></div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="font-size:13px;font-weight:700;color:#3B3733">Fondo</span>
+          <span style="font-size:12px;font-weight:600;color:#8A827A">#F2F0EB</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#DCD6CB"></div>
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#FFFFFF"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="clay" style="height:78px;border-radius:22px;background:#FAF8F5"></div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="font-size:13px;font-weight:700;color:#3B3733">Superficie</span>
+          <span style="font-size:12px;font-weight:600;color:#8A827A">#FAF8F5</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#BAB0A1"></div>
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#FFFFFF"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="clay-green" style="height:78px;border-radius:22px;background:#7BC47F"></div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="font-size:13px;font-weight:700;color:#3B3733">Primario</span>
+          <span style="font-size:12px;font-weight:600;color:#8A827A">#7BC47F</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#4A834E"></div>
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#A8DBAB"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="clay-terra" style="height:78px;border-radius:22px;background:#F0A868"></div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="font-size:13px;font-weight:700;color:#3B3733">Secundario</span>
+          <span style="font-size:12px;font-weight:600;color:#8A827A">#F0A868</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#B26E32"></div>
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#F7CDA6"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="clay-sky" style="height:78px;border-radius:22px;background:#8FB8DE"></div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="font-size:13px;font-weight:700;color:#3B3733">Acento</span>
+          <span style="font-size:12px;font-weight:600;color:#8A827A">#8FB8DE</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#547CA4"></div>
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#BBD5EE"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="clay" style="height:78px;border-radius:22px;background:#3B3733"></div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="font-size:13px;font-weight:700;color:#3B3733">Texto</span>
+          <span style="font-size:12px;font-weight:600;color:#8A827A">#3B3733</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#756C63"></div>
+          <div style="flex-grow:1;height:22px;border-radius:8px;background:#8A827A"></div>
+        </div>
+      </div>
+
+    </div>
+    <div style="font-size:12.5px;font-weight:600;color:#8A827A">La franja izquierda de cada par es la sombra interna; la derecha, el brillo. Para texto de 12–14 px usá #756C63: #8A827A sólo llega a 3,4:1 sobre el fondo.</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="font-size:12px;font-weight:800;color:#8A827A;letter-spacing:.1em">ELEVACIÓN</div>
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:20px">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="clay-sunk" style="height:96px;border-radius:24px;background:#EDEAE3;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#756C63">Hundido</div>
+        <div style="font-size:11.5px;font-weight:500;line-height:1.5;color:#8A827A;font-family:ui-monospace,'SFMono-Regular','Courier New',monospace">inset 4px 5px 9px rgba(181,171,156,.45)<br>inset -3px -3px 7px rgba(255,255,255,.95)</div>
+        <div style="font-size:12.5px;font-weight:600;color:#756C63">Inputs, buscador, campos de formulario.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="height:96px;border-radius:24px;background:#FAF8F5;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#756C63">Plano</div>
+        <div style="font-size:11.5px;font-weight:500;line-height:1.5;color:#8A827A;font-family:ui-monospace,'SFMono-Regular','Courier New',monospace">sin sombra · sólo cambio de fondo</div>
+        <div style="font-size:12.5px;font-weight:600;color:#756C63">Chips inactivos, fondos de foto, separadores. Nunca lleva borde.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="clay" style="height:96px;border-radius:24px;background:#FAF8F5;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#756C63">Elevado</div>
+        <div style="font-size:11.5px;font-weight:500;line-height:1.5;color:#8A827A;font-family:ui-monospace,'SFMono-Regular','Courier New',monospace">inset 2px 2px 4px rgba(255,255,255,.95)<br>inset -3px -4px 7px rgba(186,176,161,.32)<br>9px 13px 26px rgba(176,165,150,.26)</div>
+        <div style="font-size:12.5px;font-weight:600;color:#756C63">Cards, botones, tab bar, FAB. Sólo lo interactivo o la unidad principal.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);gap:44px">
+
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div style="font-size:12px;font-weight:800;color:#8A827A;letter-spacing:.1em">TIPOGRAFÍA · NUNITO</div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;align-items:baseline;gap:16px">
+          <span style="font-size:11px;font-weight:700;color:#9A9188;width:74px;flex-shrink:0">28 / 800</span>
+          <span style="font-size:28px;font-weight:800;line-height:1.1;color:#3B3733">Villa Crespo</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:16px">
+          <span style="font-size:11px;font-weight:700;color:#9A9188;width:74px;flex-shrink:0">20 / 800</span>
+          <span style="font-size:20px;font-weight:800;line-height:1.2;color:#3B3733">Reseñas de vecinos</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:16px">
+          <span style="font-size:11px;font-weight:700;color:#9A9188;width:74px;flex-shrink:0">16 / 700</span>
+          <span style="font-size:16px;font-weight:700;line-height:1.32;color:#3B3733">Cortan Gurruchaga por el pluvial</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:16px">
+          <span style="font-size:11px;font-weight:700;color:#9A9188;width:74px;flex-shrink:0">14 / 400</span>
+          <span style="font-size:14px;font-weight:400;line-height:1.5;color:#756C63">El desvío rige de 7 a 18 hasta el viernes.</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:16px">
+          <span style="font-size:11px;font-weight:700;color:#9A9188;width:74px;flex-shrink:0">12 / 700</span>
+          <span style="font-size:12px;font-weight:700;color:#8A827A">hace 2 h</span>
+        </div>
+      </div>
+      <div style="font-size:12.5px;font-weight:600;color:#8A827A;padding-top:2px">Sin mayúsculas forzadas ni letter-spacing expandido, salvo etiquetas de 10–11 px.</div>
+
+      <div style="font-size:12px;font-weight:800;color:#8A827A;letter-spacing:.1em;padding-top:14px">CATEGORÍAS</div>
+      <div style="display:flex;flex-wrap:wrap;gap:9px">
+        <span style="background:#F7E0D2;color:#9A5227;font-size:11px;font-weight:800;padding:7px 14px;border-radius:999px">Seguridad</span>
+        <span style="background:#F6EBD2;color:#856520;font-size:11px;font-weight:800;padding:7px 14px;border-radius:999px">Obras</span>
+        <span style="background:#E2ECF6;color:#3E6288;font-size:11px;font-weight:800;padding:7px 14px;border-radius:999px">Eventos</span>
+        <span style="background:#EAE7F2;color:#57508A;font-size:11px;font-weight:800;padding:7px 14px;border-radius:999px">Municipio</span>
+        <span style="background:#E1EFE2;color:#35663A;font-size:11px;font-weight:800;padding:7px 14px;border-radius:999px">Comunidad</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div style="font-size:12px;font-weight:800;color:#8A827A;letter-spacing:.1em">COMPONENTES</div>
+
+      <div style="display:flex;gap:12px">
+        <div class="clay-green" style="flex-grow:1;height:56px;border-radius:999px;background:#7BC47F;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#1F4A26">Entrar</div>
+        <div class="clay" style="flex-grow:1;height:56px;border-radius:999px;background:#FAF8F5;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#756C63">Cancelar</div>
+      </div>
+
+      <div class="clay-sunk" style="height:56px;background:#EDEAE3;border-radius:20px;display:flex;align-items:center;gap:11px;padding:0 18px">
+        <span style="display:flex;color:#8A827A;flex-shrink:0"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></span>
+        <span style="font-size:15px;font-weight:500;color:#9A9188">Buscar en el barrio</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="clay" style="height:44px;background:#FAF8F5;border-radius:999px;padding:0 20px;display:flex;align-items:center;font-size:14px;font-weight:700;color:#3B3733">Activo</div>
+        <div style="height:44px;background:#EBE8E1;border-radius:999px;padding:0 18px;display:flex;align-items:center;font-size:14px;font-weight:600;color:#756C63">Inactivo</div>
+        <div class="clay-sm" style="width:44px;height:44px;border-radius:50%;background:#EAE7F2;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#57508A">MF</div>
+        <div class="clay-green" style="width:52px;height:52px;border-radius:50%;background:#7BC47F;display:flex;align-items:center;justify-content:center;color:#1F4A26">
+          <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.5v13M5.5 12h13"/></svg>
+        </div>
+      </div>
+
+      <div class="clay" style="background:#FAF8F5;border-radius:28px;padding:18px 20px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="background:#E2ECF6;color:#3E6288;font-size:11px;font-weight:800;padding:6px 13px;border-radius:999px">Eventos</span>
+          <span style="font-size:12px;font-weight:700;color:#8A827A">ayer</span>
+        </div>
+        <div style="font-size:19px;font-weight:700;line-height:1.28;color:#3B3733">Card de contenido</div>
+        <div style="font-size:14px;font-weight:400;line-height:1.5;color:#756C63">Radio 28, padding 18–20, sombra elevada. Nunca anidar una card dentro de otra.</div>
+      </div>
+
+      <div class="clay" style="height:70px;background:#FAF8F5;border-radius:28px;display:flex;align-items:center;justify-content:space-around;padding:0 8px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:76px">
+          <div class="clay-green" style="width:46px;height:34px;border-radius:14px;background:#7BC47F;display:flex;align-items:center;justify-content:center;color:#1F4A26">
+            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.5 12 4l8.5 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-3.5v-6h-7v6H5A1.5 1.5 0 0 1 3.5 19z"/></svg>
+          </div>
+          <span style="font-size:11px;font-weight:800;color:#3B7A41">Inicio</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:76px">
+          <div style="width:46px;height:34px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h16V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/><path d="M3 9.5 4.8 4.6A1 1 0 0 1 5.7 4h12.6a1 1 0 0 1 .9.6L21 9.5"/><path d="M9.5 20.5v-5h5v5"/></svg>
+          </div>
+          <span style="font-size:11px;font-weight:600;color:#9A9188">Mercado</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:76px">
+          <div style="width:46px;height:34px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7.5" width="18" height="13" rx="2.5"/><path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5"/><path d="M3 12.5h18"/></svg>
+          </div>
+          <span style="font-size:11px;font-weight:600;color:#9A9188">Comercios</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:76px">
+          <div style="width:46px;height:34px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+            <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+          </div>
+          <span style="font-size:11px;font-weight:600;color:#9A9188">Foro</span>
+        </div>
+      </div>
+
+      <div style="font-size:12.5px;font-weight:600;color:#8A827A">Altura mínima de toque 44 px. El botón primario lleva texto verde oscuro (#1F4A26), no blanco: sobre #7BC47F el blanco queda en 2:1.</div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

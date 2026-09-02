@@ -1,0 +1,21 @@
+{
+  "artboards": [
+    { "file": "Login.dc.html",    "x": 0,    "y": 0,    "w": 390, "h": 844,  "title": "Login" },
+    { "file": "Main.dc.html",     "x": 470,  "y": 0,    "w": 390, "h": 844,  "title": "Inicio · feed" },
+    { "file": "Noticia.dc.html",  "x": 940,  "y": 0,    "w": 390, "h": 844,  "title": "Detalle de noticia" },
+    { "file": "Mercado.dc.html",  "x": 1410, "y": 0,    "w": 390, "h": 844,  "title": "Mercado" },
+    { "file": "Comercio.dc.html", "x": 0,    "y": 964,  "w": 390, "h": 844,  "title": "Detalle de comercio" },
+    { "file": "Foro.dc.html",     "x": 470,  "y": 964,  "w": 390, "h": 844,  "title": "Foro" },
+    { "file": "Estilos.dc.html",  "x": 940,  "y": 964,  "w": 980, "h": 1240, "title": "Hoja de estilos" }
+  ],
+  "annotations": [
+    {
+      "id": "nota-base",
+      "x": 0,
+      "y": -150,
+      "w": 860,
+      "text": "Somos Barrio · claymorfismo minimalista.\nMockups estáticos, 390x844. Se deja libre la franja superior (~56 px) en vez de dibujar una status bar falsa: en el dispositivo la real se pinta encima.\nEl botón primario usa texto verde oscuro sobre #7BC47F; el blanco no llega al contraste mínimo."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

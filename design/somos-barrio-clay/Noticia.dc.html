@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #F2F0EB; color: #3B3733; -webkit-font-smoothing: antialiased;
+           font-family: 'Nunito', 'Avenir Next Rounded', 'Trebuchet MS', system-ui, sans-serif; }
+    a { color: #4E8F54; text-decoration: none; }
+    a:hover { color: #3C7042; }
+    .clay      { box-shadow: inset 2px 2px 4px rgba(255,255,255,.95), inset -3px -4px 7px rgba(186,176,161,.32), 9px 13px 26px rgba(176,165,150,.26); }
+    .clay-sm   { box-shadow: inset 1px 1px 2px rgba(255,255,255,.95), inset -2px -2px 4px rgba(186,176,161,.30), 4px 6px 13px rgba(176,165,150,.22); }
+    .clay-sunk { box-shadow: inset 4px 5px 9px rgba(181,171,156,.45), inset -3px -3px 7px rgba(255,255,255,.95); }
+    .clay-green{ box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(74,131,78,.42), 8px 12px 24px rgba(123,196,127,.34); }
+    .clay-terra{ box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(178,110,50,.38), 8px 12px 24px rgba(240,168,104,.32); }
+    .clay-sky  { box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(84,124,164,.35), 8px 12px 24px rgba(143,184,222,.32); }
+    .clay-err  { box-shadow: inset 4px 5px 9px rgba(196,150,140,.42), inset -3px -3px 7px rgba(255,255,255,.92); }
+  </style>
+</helmet>
+<div style="width:390px;height:844px;background:#F2F0EB;position:relative;overflow:hidden">
+
+  <div style="padding:58px 22px 0;display:flex;align-items:center;justify-content:space-between">
+    <div class="clay-sm" style="width:46px;height:46px;border-radius:50%;background:#FAF8F5;display:flex;align-items:center;justify-content:center;color:#3B3733">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 5-7 7 7 7"/></svg>
+    </div>
+    <div class="clay-sm" style="width:46px;height:46px;border-radius:50%;background:#FAF8F5;display:flex;align-items:center;justify-content:center;color:#8A827A">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="18" r="1.6"/></svg>
+    </div>
+  </div>
+
+  <div style="padding:20px 22px 0">
+    <div class="clay" style="height:184px;border-radius:30px;background:#E8E3D9;position:relative;overflow:hidden">
+      <div style="position:absolute;width:170px;height:170px;border-radius:50%;background:#8FB8DE;opacity:.5;left:-38px;top:46px"></div>
+      <div style="position:absolute;width:120px;height:120px;border-radius:40px;background:#F0A868;opacity:.48;right:36px;top:-30px;transform:rotate(20deg)"></div>
+      <div style="position:absolute;width:104px;height:104px;border-radius:50%;background:#7BC47F;opacity:.46;right:-22px;bottom:-26px"></div>
+    </div>
+  </div>
+
+  <div style="padding:20px 22px 0;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="background:#F6EBD2;color:#856520;font-size:11px;font-weight:800;padding:6px 13px;border-radius:999px;letter-spacing:.02em">Obras</span>
+      <span style="font-size:12px;font-weight:700;color:#8A827A">3 min de lectura</span>
+    </div>
+
+    <div style="font-size:25px;font-weight:800;line-height:1.22;color:#3B3733;text-wrap:pretty">Cortan Gurruchaga entre Castillo y Vera por el pluvial</div>
+
+    <div style="display:flex;align-items:center;gap:11px;padding-top:2px">
+      <div class="clay-sm" style="width:38px;height:38px;border-radius:50%;background:#E1EFE2;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#35663A;flex-shrink:0">RS</div>
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <span style="font-size:13.5px;font-weight:700;color:#3B3733">Redacción Somos Barrio</span>
+        <span style="font-size:12px;font-weight:600;color:#8A827A">Hoy, 09:14</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:13px;padding-top:6px">
+      <div style="font-size:15px;font-weight:400;line-height:1.62;color:#4A443E;text-wrap:pretty">Aguas y Saneamiento empezó el recambio del conducto pluvial que corre por debajo de Gurruchaga. El corte total va de Castillo a Vera y se mantiene de 7 a 18 hasta el viernes.</div>
+      <div style="font-size:15px;font-weight:400;line-height:1.62;color:#4A443E;text-wrap:pretty">Las líneas 106 y 168 desvían por Serrano y vuelven a su recorrido en Padilla. No hay cambios en las paradas de Corrientes.</div>
+      <div style="font-size:15px;font-weight:400;line-height:1.62;color:#4A443E;text-wrap:pretty">Los vecinos de la cuadra pueden pedir el permiso de acceso vehicular en la comuna.</div>
+    </div>
+  </div>
+
+  <div class="clay" style="position:absolute;left:22px;right:22px;bottom:28px;height:64px;background:#FAF8F5;border-radius:26px;display:flex;align-items:center;justify-content:space-around;padding:0 6px">
+    <div style="display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;color:#756C63">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4.5h11a1 1 0 0 1 1 1v14l-6.5-4-6.5 4v-14a1 1 0 0 1 1-1Z"/></svg>
+      <span style="font-size:13.5px;font-weight:700">Guardar</span>
+    </div>
+    <div style="width:1px;height:26px;background:#E3DED4"></div>
+    <div style="display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;color:#756C63">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+      <span style="font-size:13.5px;font-weight:700">12</span>
+    </div>
+    <div style="width:1px;height:26px;background:#E3DED4"></div>
+    <div style="display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;color:#756C63">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5V4m0 0L8 8m4-4 4 4"/><path d="M4.5 14v4.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V14"/></svg>
+      <span style="font-size:13.5px;font-weight:700">Compartir</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
