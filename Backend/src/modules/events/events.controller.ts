@@ -3,12 +3,12 @@ import { eventsService } from "./events.service";
 
 export const eventsController = {
   async list(req: Request, res: Response): Promise<void> {
-    const result = await eventsService.list(req.params.barrioSlug, req.query as any);
+    const result = await eventsService.list(req.params.barrioSlug, req.user!.id, req.query as any);
     res.json({ success: true, data: result });
   },
 
   async getById(req: Request, res: Response): Promise<void> {
-    const event = await eventsService.getById(req.params.barrioSlug, req.params.eventId);
+    const event = await eventsService.getById(req.params.barrioSlug, req.params.eventId, req.user!.id);
     res.json({ success: true, data: event });
   },
 

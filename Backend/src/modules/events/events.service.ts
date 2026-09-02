@@ -9,7 +9,7 @@ type CreateEventInput = {
   location: string;
 };
 
-const userSelect = { id: true, name: true, avatarUrl: true };
+const userSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
 
 async function resolveBarrio(barrioSlug: string) {
   const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug } });
@@ -18,13 +18,13 @@ async function resolveBarrio(barrioSlug: string) {
 }
 
 export const eventsService = {
-  async list(barrioSlug: string, opts: { upcoming: boolean; page: number; limit: number }) {
+  async list(barrioSlug: string, userId: string, opts: { upcoming: boolean; page: number; limit: number }) {
     const barrio = await resolveBarrio(barrioSlug);
     const skip = (opts.page - 1) * opts.limit;
 
     const where = {
       barrioId: barrio.id,
-      ...(opts.upcoming ? { date: { gte: new Date() } } : {})
+      ...(opts.upcoming ? { date: { gte: new Date() } } : { date: { lt: new Date() } })
     };
 
     const [items, total] = await Promise.all([
@@ -32,33 +32,44 @@ export const eventsService = {
         where,
         skip,
         take: opts.limit,
-        orderBy: { date: "asc" },
+        orderBy: opts.upcoming ? { date: "asc" } : { date: "desc" },
         include: {
           user: { select: userSelect },
-          _count: { select: { rsvps: true } }
+          _count: { select: { rsvps: { where: { status: EventRsvpStatus.GOING } } } },
+          rsvps: { where: { userId }, select: { status: true } }
         }
       }),
       prisma.event.count({ where })
     ]);
 
-    return { items, total, page: opts.page, limit: opts.limit };
+    const formattedItems = items.map(item => ({
+      ...item,
+      myRsvp: item.rsvps[0]?.status || null,
+      rsvps: undefined
+    }));
+
+    return { items: formattedItems, total, page: opts.page, limit: opts.limit };
   },
 
-  async getById(barrioSlug: string, eventId: string) {
+  async getById(barrioSlug: string, eventId: string, userId: string) {
     const barrio = await resolveBarrio(barrioSlug);
 
     const event = await prisma.event.findFirst({
       where: { id: eventId, barrioId: barrio.id },
       include: {
         user: { select: userSelect },
-        rsvps: {
-          include: { user: { select: userSelect } }
-        }
+        _count: { select: { rsvps: { where: { status: EventRsvpStatus.GOING } } } },
+        rsvps: { where: { userId }, select: { status: true } }
       }
     });
 
     if (!event) throw new ApiError(404, "Evento no encontrado");
-    return event;
+    
+    return {
+      ...event,
+      myRsvp: event.rsvps[0]?.status || null,
+      rsvps: undefined
+    };
   },
 
   async create(barrioSlug: string, userId: string, input: CreateEventInput) {

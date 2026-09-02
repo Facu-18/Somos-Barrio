@@ -22,7 +22,7 @@ interface MarketItem {
 
 export default function MarketScreen() {
   const { data: user, isLoading: isLoadingUser } = useAuth();
-  const barrioSlug = user?.barrio?.slug || 'palermo';
+  const barrioSlug = user!.barrio!.slug;
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['market', barrioSlug],
@@ -85,7 +85,7 @@ export default function MarketScreen() {
                 key={item.id} 
                 style={styles.card}
                 activeOpacity={0.8}
-                onPress={() => router.push(`/(app)/market/${item.id}`)}
+                onPress={() => router.push({ pathname: '/(app)/market/[id]', params: { id: item.id } })}
               >
                 <View style={[styles.imageContainer, { backgroundColor: pStyle.bg }]}>
                   {item.images && item.images.length > 0 ? (

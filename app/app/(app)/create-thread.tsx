@@ -22,7 +22,7 @@ type ThreadForm = z.infer<typeof threadSchema>;
 export default function CreateThreadScreen() {
   const { subforumSlug } = useLocalSearchParams<{ subforumSlug: string }>();
   const { data: user } = useAuth();
-  const barrioSlug = user?.barrio?.slug || 'palermo';
+  const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
   const [globalError, setGlobalError] = useState('');
 

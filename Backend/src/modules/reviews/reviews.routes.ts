@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { validate } from "../../middlewares/validate";
-import { requireAuth } from "../../middlewares/auth";
+import { requireAuth, requireBarrioMember } from "../../middlewares/auth";
 import { reviewParamSchema, createReviewSchema } from "./reviews.schema";
 import { reviewsController } from "./reviews.controller";
 
@@ -16,6 +16,7 @@ reviewsRouter.get(
 reviewsRouter.post(
   "/",
   requireAuth,
+  requireBarrioMember,
   validate({ params: reviewParamSchema, body: createReviewSchema }),
   asyncHandler(reviewsController.create)
 );

@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 
-const userSelect = { id: true, name: true, avatarUrl: true };
+const userSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
 
 export const messagesService = {
   async list(userId: string, opts: { type: "inbox" | "sent"; page: number; limit: number }) {

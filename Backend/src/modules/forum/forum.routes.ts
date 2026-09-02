@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { validate } from "../../middlewares/validate";
-import { requireAuth } from "../../middlewares/auth";
+import { requireAuth, requireBarrioMember } from "../../middlewares/auth";
 import {
   forumListQuerySchema,
   forumSubforumParamSchema,
@@ -36,6 +36,7 @@ forumRouter.get(
 forumRouter.post(
   "/:subforumSlug/threads",
   requireAuth,
+  requireBarrioMember,
   validate({ params: forumSubforumParamSchema, body: createThreadSchema }),
   asyncHandler(forumController.createThread)
 );
@@ -44,6 +45,7 @@ forumRouter.post(
 forumRouter.post(
   "/:subforumSlug/threads/:threadId/replies",
   requireAuth,
+  requireBarrioMember,
   validate({ params: forumThreadParamSchema, body: createReplySchema }),
   asyncHandler(forumController.createReply)
 );
@@ -52,6 +54,7 @@ forumRouter.post(
 forumRouter.delete(
   "/:subforumSlug/threads/:threadId",
   requireAuth,
+  requireBarrioMember,
   validate({ params: forumThreadParamSchema }),
   asyncHandler(forumController.deleteThread)
 );
@@ -60,6 +63,7 @@ forumRouter.delete(
 forumRouter.post(
   "/:subforumSlug/threads/:threadId/vote",
   requireAuth,
+  requireBarrioMember,
   validate({ params: forumThreadParamSchema, body: voteSchema }),
   asyncHandler(forumController.voteThread)
 );
@@ -68,6 +72,7 @@ forumRouter.post(
 forumRouter.post(
   "/:subforumSlug/threads/:threadId/replies/:replyId/vote",
   requireAuth,
+  requireBarrioMember,
   validate({ params: replyIdParamSchema, body: voteSchema }),
   asyncHandler(forumController.voteReply)
 );

@@ -33,7 +33,7 @@ npm run prisma:studio
 
 Setup desde checkout limpio: `npm ci`, `cp .env.example .env`, `docker compose up -d`, `npx prisma migrate deploy`, `npm run prisma:generate`, `npm run seed`.
 
-Docker levanta PostgreSQL en **5434** (no 5432) y Redis en 6379. El init script crea `somos-barrio-test` solo la primera vez que se inicializa el volumen.
+Docker levanta PostgreSQL en **5432** y Redis en 6379. El init script crea `somos-barrio-test` solo la primera vez que se inicializa el volumen.
 
 No hay script de lint en el backend.
 

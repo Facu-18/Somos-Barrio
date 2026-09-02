@@ -21,7 +21,7 @@ type CreateBusinessInput = {
 
 type UpdateBusinessInput = Partial<Omit<CreateBusinessInput, "slug">>;
 
-const ownerSelect = { id: true, name: true, avatarUrl: true };
+const ownerSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
 
 async function resolveBarrio(barrioSlug: string) {
   const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug } });
@@ -62,7 +62,22 @@ export const businessesService = {
       prisma.business.count({ where })
     ]);
 
-    return { items, total, page: opts.page, limit: opts.limit };
+    const itemsWithRatings = await Promise.all(items.map(async (item) => {
+      const stats = await prisma.review.aggregate({
+        where: { businessId: item.id },
+        _avg: { rating: true },
+        _count: { id: true }
+      });
+      return {
+        ...item,
+        ratingStats: {
+          average: stats._avg.rating || 0,
+          total: stats._count.id || 0
+        }
+      };
+    }));
+
+    return { items: itemsWithRatings, total, page: opts.page, limit: opts.limit };
   },
 
   async getBySlug(barrioSlug: string, businessSlug: string) {
@@ -75,13 +90,26 @@ export const businessesService = {
         reviews: {
           take: 10,
           orderBy: { createdAt: "desc" },
-          include: { user: { select: { id: true, name: true, avatarUrl: true } } }
+          include: { user: { select: { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true } } }
         }
       }
     });
 
     if (!business) throw new ApiError(404, "Comercio no encontrado");
-    return business;
+
+    const stats = await prisma.review.aggregate({
+      where: { businessId: business.id },
+      _avg: { rating: true },
+      _count: { id: true }
+    });
+
+    return {
+      ...business,
+      ratingStats: {
+        average: stats._avg.rating || 0,
+        total: stats._count.id || 0
+      }
+    };
   },
 
   async create(barrioSlug: string, ownerId: string, input: CreateBusinessInput) {

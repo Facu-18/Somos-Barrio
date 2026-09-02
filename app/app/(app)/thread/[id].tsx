@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
@@ -13,18 +13,72 @@ interface Reply {
   content: string;
   createdAt: string;
   upVotes: number;
+  parentReplyId: string | null;
   user: {
     name: string;
+    nickname?: string;
+    avatarUrl?: string;
   };
 }
+
+interface ReplyNode extends Reply {
+  children: ReplyNode[];
+}
+
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('es-AR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || 'XX';
+
+const ReplyItem = ({ reply, depth = 0, onReply }: { reply: ReplyNode, depth?: number, onReply: (id: string, name: string) => void }) => {
+  const visualDepth = Math.min(depth, 3);
+  const paddingLeft = visualDepth * 16;
+  
+  return (
+    <View style={{ paddingLeft, marginBottom: 16 }}>
+      <View style={[styles.replyCard, depth > 0 && styles.replyCardNested]}>
+        <View style={styles.replyHeader}>
+          <View style={styles.replyAuthorRow}>
+            <View style={[styles.avatar, styles.replyAvatar]}>
+              {reply.user?.avatarUrl ? (
+                <Image source={{ uri: reply.user.avatarUrl }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.replyAvatarText}>{getInitials(reply.user?.name)}</Text>
+              )}
+            </View>
+            <View>
+              <Text style={styles.replyAuthorName}>{reply.user?.nickname || reply.user?.name}</Text>
+              <Text style={styles.timeAgo}>{formatDate(reply.createdAt)}</Text>
+            </View>
+          </View>
+          <TouchableOpacity 
+            style={styles.replyActionBtn}
+            onPress={() => onReply(reply.id, reply.user?.nickname || reply.user?.name)}
+          >
+            <MaterialCommunityIcons name="reply" size={16} color={ClayTheme.colors.primary} />
+            <Text style={styles.replyActionText}>Responder</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.replyContent}>{reply.content}</Text>
+      </View>
+      
+      {reply.children.map(child => (
+        <ReplyItem key={child.id} reply={child} depth={depth + 1} onReply={onReply} />
+      ))}
+    </View>
+  );
+};
 
 export default function ThreadDetailScreen() {
   const { id, subforumSlug } = useLocalSearchParams<{ id: string, subforumSlug: string }>();
   const { data: user } = useAuth();
-  const barrioSlug = user?.barrio?.slug || 'palermo';
+  const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
 
   const [replyContent, setReplyContent] = useState('');
+  const [replyingTo, setReplyingTo] = useState<{id: string, name: string} | null>(null);
 
   const { data: thread, isLoading } = useQuery({
     queryKey: ['thread-detail', barrioSlug, subforumSlug, id],
@@ -37,11 +91,16 @@ export default function ThreadDetailScreen() {
 
   const replyMutation = useMutation({
     mutationFn: async (content: string) => {
-      const response = await api.post(`/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${id}/replies`, { content });
+      const payload: any = { content };
+      if (replyingTo) {
+        payload.parentReplyId = replyingTo.id;
+      }
+      const response = await api.post(`/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${id}/replies`, payload);
       return response.data.data;
     },
     onSuccess: () => {
       setReplyContent('');
+      setReplyingTo(null);
       queryClient.invalidateQueries({ queryKey: ['thread-detail', barrioSlug, subforumSlug, id] });
     },
     onError: (err) => {
@@ -54,12 +113,28 @@ export default function ThreadDetailScreen() {
     replyMutation.mutate(replyContent);
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('es-AR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const buildReplyTree = (replies: Reply[] = []): ReplyNode[] => {
+    const map = new Map<string, ReplyNode>();
+    const roots: ReplyNode[] = [];
+    
+    replies.forEach(r => map.set(r.id, { ...r, children: [] }));
+    
+    replies.forEach(r => {
+      if (r.parentReplyId) {
+        const parent = map.get(r.parentReplyId);
+        if (parent) {
+          parent.children.push(map.get(r.id)!);
+        } else {
+          // Fallback if parent missing for some reason
+          roots.push(map.get(r.id)!);
+        }
+      } else {
+        roots.push(map.get(r.id)!);
+      }
+    });
+    
+    return roots;
   };
-
-  const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || 'XX';
 
   if (isLoading) {
     return (
@@ -76,6 +151,8 @@ export default function ThreadDetailScreen() {
       </View>
     );
   }
+
+  const replyTree = buildReplyTree(thread.replies);
 
   return (
     <KeyboardAvoidingView 
@@ -95,10 +172,14 @@ export default function ThreadDetailScreen() {
         <View style={styles.originalPost}>
           <View style={styles.authorRow}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{getInitials(thread.user?.name)}</Text>
+              {thread.user?.avatarUrl ? (
+                <Image source={{ uri: thread.user.avatarUrl }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarText}>{getInitials(thread.user?.name)}</Text>
+              )}
             </View>
             <View>
-              <Text style={styles.authorName}>{thread.user?.name}</Text>
+              <Text style={styles.authorName}>{thread.user?.nickname || thread.user?.name}</Text>
               <Text style={styles.timeAgo}>{formatDate(thread.createdAt)}</Text>
             </View>
           </View>
@@ -120,49 +201,52 @@ export default function ThreadDetailScreen() {
 
         {/* Replies */}
         <View style={styles.repliesSection}>
-          {thread.replies?.map((reply: Reply) => (
-            <View key={reply.id} style={styles.replyCard}>
-              <View style={styles.replyAuthorRow}>
-                <View style={[styles.avatar, styles.replyAvatar]}>
-                  <Text style={styles.replyAvatarText}>{getInitials(reply.user?.name)}</Text>
-                </View>
-                <View>
-                  <Text style={styles.replyAuthorName}>{reply.user?.name}</Text>
-                  <Text style={styles.timeAgo}>{formatDate(reply.createdAt)}</Text>
-                </View>
-              </View>
-              <Text style={styles.replyContent}>{reply.content}</Text>
-            </View>
+          {replyTree.map(node => (
+            <ReplyItem 
+              key={node.id} 
+              reply={node} 
+              onReply={(id, name) => setReplyingTo({id, name})} 
+            />
           ))}
           
-          {(!thread.replies || thread.replies.length === 0) && (
+          {replyTree.length === 0 && (
             <Text style={styles.emptyRepliesText}>Sé el primero en responder.</Text>
           )}
         </View>
       </ScrollView>
 
-      {/* Reply Input Area */}
-      <View style={styles.inputArea}>
-        <View style={styles.inputWrapper}>
-          <ClayInput 
-            placeholder="Escribí una respuesta..."
-            value={replyContent}
-            onChangeText={setReplyContent}
-            multiline
-            style={styles.replyInput}
-          />
+      {/* Contextual Input Area */}
+      <View style={styles.inputContainerWrapper}>
+        {replyingTo && (
+          <View style={styles.replyContextBanner}>
+            <Text style={styles.replyContextText}>Respondiendo a <Text style={{fontFamily: ClayTheme.typography.fontFamily.bold}}>{replyingTo.name}</Text></Text>
+            <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyContextClose}>
+              <MaterialCommunityIcons name="close" size={18} color={ClayTheme.colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        )}
+        <View style={styles.inputArea}>
+          <View style={styles.inputWrapper}>
+            <ClayInput 
+              placeholder={replyingTo ? "Escribí tu respuesta..." : "Comentar en el hilo..."}
+              value={replyContent}
+              onChangeText={setReplyContent}
+              multiline
+              style={styles.replyInput}
+            />
+          </View>
+          <TouchableOpacity 
+            style={[styles.sendButton, !replyContent.trim() && styles.sendButtonDisabled]} 
+            onPress={handleSendReply}
+            disabled={!replyContent.trim() || replyMutation.isPending}
+          >
+            {replyMutation.isPending ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <MaterialCommunityIcons name="send" size={20} color="white" />
+            )}
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity 
-          style={[styles.sendButton, !replyContent.trim() && styles.sendButtonDisabled]} 
-          onPress={handleSendReply}
-          disabled={!replyContent.trim() || replyMutation.isPending}
-        >
-          {replyMutation.isPending ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <MaterialCommunityIcons name="send" size={20} color="white" />
-          )}
-        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -229,6 +313,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 999,
+  },
   avatarText: {
     fontFamily: ClayTheme.typography.fontFamily.extraBold,
     fontSize: 16,
@@ -276,35 +365,62 @@ const styles = StyleSheet.create({
     color: ClayTheme.colors.textMuted,
   },
   repliesSection: {
-    paddingHorizontal: 22,
-    gap: 16,
+    paddingHorizontal: 16,
   },
   replyCard: {
     backgroundColor: ClayTheme.colors.surface,
-    padding: 20,
-    borderRadius: 24,
+    padding: 16,
+    borderRadius: 20,
     ...ClayTheme.shadows.elevated,
+  },
+  replyCardNested: {
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  replyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
   },
   replyAuthorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 12,
   },
   replyAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#E1EFE2',
   },
   replyAvatarText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#35663A',
   },
   replyAuthorName: {
     fontFamily: ClayTheme.typography.fontFamily.bold,
     fontSize: 14,
     color: ClayTheme.colors.text,
+  },
+  replyActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: ClayTheme.colors.inputBg,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  replyActionText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    fontSize: 11,
+    color: ClayTheme.colors.primary,
   },
   replyContent: {
     fontFamily: ClayTheme.typography.fontFamily.medium,
@@ -319,14 +435,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
   },
+  inputContainerWrapper: {
+    backgroundColor: ClayTheme.colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+  },
+  replyContextBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#F3F4F6',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  replyContextText: {
+    fontFamily: ClayTheme.typography.fontFamily.medium,
+    fontSize: 12,
+    color: ClayTheme.colors.textMuted,
+  },
+  replyContextClose: {
+    padding: 4,
+  },
   inputArea: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: 16,
     paddingBottom: Platform.OS === 'ios' ? 34 : 16,
-    backgroundColor: ClayTheme.colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
     gap: 12,
   },
   inputWrapper: {
@@ -336,7 +472,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     maxHeight: 120,
     paddingTop: 14,
-    marginBottom: 0, // Override default margin
+    marginBottom: 0,
   },
   sendButton: {
     width: 50,
@@ -346,7 +482,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...ClayTheme.shadows.elevated,
-    marginBottom: 4, // Align with input
+    marginBottom: 4,
   },
   sendButtonDisabled: {
     backgroundColor: ClayTheme.colors.textMuted,

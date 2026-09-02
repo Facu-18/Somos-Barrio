@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
@@ -23,12 +23,14 @@ interface Thread {
   };
   user: {
     name: string;
+    nickname?: string;
+    avatarUrl?: string;
   };
 }
 
 export default function ForumScreen() {
   const { data: user, isLoading: isLoadingUser } = useAuth();
-  const barrioSlug = user?.barrio?.slug || 'palermo';
+  const barrioSlug = user!.barrio!.slug;
 
   const [selectedSubforum, setSelectedSubforum] = useState<string | null>(null);
 
@@ -47,7 +49,7 @@ export default function ForumScreen() {
     if (subforums && subforums.length > 0 && !selectedSubforum) {
       setSelectedSubforum(subforums[0].slug);
     }
-  }, [subforums]);
+  }, [subforums, selectedSubforum]);
 
   // Fetch threads for selected subforum
   const { data: threads, isLoading: isLoadingThreads, refetch, isRefetching } = useQuery({
@@ -130,12 +132,16 @@ export default function ForumScreen() {
                   key={thread.id} 
                   style={styles.threadCard}
                   activeOpacity={0.8}
-                  onPress={() => router.push(`/(app)/thread/${thread.id}?subforumSlug=${selectedSubforum}`)}
+                  onPress={() => router.push({ pathname: '/(app)/thread/[id]', params: { id: thread.id, subforumSlug: selectedSubforum } })}
                 >
                   <View style={[styles.avatar, { backgroundColor: avatarStyle.bg }]}>
-                    <Text style={[styles.avatarText, { color: avatarStyle.text }]}>
-                      {getInitials(thread.user?.name || 'XX')}
-                    </Text>
+                    {thread.user?.avatarUrl ? (
+                      <Image source={{ uri: thread.user.avatarUrl }} style={styles.avatarImage} />
+                    ) : (
+                      <Text style={[styles.avatarText, { color: avatarStyle.text }]}>
+                        {getInitials(thread.user?.name || 'XX')}
+                      </Text>
+                    )}
                   </View>
                   
                   <View style={styles.threadContent}>
@@ -261,6 +267,11 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 21,
   },
   avatarText: {
     fontFamily: ClayTheme.typography.fontFamily.extraBold,

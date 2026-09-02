@@ -27,8 +27,11 @@ type SafeUser = {
   id: string;
   email: string;
   name: string;
+  nickname: string | null;
+  bio: string | null;
   role: UserRole;
   avatarUrl: string | null;
+  avatarPublicId: string | null;
   barrioId: string | null;
   barrio: { id: string; name: string; slug: string } | null;
   createdAt: Date;
@@ -55,8 +58,11 @@ const toSafeUser = (user: {
   id: string;
   email: string;
   name: string;
+  nickname: string | null;
+  bio: string | null;
   role: UserRole;
   avatarUrl: string | null;
+  avatarPublicId: string | null;
   barrioId: string | null;
   barrio: { id: string; name: string; slug: string } | null;
   createdAt: Date;
@@ -64,8 +70,11 @@ const toSafeUser = (user: {
   id: user.id,
   email: user.email,
   name: user.name,
+  nickname: user.nickname,
+  bio: user.bio,
   role: user.role,
   avatarUrl: user.avatarUrl,
+  avatarPublicId: user.avatarPublicId,
   barrioId: user.barrioId,
   barrio: user.barrio,
   createdAt: user.createdAt
@@ -75,8 +84,11 @@ const safeUserSelect = {
   id: true,
   email: true,
   name: true,
+  nickname: true,
+  bio: true,
   role: true,
   avatarUrl: true,
+  avatarPublicId: true,
   barrioId: true,
   createdAt: true,
   barrio: { select: { id: true, name: true, slug: true } }
@@ -131,11 +143,10 @@ export const authService = {
     if (existing) throw new ApiError(409, "El email ya esta registrado");
 
     let barrioId: string | null = null;
-    if (input.barrioSlug) {
-      const barrio = await prisma.barrio.findUnique({ where: { slug: input.barrioSlug } });
-      if (!barrio) throw new ApiError(400, "El barrio indicado no existe");
-      barrioId = barrio.id;
-    }
+    const targetSlug = input.barrioSlug || "parque-liceo";
+    const barrio = await prisma.barrio.findUnique({ where: { slug: targetSlug } });
+    if (!barrio) throw new ApiError(400, "El barrio indicado no existe");
+    barrioId = barrio.id;
 
     const passwordHash = await bcrypt.hash(input.password, 12);
     const { user, refreshToken } = await prisma.$transaction(async (transaction) => {
@@ -197,6 +208,20 @@ export const authService = {
   async me(userId: string): Promise<SafeUser> {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: safeUserSelect });
     if (!user) throw new ApiError(401, "Usuario no encontrado");
+    return toSafeUser(user);
+  },
+
+  async updateProfile(userId: string, data: { nickname?: string; bio?: string; avatarUrl?: string; avatarPublicId?: string }): Promise<SafeUser> {
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        nickname: data.nickname,
+        bio: data.bio,
+        avatarUrl: data.avatarUrl === "" ? null : data.avatarUrl,
+        avatarPublicId: data.avatarPublicId === "" ? null : data.avatarPublicId
+      },
+      select: safeUserSelect
+    });
     return toSafeUser(user);
   }
 };

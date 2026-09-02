@@ -8,7 +8,7 @@ export const API = "/api/v1";
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: process.env["DATABASE_URL"] ?? "postgresql://postgres:postgres@localhost:5434/somos-barrio-test?schema=public",
+      url: process.env["DATABASE_URL"] ?? "postgresql://postgres:postgres@localhost:5432/somos-barrio-test?schema=public",
     },
   },
 });

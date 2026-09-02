@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, Alert, Image } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../constants/ClayTheme';
 import { ClayButton } from '../../components/ClayButton';
@@ -26,7 +26,7 @@ export default function ProfileScreen() {
             try {
               // Attempt API logout to clear refresh token on backend
               await api.post('/auth/mobile/logout');
-            } catch (e) {
+            } catch {
               console.log('Error logging out on backend, continuing local logout');
             }
             
@@ -60,16 +60,26 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.profileCard}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{getInitials(user?.name || '')}</Text>
+            {user?.avatarUrl ? (
+              <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarText}>{getInitials(user?.name || '')}</Text>
+            )}
           </View>
-          <Text style={styles.userName}>{user?.name}</Text>
+          <Text style={styles.userName}>{user?.nickname || user?.name}</Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
+          {user?.bio && <Text style={styles.userBio}>{user.bio}</Text>}
           <View style={styles.roleBadge}>
             <Text style={styles.roleText}>{user?.barrio?.name || 'Cargando...'}</Text>
           </View>
         </View>
 
         <View style={styles.actions}>
+          <ClayButton 
+            title="Editar perfil" 
+            onPress={() => router.push('/(app)/edit-profile')} 
+            style={styles.editButton}
+          />
           <ClayButton 
             title="Cerrar sesión" 
             onPress={handleLogout} 
@@ -150,6 +160,18 @@ const styles = StyleSheet.create({
     color: ClayTheme.colors.textMuted,
     marginBottom: 16,
   },
+  userBio: {
+    fontFamily: ClayTheme.typography.fontFamily.medium,
+    fontSize: 14,
+    color: ClayTheme.colors.text,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 45,
+  },
   roleBadge: {
     backgroundColor: '#E1EFE2',
     paddingHorizontal: 16,
@@ -163,6 +185,10 @@ const styles = StyleSheet.create({
   },
   actions: {
     width: '100%',
+    gap: 16,
+  },
+  editButton: {
+    backgroundColor: ClayTheme.colors.primary,
   },
   logoutButton: {
     backgroundColor: ClayTheme.colors.error,

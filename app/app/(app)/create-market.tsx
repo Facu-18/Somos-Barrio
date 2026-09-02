@@ -17,6 +17,7 @@ const marketSchema = z.object({
   title: z.string().min(3, 'El título es muy corto').max(255),
   description: z.string().min(5, 'Escribe una mejor descripción').max(2000),
   price: z.string().optional(),
+  whatsapp: z.string().regex(/^\+[1-9]\d{1,14}$/, "Debe ser un número internacional (ej. +54911...)").optional().or(z.literal("")),
   category: z.enum(['ELECTRONICA', 'ROPA', 'MUEBLES', 'DEPORTES', 'SE_BUSCA', 'SE_REGALA', 'OTROS']),
 });
 
@@ -33,7 +34,7 @@ const categories = [
 
 export default function CreateMarketScreen() {
   const { data: user } = useAuth();
-  const barrioSlug = user?.barrio?.slug || 'palermo';
+  const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
   const [globalError, setGlobalError] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
@@ -41,7 +42,7 @@ export default function CreateMarketScreen() {
 
   const { control, handleSubmit, setValue, watch, formState: { errors } } = useForm<MarketForm>({
     resolver: zodResolver(marketSchema),
-    defaultValues: { title: '', description: '', price: '', category: 'OTROS' }
+    defaultValues: { title: '', description: '', price: '', whatsapp: '', category: 'OTROS' }
   });
 
   const selectedCategory = watch('category');
@@ -95,6 +96,7 @@ export default function CreateMarketScreen() {
         description: data.description,
         price: parsedPrice,
         category: data.category,
+        whatsapp: data.whatsapp || undefined,
         images: uploadedUrls,
       });
       return response.data;
@@ -183,6 +185,27 @@ export default function CreateMarketScreen() {
                 value={value}
                 error={errors.price?.message}
               />
+            )}
+          />
+
+          <Controller
+            control={control}
+            name="whatsapp"
+            render={({ field: { onChange, onBlur, value } }) => (
+              <View>
+                <ClayInput
+                  label="WhatsApp (opcional)"
+                  placeholder="+5491100000000"
+                  keyboardType="phone-pad"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                  error={errors.whatsapp?.message}
+                />
+                <Text style={{ fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 11, color: ClayTheme.colors.textMuted, marginLeft: 8, marginTop: 4 }}>
+                  Tu número será visible para todos los vecinos si lo incluyes.
+                </Text>
+              </View>
             )}
           />
 

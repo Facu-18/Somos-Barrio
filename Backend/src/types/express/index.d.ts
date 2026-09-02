@@ -8,6 +8,7 @@ declare global {
         role: UserRole;
         jti: string;
         tokenExp: number;
+        barrioSlug?: string;
       };
     }
   }

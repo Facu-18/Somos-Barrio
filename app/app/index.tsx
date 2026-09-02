@@ -1,6 +1,6 @@
 import { Redirect } from "expo-router";
 
 export default function Index() {
-  // Temporary redirect to auth until auth flow logic is implemented
-  return <Redirect href="/(auth)/login" />;
+  // Redirect to app flow, which is protected by AuthGuard in its layout
+  return <Redirect href="/(app)/(tabs)" />;
 }

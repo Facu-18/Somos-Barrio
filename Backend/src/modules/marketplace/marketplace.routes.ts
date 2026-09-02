@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { validate } from "../../middlewares/validate";
-import { requireAuth } from "../../middlewares/auth";
+import { requireAuth, requireBarrioMember } from "../../middlewares/auth";
 import {
   marketplaceIdParamSchema,
   marketplaceListQuerySchema,
@@ -27,6 +27,7 @@ marketplaceRouter.get(
 marketplaceRouter.post(
   "/",
   requireAuth,
+  requireBarrioMember,
   validate({ body: createMarketplacePostSchema }),
   asyncHandler(marketplaceController.create)
 );
@@ -34,6 +35,7 @@ marketplaceRouter.post(
 marketplaceRouter.patch(
   "/:postId",
   requireAuth,
+  requireBarrioMember,
   validate({ params: marketplaceIdParamSchema, body: updateMarketplacePostSchema }),
   asyncHandler(marketplaceController.update)
 );
@@ -41,6 +43,7 @@ marketplaceRouter.patch(
 marketplaceRouter.delete(
   "/:postId",
   requireAuth,
+  requireBarrioMember,
   validate({ params: marketplaceIdParamSchema }),
   asyncHandler(marketplaceController.remove)
 );

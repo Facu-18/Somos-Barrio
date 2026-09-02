@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { validate } from "../../middlewares/validate";
-import { requireAuth } from "../../middlewares/auth";
+import { requireAuth, requireBarrioMember } from "../../middlewares/auth";
 import {
   businessListQuerySchema,
   businessSlugParamSchema,
@@ -27,6 +27,7 @@ businessesRouter.get(
 businessesRouter.post(
   "/",
   requireAuth,
+  requireBarrioMember,
   validate({ body: createBusinessSchema }),
   asyncHandler(businessesController.create)
 );
@@ -34,6 +35,7 @@ businessesRouter.post(
 businessesRouter.patch(
   "/:businessSlug",
   requireAuth,
+  requireBarrioMember,
   validate({ params: businessSlugParamSchema, body: updateBusinessSchema }),
   asyncHandler(businessesController.update)
 );
@@ -41,6 +43,7 @@ businessesRouter.patch(
 businessesRouter.delete(
   "/:businessSlug",
   requireAuth,
+  requireBarrioMember,
   validate({ params: businessSlugParamSchema }),
   asyncHandler(businessesController.remove)
 );

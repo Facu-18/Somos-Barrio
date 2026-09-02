@@ -21,7 +21,9 @@ type UpdateNewsInput = Partial<{
 const authorSelect = {
   id: true,
   name: true,
-  avatarUrl: true
+  nickname: true,
+  avatarUrl: true,
+  avatarPublicId: true
 };
 
 async function resolveBarrio(barrioSlug: string) {

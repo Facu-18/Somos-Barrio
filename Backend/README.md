@@ -18,7 +18,7 @@ La API queda en `http://localhost:4000/api/v1` y Swagger UI en `http://localhost
 
 Servicios locales:
 
-- PostgreSQL: `localhost:5434`, base `somos-barrio`.
+- PostgreSQL: `localhost:5432`, base `somos-barrio`.
 - Redis: `localhost:6379`.
 - Expo suele usar `http://localhost:8081` como origen web. `CORS_ORIGIN` acepta una lista separada por comas.
 - Un dispositivo físico debe usar la IP LAN del equipo, no `localhost`.

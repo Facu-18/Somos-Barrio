@@ -1,8 +1,9 @@
 import { UserRole } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
+import { notificationsService } from "../notifications/notifications.service";
 
-const userSelect = { id: true, name: true, avatarUrl: true };
+const userSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
 
 async function resolveBarrio(barrioSlug: string) {
   const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug } });
@@ -62,14 +63,9 @@ export const forumService = {
       include: {
         user: { select: userSelect },
         replies: {
-          where: { parentReplyId: null },
           orderBy: { createdAt: "asc" },
           include: {
-            user: { select: userSelect },
-            childReplies: {
-              orderBy: { createdAt: "asc" },
-              include: { user: { select: userSelect } }
-            }
+            user: { select: userSelect }
           }
         }
       }
@@ -112,17 +108,30 @@ export const forumService = {
     const thread = await prisma.forumThread.findFirst({ where: { id: threadId, subforumId: subforum.id } });
     if (!thread) throw new ApiError(404, "Hilo no encontrado");
 
+    let parent = null;
     if (input.parentReplyId) {
-      const parent = await prisma.forumReply.findUnique({ where: { id: input.parentReplyId } });
+      parent = await prisma.forumReply.findUnique({ where: { id: input.parentReplyId } });
       if (!parent || parent.threadId !== threadId) {
         throw new ApiError(400, "La respuesta padre no pertenece a este hilo");
       }
     }
 
-    return prisma.forumReply.create({
+    const reply = await prisma.forumReply.create({
       data: { ...input, threadId, userId },
       include: { user: { select: userSelect } }
     });
+
+    // Fire & Forget Push Notification
+    const targetUserId = input.parentReplyId ? parent?.userId : thread.userId;
+    if (targetUserId && targetUserId !== userId) {
+      const senderName = reply.user.nickname || reply.user.name;
+      const title = input.parentReplyId ? "Nueva respuesta a tu comentario" : "Nuevo comentario en tu hilo";
+      notificationsService.sendToUser(targetUserId, title, `${senderName}: ${input.content.substring(0, 50)}...`, {
+        url: `/thread/${threadId}`
+      }).catch(err => console.error("Error sending push:", err));
+    }
+
+    return reply;
   },
 
   async voteThread(

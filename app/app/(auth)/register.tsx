@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -9,20 +9,13 @@ import { ClayButton } from '../../components/ClayButton';
 import { ClayInput } from '../../components/ClayInput';
 import { api, setAccessToken } from '../../lib/api';
 import { authStorage } from '../../lib/auth';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-
-interface Barrio {
-  id: string;
-  name: string;
-  slug: string;
-}
 
 const registerSchema = z.object({
   name: z.string().min(2, 'El nombre es muy corto'),
   email: z.string().email('Correo electrónico inválido'),
   password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
-  barrioSlug: z.string().min(2, 'Ingresa un barrio válido'),
 });
 
 type RegisterForm = z.infer<typeof registerSchema>;
@@ -30,25 +23,14 @@ type RegisterForm = z.infer<typeof registerSchema>;
 export default function RegisterScreen() {
   const [globalError, setGlobalError] = useState('');
 
-  const { control, handleSubmit, setValue, watch, formState: { errors } } = useForm<RegisterForm>({
+  const { control, handleSubmit, formState: { errors } } = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       name: '',
       email: '',
       password: '',
-      barrioSlug: '',
     }
   });
-
-  const { data: barrios, isLoading: isLoadingBarrios } = useQuery({
-    queryKey: ['barrios'],
-    queryFn: async () => {
-      const response = await api.get('/barrios');
-      return response.data.data as Barrio[];
-    }
-  });
-
-  const selectedBarrio = watch('barrioSlug');
 
   const registerMutation = useMutation({
     mutationFn: async (data: RegisterForm) => {
@@ -137,37 +119,6 @@ export default function RegisterScreen() {
             )}
           />
           
-          <View style={styles.barrioContainer}>
-            <Text style={styles.label}>Seleccioná tu barrio</Text>
-            {isLoadingBarrios ? (
-              <ActivityIndicator size="small" color={ClayTheme.colors.primary} />
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.barrioScroll}>
-                {barrios?.map(barrio => (
-                  <TouchableOpacity
-                    key={barrio.slug}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      setValue('barrioSlug', barrio.slug, { shouldValidate: true });
-                    }}
-                    style={[
-                      styles.barrioPill, 
-                      selectedBarrio === barrio.slug && styles.barrioPillActive
-                    ]}
-                  >
-                    <Text style={[
-                      styles.barrioText,
-                      selectedBarrio === barrio.slug && styles.barrioTextActive
-                    ]}>
-                      {barrio.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
-            {errors.barrioSlug && <Text style={styles.errorText}>{errors.barrioSlug.message}</Text>}
-          </View>
-
           <ClayButton 
             title={registerMutation.isPending ? "Creando..." : "Crear cuenta"} 
             onPress={handleSubmit(onSubmit)} 

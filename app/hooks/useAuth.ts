@@ -5,6 +5,10 @@ interface User {
   id: string;
   name: string;
   email: string;
+  nickname?: string;
+  bio?: string;
+  avatarUrl?: string;
+  avatarPublicId?: string;
   barrioSlug?: string;
   barrio?: {
     slug: string;

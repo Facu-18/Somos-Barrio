@@ -34,7 +34,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 5434:5432
+          - 5432:5432
 
       redis:
         image: redis:7-alpine
@@ -48,7 +48,7 @@ jobs:
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5434/somos-barrio?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/somos-barrio?schema=public
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci_secret_for_testing_that_is_long_enough
       JWT_EXPIRES_IN: 15m
@@ -81,6 +81,7 @@ jobs:
       - name: Build production artifact
         run: npm run build
 
+
       - name: Apply migrations (main DB)
         run: npx prisma migrate deploy
 
@@ -89,14 +90,43 @@ jobs:
 
       - name: Create test database
         run: |
-          PGPASSWORD=postgres psql -h localhost -p 5434 -U postgres -c 'CREATE DATABASE "somos-barrio-test";'
+          PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -c 'CREATE DATABASE "somos-barrio-test";'
 
       - name: Apply migrations (test DB)
         run: npx prisma migrate deploy
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5434/somos-barrio-test?schema=public
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/somos-barrio-test?schema=public
 
       - name: Run integration tests
         run: npm run test:integration
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5434/somos-barrio-test?schema=public
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/somos-barrio-test?schema=public
+
+  mobile-checks:
+    name: Mobile App Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Type-check
+        run: npx tsc --noEmit

@@ -10,6 +10,7 @@ type CreatePostInput = {
   category: string;
   images: string[];
   location?: string;
+  whatsapp?: string;
 };
 
 type UpdatePostInput = Partial<{
@@ -20,9 +21,10 @@ type UpdatePostInput = Partial<{
   status: MarketplaceStatus;
   images: string[];
   location: string;
+  whatsapp: string;
 }>;
 
-const userSelect = { id: true, name: true, avatarUrl: true };
+const userSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
 
 async function resolveBarrio(barrioSlug: string) {
   const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug } });
@@ -57,6 +59,7 @@ export const marketplaceService = {
           status: true,
           images: true,
           location: true,
+          whatsapp: true,
           views: true,
           createdAt: true,
           user: { select: userSelect }
@@ -92,6 +95,7 @@ export const marketplaceService = {
       data: {
         ...input,
         category: input.category as any,
+        whatsapp: input.whatsapp === "" ? null : input.whatsapp,
         userId,
         barrioId: barrio.id
       },
@@ -117,7 +121,11 @@ export const marketplaceService = {
 
     return prisma.marketplacePost.update({
       where: { id: post.id },
-      data: { ...input, category: input.category as any },
+      data: { 
+        ...input, 
+        category: input.category as any,
+        whatsapp: input.whatsapp === "" ? null : input.whatsapp
+      },
       include: { user: { select: userSelect } }
     });
   },

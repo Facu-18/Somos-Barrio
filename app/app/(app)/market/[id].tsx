@@ -11,7 +11,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 export default function MarketDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: user } = useAuth();
-  const barrioSlug = user?.barrio?.slug || 'palermo';
+  const barrioSlug = user!.barrio!.slug;
 
   const { data: item, isLoading } = useQuery({
     queryKey: ['market-detail', barrioSlug, id],
@@ -47,9 +47,11 @@ export default function MarketDetailScreen() {
   }
 
   const handleContact = () => {
-    // Simulate contact by opening WhatsApp or email if available, otherwise generic alert
-    // Linking.openURL(`whatsapp://send?phone=${item.user.phone}&text=Hola, vi tu publicación "${item.title}"`);
-    alert('Funcionalidad de contacto en desarrollo.');
+    if (item.whatsapp) {
+      Linking.openURL(`whatsapp://send?phone=${item.whatsapp}&text=Hola, vi tu publicación "${item.title}" en Somos Barrio.`);
+    } else {
+      alert('El vendedor no incluyó WhatsApp. El chat interno está en desarrollo.');
+    }
   };
 
   return (
@@ -92,8 +94,12 @@ export default function MarketDetailScreen() {
               <Text style={styles.metaText}>{formatDate(item.createdAt)}</Text>
             </View>
             <View style={styles.metaItem}>
-              <MaterialCommunityIcons name="account" size={16} color={ClayTheme.colors.textMuted} />
-              <Text style={styles.metaText}>{item.user?.name}</Text>
+              {item.user?.avatarUrl ? (
+                <Image source={{ uri: item.user.avatarUrl }} style={{ width: 20, height: 20, borderRadius: 10 }} />
+              ) : (
+                <MaterialCommunityIcons name="account" size={16} color={ClayTheme.colors.textMuted} />
+              )}
+              <Text style={styles.metaText}>{item.user?.nickname || item.user?.name}</Text>
             </View>
           </View>
 
@@ -105,9 +111,19 @@ export default function MarketDetailScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.contactBtn} activeOpacity={0.8} onPress={handleContact}>
-          <MaterialCommunityIcons name="whatsapp" size={24} color="white" />
-          <Text style={styles.contactBtnText}>Contactar al vendedor</Text>
+        <TouchableOpacity 
+          style={[styles.contactBtn, !item.whatsapp && { backgroundColor: ClayTheme.colors.primary }]} 
+          activeOpacity={0.8} 
+          onPress={handleContact}
+        >
+          {item.whatsapp ? (
+            <MaterialCommunityIcons name="whatsapp" size={24} color="white" />
+          ) : (
+            <MaterialCommunityIcons name="message-text" size={24} color="white" />
+          )}
+          <Text style={styles.contactBtnText}>
+            {item.whatsapp ? 'Contactar por WhatsApp' : 'Contactar al vendedor'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>

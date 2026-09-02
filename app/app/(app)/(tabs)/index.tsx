@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { ClayCard } from '../../../components/ClayCard';
@@ -18,7 +18,7 @@ interface NewsItem {
 export default function HomeScreen() {
   const { data: user, isLoading: isLoadingUser } = useAuth();
   
-  const barrioSlug = user?.barrio?.slug || 'palermo'; // Fallback if no barrio
+  const barrioSlug = user!.barrio!.slug; // Fallback if no barrio
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['news', barrioSlug],
@@ -69,9 +69,13 @@ export default function HomeScreen() {
           onPress={() => router.push('/(app)/profile')}
           style={styles.profileAvatar}
         >
-          <Text style={styles.profileAvatarText}>
-            {user?.name?.substring(0, 2).toUpperCase() || 'XX'}
-          </Text>
+          {user?.avatarUrl ? (
+            <Image source={{ uri: user.avatarUrl }} style={styles.profileAvatarImage} />
+          ) : (
+            <Text style={styles.profileAvatarText}>
+              {user?.name?.substring(0, 2).toUpperCase() || 'XX'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
       
@@ -142,6 +146,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...ClayTheme.shadows.elevated,
+  },
+  profileAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
   },
   profileAvatarText: {
     fontFamily: ClayTheme.typography.fontFamily.extraBold,

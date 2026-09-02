@@ -90,8 +90,11 @@ model User {
   id                    String            @id @default(cuid())
   email                 String            @unique
   name                  String
+  nickname              String?
+  bio                   String?
   passwordHash          String?
   avatarUrl             String?
+  avatarPublicId        String?
   role                  UserRole          @default(VECINO)
   authProvider          AuthProvider      @default(LOCAL)
   authProviderAccountId String?
@@ -110,6 +113,7 @@ model User {
   reviews               Review[]
   eventRsvps            EventRsvp[]
   forumVotes            ForumVote[]
+  pushDevices           PushDevice[]
 
   @@index([barrioId])
   @@index([role])
@@ -174,6 +178,7 @@ model MarketplacePost {
   currency    String              @default("ARS")
   category    MarketplaceCategory
   status      MarketplaceStatus   @default(ACTIVE)
+  whatsapp    String?
   images      String[]
   location    String?
   views       Int                 @default(0)
@@ -240,6 +245,7 @@ model ForumReply {
 
   @@index([threadId, createdAt])
   @@index([userId])
+  @@index([parentReplyId])
 }
 
 model ForumVote {
@@ -318,4 +324,16 @@ model Review {
 
   @@unique([userId, businessId])
   @@index([businessId, rating])
+}
+
+model PushDevice {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  String   // "android" | "ios" | "web"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

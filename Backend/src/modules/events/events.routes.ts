@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { validate } from "../../middlewares/validate";
-import { requireAuth } from "../../middlewares/auth";
+import { requireAuth, requireBarrioMember } from "../../middlewares/auth";
 import {
   eventsListQuerySchema,
   eventIdParamSchema,
@@ -15,12 +15,16 @@ const eventsRouter = Router({ mergeParams: true });
 
 eventsRouter.get(
   "/",
+  requireAuth,
+  requireBarrioMember,
   validate({ query: eventsListQuerySchema }),
   asyncHandler(eventsController.list)
 );
 
 eventsRouter.get(
   "/:eventId",
+  requireAuth,
+  requireBarrioMember,
   validate({ params: eventIdParamSchema }),
   asyncHandler(eventsController.getById)
 );
@@ -28,6 +32,7 @@ eventsRouter.get(
 eventsRouter.post(
   "/",
   requireAuth,
+  requireBarrioMember,
   validate({ body: createEventSchema }),
   asyncHandler(eventsController.create)
 );
@@ -35,6 +40,7 @@ eventsRouter.post(
 eventsRouter.patch(
   "/:eventId",
   requireAuth,
+  requireBarrioMember,
   validate({ params: eventIdParamSchema, body: updateEventSchema }),
   asyncHandler(eventsController.update)
 );
@@ -42,6 +48,7 @@ eventsRouter.patch(
 eventsRouter.delete(
   "/:eventId",
   requireAuth,
+  requireBarrioMember,
   validate({ params: eventIdParamSchema }),
   asyncHandler(eventsController.remove)
 );
@@ -49,6 +56,7 @@ eventsRouter.delete(
 eventsRouter.post(
   "/:eventId/rsvp",
   requireAuth,
+  requireBarrioMember,
   validate({ params: eventIdParamSchema, body: rsvpSchema }),
   asyncHandler(eventsController.rsvp)
 );

@@ -12,6 +12,7 @@ import { reviewsRouter }     from "../modules/reviews/reviews.routes";
 import { adminRouter }       from "../modules/admin/admin.routes";
 import { searchRouter }      from "../modules/search/search.routes";
 import { uploadRouter }      from "../modules/upload/upload.routes";
+import { notificationsRouter } from "../modules/notifications/notifications.routes";
 
 const apiRouter = Router();
 
@@ -31,6 +32,7 @@ apiRouter.use("/barrios/:barrioSlug/events",      eventsRouter);
 
 // Recursos de usuario
 apiRouter.use("/messages", messagesRouter);
+apiRouter.use("/notifications", notificationsRouter);
 
 // Reseñas anidadas
 apiRouter.use("/barrios/:barrioSlug/businesses/:businessSlug/reviews", reviewsRouter);

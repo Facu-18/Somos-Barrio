@@ -50,6 +50,11 @@ export const authController = {
     res.json({ success: true, data: user });
   },
 
+  async updateProfile(req: Request, res: Response): Promise<void> {
+    const user = await authService.updateProfile(req.user!.id, req.body);
+    res.json({ success: true, data: user });
+  },
+
   async mobileRegister(req: Request, res: Response): Promise<void> {
     const result = await authService.register(req.body);
     res.status(201).json({ success: true, data: result });

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Image, TouchableOpacity } from 'react-native';
+import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
@@ -14,11 +15,15 @@ interface BusinessItem {
   address: string;
   verified: boolean;
   coverImage: string | null;
+  ratingStats: {
+    average: number;
+    total: number;
+  };
 }
 
 export default function BusinessesScreen() {
   const { data: user, isLoading: isLoadingUser } = useAuth();
-  const barrioSlug = user?.barrio?.slug || 'palermo';
+  const barrioSlug = user!.barrio!.slug;
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['businesses', barrioSlug],
@@ -80,7 +85,12 @@ export default function BusinessesScreen() {
           const pStyle = getPlaceholderStyle(index);
 
           return (
-            <TouchableOpacity key={business.id} activeOpacity={0.8} style={styles.card}>
+            <TouchableOpacity 
+              key={business.id} 
+              activeOpacity={0.8} 
+              style={styles.card}
+              onPress={() => router.push({ pathname: '/(app)/business/[slug]', params: { slug: business.slug } })}
+            >
               <View style={[styles.imageContainer, { backgroundColor: pStyle.bg }]}>
                 {business.coverImage ? (
                   <Image source={{ uri: business.coverImage }} style={styles.image} />
@@ -105,11 +115,16 @@ export default function BusinessesScreen() {
                     {business.category.charAt(0).toUpperCase() + business.category.slice(1).toLowerCase()}
                   </Text>
                   
-                  {/* Mock Rating */}
-                  <View style={styles.ratingContainer}>
-                    <MaterialCommunityIcons name="star" size={16} color="#E0A93F" />
-                    <Text style={styles.ratingText}>4,5</Text>
-                  </View>
+                  {business.ratingStats?.total > 0 ? (
+                    <View style={styles.ratingContainer}>
+                      <MaterialCommunityIcons name="star" size={16} color="#E0A93F" />
+                      <Text style={styles.ratingText}>{Number(business.ratingStats?.average || 0).toFixed(1).replace('.0', '')}</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.ratingContainer}>
+                      <Text style={[styles.ratingText, { color: ClayTheme.colors.textMuted }]}>Nuevo</Text>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.addressRow}>

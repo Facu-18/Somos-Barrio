@@ -10,7 +10,7 @@
 ## Backend
 
 - Run from `Backend/`. Clean setup is `npm ci`, copy `.env.example` to `.env`, `docker compose up -d`, `npx prisma migrate deploy`, `npm run prisma:generate`, then optionally `npm run seed`.
-- Docker exposes PostgreSQL on `5434` (not `5432`) and Redis on `6379`. The init script creates `somos-barrio-test` only when the PostgreSQL volume is first initialized.
+- Docker exposes PostgreSQL on `5432` and Redis on `6379`. The init script creates `somos-barrio-test` only when the PostgreSQL volume is first initialized.
 - `src/app.ts` builds the Express app; `src/server.ts` connects services, listens, and shuts down. Integration tests import `app` without opening a port.
 - API modules follow `src/modules/<name>/{routes,controller,schema,service}.ts`. All routes are assembled in `src/routes/index.ts` under `API_PREFIX` (normally `/api/v1`); most domain resources are nested under `/barrios/:barrioSlug`.
 - The OpenAPI document is maintained manually in `src/lib/openapi.ts`. Keep it synchronized when changing routes, validation, request bodies, or responses; Swagger UI is served at `/api/docs`.
