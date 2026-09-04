@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, Image, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
@@ -62,34 +62,37 @@ export default function BusinessesScreen() {
   }
 
   return (
-    <ScrollView 
+    <FlatList
       style={styles.container} 
+      data={data ?? []}
+      keyExtractor={(business) => business.id}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-    >
-      <View style={styles.header}>
-        <Text style={styles.sectionTitle}>Comercios</Text>
-        <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInput}>
-          <MaterialCommunityIcons name="magnify" size={20} color={ClayTheme.colors.textMuted} />
-          <Text style={styles.searchText}>Buscar un comercio</Text>
-        </View>
-      </View>
-
-      <View style={styles.list}>
-        {data?.map((business, index) => {
+      ListHeaderComponent={(
+        <>
+          <View style={styles.header}>
+            <Text style={styles.sectionTitle}>Comercios</Text>
+            <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+          </View>
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInput} accessibilityLabel="Búsqueda de comercios no disponible">
+              <MaterialCommunityIcons name="magnify" size={20} color={ClayTheme.colors.textMuted} />
+              <Text style={styles.searchText}>Buscar un comercio</Text>
+            </View>
+          </View>
+        </>
+      )}
+      renderItem={({ item: business, index }) => {
           const catStyle = getCategoryStyle(business.category);
           const pStyle = getPlaceholderStyle(index);
 
           return (
-            <TouchableOpacity 
-              key={business.id} 
+            <TouchableOpacity
               activeOpacity={0.8} 
               style={styles.card}
               onPress={() => router.push({ pathname: '/(app)/business/[slug]', params: { slug: business.slug } })}
+              accessibilityRole="button"
+              accessibilityLabel={`${business.name}, ${business.address}`}
             >
               <View style={[styles.imageContainer, { backgroundColor: pStyle.bg }]}>
                 {business.coverImage ? (
@@ -134,14 +137,9 @@ export default function BusinessesScreen() {
               </View>
             </TouchableOpacity>
           );
-        })}
-      </View>
-
-      {data?.length === 0 && (
-        <Text style={styles.emptyText}>Aún no hay comercios registrados.</Text>
-      )}
-
-    </ScrollView>
+      }}
+      ListEmptyComponent={<Text style={styles.emptyText}>Aún no hay comercios registrados.</Text>}
+    />
   );
 }
 
@@ -159,9 +157,9 @@ const styles = StyleSheet.create({
   content: {
     paddingTop: 60,
     paddingBottom: 100, // Space for the absolute tab bar
+    paddingHorizontal: 22,
   },
   header: {
-    paddingHorizontal: 22,
     marginBottom: 20,
   },
   sectionTitle: {
@@ -176,7 +174,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   searchContainer: {
-    paddingHorizontal: 22,
     marginBottom: 20,
   },
   searchInput: {
@@ -203,6 +200,7 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     overflow: 'hidden',
     ...ClayTheme.shadows.elevated,
+    marginBottom: 16,
   },
   imageContainer: {
     height: 140,

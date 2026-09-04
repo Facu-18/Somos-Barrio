@@ -9,7 +9,7 @@ import { ClayButton } from '../../components/ClayButton';
 import { ClayInput } from '../../components/ClayInput';
 import { api, setAccessToken } from '../../lib/api';
 import { authStorage } from '../../lib/auth';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const registerSchema = z.object({
@@ -22,6 +22,7 @@ type RegisterForm = z.infer<typeof registerSchema>;
 
 export default function RegisterScreen() {
   const [globalError, setGlobalError] = useState('');
+  const queryClient = useQueryClient();
 
   const { control, handleSubmit, formState: { errors } } = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
@@ -34,12 +35,14 @@ export default function RegisterScreen() {
 
   const registerMutation = useMutation({
     mutationFn: async (data: RegisterForm) => {
-      const response = await api.post('/auth/mobile/register', data);
+      const response = await api.post('/auth/mobile/register', { ...data, barrioSlug: 'parque-liceo' });
       return response.data.data;
     },
     onSuccess: async (data) => {
       setAccessToken(data.accessToken);
       await authStorage.saveRefreshToken(data.refreshToken);
+      await queryClient.cancelQueries({ queryKey: ['auth', 'me'] });
+      queryClient.setQueryData(['auth', 'me'], data.user);
       router.replace('/(app)/(tabs)');
     },
     onError: (error: any) => {

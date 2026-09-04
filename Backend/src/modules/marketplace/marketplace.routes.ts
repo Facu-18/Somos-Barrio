@@ -20,6 +20,8 @@ marketplaceRouter.get(
 
 marketplaceRouter.get(
   "/:postId",
+  requireAuth,
+  requireBarrioMember,
   validate({ params: marketplaceIdParamSchema }),
   asyncHandler(marketplaceController.getById)
 );

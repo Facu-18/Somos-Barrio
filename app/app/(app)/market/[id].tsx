@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TouchableOpacity, Linking, Alert, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
@@ -7,13 +7,16 @@ import { useAuth } from '../../../hooks/useAuth';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { ClayButton } from '../../../components/ClayButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function MarketDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
-  const { data: item, isLoading } = useQuery({
+  const { data: item, isLoading, isError, refetch } = useQuery({
     queryKey: ['market-detail', barrioSlug, id],
     queryFn: async () => {
       const response = await api.get(`/barrios/${barrioSlug}/marketplace/${id}`);
@@ -37,27 +40,30 @@ export default function MarketDetailScreen() {
     );
   }
 
-  if (!item) {
+  if (isError || !item) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>Producto no encontrado</Text>
-        <ClayButton title="Volver" onPress={() => router.back()} style={{ marginTop: 20 }} />
+        <Text style={styles.errorText}>No se pudo cargar la publicación.</Text>
+        <ClayButton title="Reintentar" onPress={() => refetch()} style={{ marginTop: 20 }} />
       </View>
     );
   }
 
-  const handleContact = () => {
-    if (item.whatsapp) {
-      Linking.openURL(`whatsapp://send?phone=${item.whatsapp}&text=Hola, vi tu publicación "${item.title}" en Somos Barrio.`);
-    } else {
-      alert('El vendedor no incluyó WhatsApp. El chat interno está en desarrollo.');
+  const handleContact = async () => {
+    const phone = String(item.whatsapp ?? '').replace(/\D/g, '');
+    if (!phone) return;
+    const message = encodeURIComponent(`Hola, vi tu publicación "${item.title}" en Somos Barrio.`);
+    try {
+      await Linking.openURL(`https://wa.me/${phone}?text=${message}`);
+    } catch {
+      Alert.alert('No se pudo abrir WhatsApp', 'Verificá que WhatsApp esté disponible e intentá nuevamente.');
     }
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+      <View style={[styles.header, { top: insets.top + 8 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Volver">
           <MaterialCommunityIcons name="arrow-left" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
       </View>
@@ -67,7 +73,7 @@ export default function MarketDetailScreen() {
           {item.images && item.images.length > 0 ? (
             <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={styles.imageCarousel}>
               {item.images.map((img: string, index: number) => (
-                <Image key={index} source={{ uri: img }} style={styles.image} />
+                <Image key={img} source={{ uri: img }} style={[styles.image, { width }]} />
               ))}
             </ScrollView>
           ) : (
@@ -110,20 +116,16 @@ export default function MarketDetailScreen() {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <TouchableOpacity 
-          style={[styles.contactBtn, !item.whatsapp && { backgroundColor: ClayTheme.colors.primary }]} 
+          style={styles.contactBtn}
           activeOpacity={0.8} 
           onPress={handleContact}
+          accessibilityRole="link"
+          accessibilityLabel="Contactar por WhatsApp"
         >
-          {item.whatsapp ? (
-            <MaterialCommunityIcons name="whatsapp" size={24} color="white" />
-          ) : (
-            <MaterialCommunityIcons name="message-text" size={24} color="white" />
-          )}
-          <Text style={styles.contactBtnText}>
-            {item.whatsapp ? 'Contactar por WhatsApp' : 'Contactar al vendedor'}
-          </Text>
+          <MaterialCommunityIcons name="whatsapp" size={24} color="white" />
+          <Text style={styles.contactBtnText}>Contactar por WhatsApp</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -148,7 +150,6 @@ const styles = StyleSheet.create({
   },
   header: {
     position: 'absolute',
-    top: 50,
     left: 20,
     zIndex: 10,
   },
@@ -178,7 +179,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   image: {
-    width: 400, // Should be Dimensions.get('window').width ideally, but this works for demo
     height: '100%',
     resizeMode: 'cover',
   },

@@ -15,6 +15,9 @@ describe("Foro — integration", () => {
   let threadId: string;
   let userToken: string;
   let otherToken: string;
+  let thirdToken: string;
+  let crossBarrioToken: string;
+  let firstReplyId: string;
 
   beforeAll(async () => {
     const barrio = await seedBarrio(`forum-barrio-${Date.now()}`);
@@ -27,10 +30,13 @@ describe("Foro — integration", () => {
     });
     subforumSlug = subforum.slug;
 
-    const u1 = await registerAndLogin({ name: "Forista" });
+    const u1 = await registerAndLogin({ name: "Forista", barrioSlug });
     userToken  = u1.token;
-    const u2 = await registerAndLogin({ name: "Otro" });
+    const u2 = await registerAndLogin({ name: "Otro", barrioSlug });
     otherToken = u2.token;
+    thirdToken = (await registerAndLogin({ name: "Tercero", barrioSlug })).token;
+    const otherBarrio = await seedBarrio(`forum-other-${Date.now()}`);
+    crossBarrioToken = (await registerAndLogin({ name: "Forista Externo", barrioSlug: otherBarrio.slug })).token;
   });
 
   it("GET /barrios/:slug/forum — lista subforos", async () => {
@@ -68,6 +74,8 @@ describe("Foro — integration", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.id).toBe(threadId);
     expect(Array.isArray(res.body.data.replies)).toBe(true);
+    expect(res.body.data.user).not.toHaveProperty("name");
+    expect(res.body.data.user).not.toHaveProperty("avatarPublicId");
   });
 
   it("POST /:subforumSlug/threads/:threadId/replies — puede responder", async () => {
@@ -78,6 +86,37 @@ describe("Foro — integration", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.content).toBe("Respuesta de prueba al hilo.");
+    firstReplyId = res.body.data.id;
+  });
+
+  it("encola avisos al padre inmediato y autor del hilo con deep link completo", async () => {
+    const before = await prisma.notificationOutbox.count();
+    const res = await request(app)
+      .post(`${API}/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${threadId}/replies`)
+      .set("Authorization", `Bearer ${thirdToken}`)
+      .send({ content: "Respuesta anidada.", parentReplyId: firstReplyId });
+
+    expect(res.status).toBe(201);
+    const rows = await prisma.notificationOutbox.findMany({
+      where: { createdAt: { gte: new Date(Date.now() - 5000) } },
+      orderBy: { createdAt: "desc" },
+      take: 2
+    });
+    expect(await prisma.notificationOutbox.count()).toBe(before + 2);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.data).toMatchObject({ barrioSlug, subforumSlug, threadId, replyId: res.body.data.id });
+    }
+  });
+
+  it("rechaza respuestas de usuarios de otro barrio", async () => {
+    const before = await prisma.notificationOutbox.count();
+    const res = await request(app)
+      .post(`${API}/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${threadId}/replies`)
+      .set("Authorization", `Bearer ${crossBarrioToken}`)
+      .send({ content: "No deberia publicarse." });
+    expect(res.status).toBe(403);
+    expect(await prisma.notificationOutbox.count()).toBe(before);
   });
 
   it("POST /:subforumSlug/threads/:threadId/vote — voto toggle upvote", async () => {

@@ -12,7 +12,7 @@ describe("Comercios — integration", () => {
     const barrio = await seedBarrio(`biz-barrio-${Date.now()}`);
     barrioSlug = barrio.slug;
 
-    const { token } = await registerAndLogin({ name: "Dueño Negocio" });
+    const { token } = await registerAndLogin({ name: "Dueño Negocio", barrioSlug });
     ownerToken = token;
   });
 

@@ -20,7 +20,7 @@ export const createMarketplacePostSchema = z.object({
   category: z.nativeEnum(MarketplaceCategory),
   images: z.array(z.string().url()).max(5).default([]),
   location: z.string().max(120).optional(),
-  whatsapp: z.string().regex(/^\+[1-9]\d{1,14}$/, "Debe ser un número de WhatsApp internacional (ej. +54911...)").optional()
+  whatsapp: z.string().min(8).max(30)
 });
 
 export const updateMarketplacePostSchema = z.object({
@@ -31,5 +31,5 @@ export const updateMarketplacePostSchema = z.object({
   status: z.nativeEnum(MarketplaceStatus).optional(),
   images: z.array(z.string().url()).max(5).optional(),
   location: z.string().max(120).optional(),
-  whatsapp: z.string().regex(/^\+[1-9]\d{1,14}$/, "Debe ser un número de WhatsApp internacional (ej. +54911...)").optional().or(z.literal(""))
+  whatsapp: z.string().min(8).max(30).optional()
 });

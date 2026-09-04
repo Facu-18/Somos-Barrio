@@ -21,7 +21,7 @@ type CreateBusinessInput = {
 
 type UpdateBusinessInput = Partial<Omit<CreateBusinessInput, "slug">>;
 
-const ownerSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
+const ownerSelect = { id: true, nickname: true, avatarUrl: true };
 
 async function resolveBarrio(barrioSlug: string) {
   const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug } });
@@ -90,7 +90,7 @@ export const businessesService = {
         reviews: {
           take: 10,
           orderBy: { createdAt: "desc" },
-          include: { user: { select: { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true } } }
+          include: { user: { select: ownerSelect } }
         }
       }
     });

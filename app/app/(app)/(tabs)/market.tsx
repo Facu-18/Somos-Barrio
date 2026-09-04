@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, Image, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
@@ -59,33 +59,38 @@ export default function MarketScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <FlatList
+        data={data ?? []}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        columnWrapperStyle={styles.grid}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-      >
-        <View style={styles.header}>
-          <Text style={styles.sectionTitle}>Mercado</Text>
-          <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
-        </View>
-
-        <View style={styles.searchContainer}>
-          <View style={styles.searchInput}>
-            <MaterialCommunityIcons name="magnify" size={20} color={ClayTheme.colors.textMuted} />
-            <Text style={styles.searchText}>Buscar en el mercado</Text>
-          </View>
-        </View>
-
-        <View style={styles.grid}>
-          {data?.map((item, index) => {
+        ListHeaderComponent={(
+          <>
+            <View style={styles.header}>
+              <Text style={styles.sectionTitle}>Mercado</Text>
+              <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+            </View>
+            <View style={styles.searchContainer}>
+              <View style={styles.searchInput} accessibilityLabel="Búsqueda de mercado no disponible">
+                <MaterialCommunityIcons name="magnify" size={20} color={ClayTheme.colors.textMuted} />
+                <Text style={styles.searchText}>Buscar en el mercado</Text>
+              </View>
+            </View>
+          </>
+        )}
+        renderItem={({ item, index }) => {
             const pStyle = getPlaceholderStyle(index);
             const isFree = item.price === 0 || item.price === null;
             
             return (
               <TouchableOpacity 
-                key={item.id} 
                 style={styles.card}
                 activeOpacity={0.8}
                 onPress={() => router.push({ pathname: '/(app)/market/[id]', params: { id: item.id } })}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.title}, ${isFree ? 'Gratis' : `$ ${item.price?.toLocaleString('es-AR')}`}`}
               >
                 <View style={[styles.imageContainer, { backgroundColor: pStyle.bg }]}>
                   {item.images && item.images.length > 0 ? (
@@ -108,19 +113,17 @@ export default function MarketScreen() {
                 </View>
               </TouchableOpacity>
             );
-          })}
-        </View>
-
-        {data?.length === 0 && (
-          <Text style={styles.emptyText}>Aún no hay publicaciones en el mercado.</Text>
-        )}
-      </ScrollView>
+        }}
+        ListEmptyComponent={<Text style={styles.emptyText}>Aún no hay publicaciones en el mercado.</Text>}
+      />
 
       {/* FAB Button */}
       <TouchableOpacity 
         activeOpacity={0.8}
         onPress={() => router.push('/(app)/create-market')}
         style={styles.fab}
+        accessibilityRole="button"
+        accessibilityLabel="Publicar producto"
       >
         <MaterialCommunityIcons name="plus" size={30} color={ClayTheme.colors.primaryText} />
       </TouchableOpacity>
@@ -142,9 +145,9 @@ const styles = StyleSheet.create({
   content: {
     paddingTop: 60,
     paddingBottom: 100, // Space for the absolute tab bar
+    paddingHorizontal: 22,
   },
   header: {
-    paddingHorizontal: 22,
     marginBottom: 20,
   },
   sectionTitle: {
@@ -159,7 +162,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   searchContainer: {
-    paddingHorizontal: 22,
     marginBottom: 20,
   },
   searchInput: {
@@ -178,13 +180,11 @@ const styles = StyleSheet.create({
     color: ClayTheme.colors.textMuted,
   },
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 22,
     gap: 14,
+    justifyContent: 'space-between',
   },
   card: {
-    width: '47.5%',
+    width: '48%',
     backgroundColor: ClayTheme.colors.surface,
     borderRadius: 26,
     padding: 10,

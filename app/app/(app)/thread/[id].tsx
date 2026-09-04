@@ -7,6 +7,7 @@ import { useAuth } from '../../../hooks/useAuth';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { ClayInput } from '../../../components/ClayInput';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Reply {
   id: string;
@@ -32,13 +33,16 @@ const formatDate = (dateString: string) => {
 
 const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || 'XX';
 
-const ReplyItem = ({ reply, depth = 0, onReply }: { reply: ReplyNode, depth?: number, onReply: (id: string, name: string) => void }) => {
+const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply }: { reply: ReplyNode; highlightedReplyId?: string; depth?: number; onReply: (id: string, name: string) => void }) => {
   const visualDepth = Math.min(depth, 3);
   const paddingLeft = visualDepth * 16;
   
   return (
     <View style={{ paddingLeft, marginBottom: 16 }}>
-      <View style={[styles.replyCard, depth > 0 && styles.replyCardNested]}>
+      <View
+        style={[styles.replyCard, depth > 0 && styles.replyCardNested, reply.id === highlightedReplyId && styles.replyCardHighlighted]}
+        accessibilityLabel={reply.id === highlightedReplyId ? 'Respuesta mencionada en la notificación' : undefined}
+      >
         <View style={styles.replyHeader}>
           <View style={styles.replyAuthorRow}>
             <View style={[styles.avatar, styles.replyAvatar]}>
@@ -56,6 +60,8 @@ const ReplyItem = ({ reply, depth = 0, onReply }: { reply: ReplyNode, depth?: nu
           <TouchableOpacity 
             style={styles.replyActionBtn}
             onPress={() => onReply(reply.id, reply.user?.nickname || reply.user?.name)}
+            accessibilityRole="button"
+            accessibilityLabel={`Responder a ${reply.user?.nickname || reply.user?.name}`}
           >
             <MaterialCommunityIcons name="reply" size={16} color={ClayTheme.colors.primary} />
             <Text style={styles.replyActionText}>Responder</Text>
@@ -65,17 +71,18 @@ const ReplyItem = ({ reply, depth = 0, onReply }: { reply: ReplyNode, depth?: nu
       </View>
       
       {reply.children.map(child => (
-        <ReplyItem key={child.id} reply={child} depth={depth + 1} onReply={onReply} />
+        <ReplyItem key={child.id} reply={child} highlightedReplyId={highlightedReplyId} depth={depth + 1} onReply={onReply} />
       ))}
     </View>
   );
 };
 
 export default function ThreadDetailScreen() {
-  const { id, subforumSlug } = useLocalSearchParams<{ id: string, subforumSlug: string }>();
+  const { id, subforumSlug, replyId } = useLocalSearchParams<{ id: string; subforumSlug: string; replyId?: string }>();
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
 
   const [replyContent, setReplyContent] = useState('');
   const [replyingTo, setReplyingTo] = useState<{id: string, name: string} | null>(null);
@@ -103,7 +110,7 @@ export default function ThreadDetailScreen() {
       setReplyingTo(null);
       queryClient.invalidateQueries({ queryKey: ['thread-detail', barrioSlug, subforumSlug, id] });
     },
-    onError: (err) => {
+    onError: () => {
       alert('Error al enviar respuesta');
     }
   });
@@ -160,8 +167,8 @@ export default function ThreadDetailScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Volver">
           <MaterialCommunityIcons name="arrow-left" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{thread.title}</Text>
@@ -205,6 +212,7 @@ export default function ThreadDetailScreen() {
             <ReplyItem 
               key={node.id} 
               reply={node} 
+              highlightedReplyId={replyId}
               onReply={(id, name) => setReplyingTo({id, name})} 
             />
           ))}
@@ -216,7 +224,7 @@ export default function ThreadDetailScreen() {
       </ScrollView>
 
       {/* Contextual Input Area */}
-      <View style={styles.inputContainerWrapper}>
+      <View style={[styles.inputContainerWrapper, { paddingBottom: insets.bottom }]}>
         {replyingTo && (
           <View style={styles.replyContextBanner}>
             <Text style={styles.replyContextText}>Respondiendo a <Text style={{fontFamily: ClayTheme.typography.fontFamily.bold}}>{replyingTo.name}</Text></Text>
@@ -267,7 +275,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 16,
     backgroundColor: ClayTheme.colors.surface,
     ...ClayTheme.shadows.elevated,
@@ -382,6 +389,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
+  replyCardHighlighted: {
+    borderWidth: 2,
+    borderColor: ClayTheme.colors.primary,
+    backgroundColor: '#FFF8DD',
+  },
   replyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -462,7 +474,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: 16,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+    paddingBottom: 16,
     gap: 12,
   },
   inputWrapper: {

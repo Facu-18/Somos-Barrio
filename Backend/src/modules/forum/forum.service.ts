@@ -3,7 +3,7 @@ import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 import { notificationsService } from "../notifications/notifications.service";
 
-const userSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
+const userSelect = { id: true, nickname: true, avatarUrl: true };
 
 async function resolveBarrio(barrioSlug: string) {
   const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug } });
@@ -116,22 +116,37 @@ export const forumService = {
       }
     }
 
-    const reply = await prisma.forumReply.create({
-      data: { ...input, threadId, userId },
-      include: { user: { select: userSelect } }
+    return prisma.$transaction(async (transaction) => {
+      const reply = await transaction.forumReply.create({
+        data: { ...input, threadId, userId },
+        include: { user: { select: userSelect } }
+      });
+
+      const recipients = new Map<string, string>();
+      if (parent?.userId && parent.userId !== userId) {
+        recipients.set(parent.userId, "Nueva respuesta a tu comentario");
+      }
+      if (thread.userId !== userId && !recipients.has(thread.userId)) {
+        recipients.set(thread.userId, "Nuevo comentario en tu hilo");
+      }
+
+      const senderName = reply.user.nickname || "Vecino";
+      await notificationsService.enqueue(transaction, [...recipients].map(([targetUserId, title]) => ({
+        userId: targetUserId,
+        title,
+        body: `${senderName}: ${input.content.slice(0, 80)}`,
+        data: {
+          type: "forum_reply",
+          barrioSlug,
+          subforumSlug,
+          threadId,
+          replyId: reply.id,
+          url: `/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${threadId}?replyId=${reply.id}`
+        }
+      })));
+
+      return reply;
     });
-
-    // Fire & Forget Push Notification
-    const targetUserId = input.parentReplyId ? parent?.userId : thread.userId;
-    if (targetUserId && targetUserId !== userId) {
-      const senderName = reply.user.nickname || reply.user.name;
-      const title = input.parentReplyId ? "Nueva respuesta a tu comentario" : "Nuevo comentario en tu hilo";
-      notificationsService.sendToUser(targetUserId, title, `${senderName}: ${input.content.substring(0, 50)}...`, {
-        url: `/thread/${threadId}`
-      }).catch(err => console.error("Error sending push:", err));
-    }
-
-    return reply;
   },
 
   async voteThread(

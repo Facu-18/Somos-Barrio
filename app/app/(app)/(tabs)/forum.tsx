@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
@@ -116,23 +116,20 @@ export default function ForumScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView 
+      <FlatList
+        data={threads ?? []}
+        keyExtractor={(thread) => thread.id}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-      >
-        {isLoadingThreads ? (
-          <ActivityIndicator size="large" color={ClayTheme.colors.primary} style={{ marginTop: 40 }} />
-        ) : (
-          <View style={styles.threadsList}>
-            {threads?.map((thread, index) => {
+        renderItem={({ item: thread, index }) => {
               const avatarStyle = getAvatarStyle(index);
-              
-              return (
+          return (
                 <TouchableOpacity 
-                  key={thread.id} 
                   style={styles.threadCard}
                   activeOpacity={0.8}
                   onPress={() => router.push({ pathname: '/(app)/thread/[id]', params: { id: thread.id, subforumSlug: selectedSubforum } })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${thread.title}, ${thread._count?.replies || 0} respuestas`}
                 >
                   <View style={[styles.avatar, { backgroundColor: avatarStyle.bg }]}>
                     {thread.user?.avatarUrl ? (
@@ -162,21 +159,20 @@ export default function ForumScreen() {
                     </View>
                   </View>
                 </TouchableOpacity>
-              );
-            })}
-
-            {threads?.length === 0 && (
-              <Text style={styles.emptyText}>No hay hilos en este subforo todavía.</Text>
-            )}
-          </View>
-        )}
-      </ScrollView>
+          );
+        }}
+        ListEmptyComponent={isLoadingThreads
+          ? <ActivityIndicator size="large" color={ClayTheme.colors.primary} style={{ marginTop: 40 }} />
+          : <Text style={styles.emptyText}>No hay hilos en este subforo todavía.</Text>}
+      />
 
       {/* FAB Button */}
       <TouchableOpacity 
         activeOpacity={0.8}
         onPress={() => router.push({ pathname: '/(app)/create-thread', params: { subforumSlug: selectedSubforum || '' }})}
         style={styles.fab}
+        accessibilityRole="button"
+        accessibilityLabel="Crear hilo"
       >
         <MaterialCommunityIcons name="plus" size={30} color={ClayTheme.colors.primaryText} />
       </TouchableOpacity>
@@ -246,6 +242,8 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 100, // Space for the absolute tab bar
+    paddingHorizontal: 22,
+    paddingTop: 10,
   },
   threadsList: {
     paddingHorizontal: 22,
@@ -260,6 +258,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 13,
     ...ClayTheme.shadows.elevated,
+    marginBottom: 13,
   },
   avatar: {
     width: 42,

@@ -87,33 +87,34 @@ model Barrio {
 }
 
 model User {
-  id                    String            @id @default(cuid())
-  email                 String            @unique
+  id                    String               @id @default(cuid())
+  email                 String               @unique
   name                  String
   nickname              String?
   bio                   String?
   passwordHash          String?
   avatarUrl             String?
   avatarPublicId        String?
-  role                  UserRole          @default(VECINO)
-  authProvider          AuthProvider      @default(LOCAL)
+  role                  UserRole             @default(VECINO)
+  authProvider          AuthProvider         @default(LOCAL)
   authProviderAccountId String?
   barrioId              String?
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  barrio                Barrio?           @relation(fields: [barrioId], references: [id], onDelete: SetNull)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  barrio                Barrio?              @relation(fields: [barrioId], references: [id], onDelete: SetNull)
   businesses            Business[]
   news                  News[]
   marketplacePosts      MarketplacePost[]
   forumThreads          ForumThread[]
   forumReplies          ForumReply[]
   events                Event[]
-  sentMessages          Message[]         @relation("messages_sent")
-  receivedMessages      Message[]         @relation("messages_received")
+  sentMessages          Message[]            @relation("messages_sent")
+  receivedMessages      Message[]            @relation("messages_received")
   reviews               Review[]
   eventRsvps            EventRsvp[]
   forumVotes            ForumVote[]
   pushDevices           PushDevice[]
+  notificationOutbox    NotificationOutbox[]
 
   @@index([barrioId])
   @@index([role])
@@ -207,21 +208,21 @@ model ForumSubforum {
 }
 
 model ForumThread {
-  id          String       @id @default(cuid())
-  userId      String
-  barrioId    String
-  subforumId  String
-  title       String
-  content     String
-  upVotes     Int          @default(0)
-  downVotes   Int          @default(0)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  barrio      Barrio       @relation(fields: [barrioId], references: [id], onDelete: Cascade)
-  subforum    ForumSubforum @relation(fields: [subforumId], references: [id], onDelete: Cascade)
-  replies     ForumReply[]
-  votes       ForumVote[]
+  id         String        @id @default(cuid())
+  userId     String
+  barrioId   String
+  subforumId String
+  title      String
+  content    String
+  upVotes    Int           @default(0)
+  downVotes  Int           @default(0)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  barrio     Barrio        @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  subforum   ForumSubforum @relation(fields: [subforumId], references: [id], onDelete: Cascade)
+  replies    ForumReply[]
+  votes      ForumVote[]
 
   @@index([subforumId, createdAt])
   @@index([barrioId, createdAt])
@@ -229,19 +230,19 @@ model ForumThread {
 
 model ForumReply {
   id            String       @id @default(cuid())
-  threadId       String
-  userId         String
-  parentReplyId  String?
-  content        String
-  upVotes        Int          @default(0)
-  downVotes      Int          @default(0)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  thread         ForumThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parentReply    ForumReply?  @relation("ReplyHierarchy", fields: [parentReplyId], references: [id], onDelete: SetNull)
-  childReplies   ForumReply[] @relation("ReplyHierarchy")
-  votes          ForumVote[]
+  threadId      String
+  userId        String
+  parentReplyId String?
+  content       String
+  upVotes       Int          @default(0)
+  downVotes     Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  thread        ForumThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentReply   ForumReply?  @relation("ReplyHierarchy", fields: [parentReplyId], references: [id], onDelete: SetNull)
+  childReplies  ForumReply[] @relation("ReplyHierarchy")
+  votes         ForumVote[]
 
   @@index([threadId, createdAt])
   @@index([userId])
@@ -249,11 +250,11 @@ model ForumReply {
 }
 
 model ForumVote {
-  id       String      @id @default(cuid())
+  id       String  @id @default(cuid())
   userId   String
   threadId String?
   replyId  String?
-  value    Int         // 1 = upvote, -1 = downvote
+  value    Int // 1 = upvote, -1 = downvote
 
   user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   thread ForumThread? @relation(fields: [threadId], references: [id], onDelete: Cascade)
@@ -312,15 +313,15 @@ model Message {
 }
 
 model Review {
-  id         String    @id @default(cuid())
+  id         String   @id @default(cuid())
   userId     String
   businessId String
   rating     Int
   comment    String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([userId, businessId])
   @@index([businessId, rating])
@@ -330,10 +331,32 @@ model PushDevice {
   id        String   @id @default(cuid())
   userId    String
   token     String   @unique
-  platform  String   // "android" | "ios" | "web"
+  platform  String // "android" | "ios" | "web"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model NotificationOutbox {
+  id              String    @id @default(cuid())
+  userId          String
+  title           String
+  body            String
+  data            Json
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(5)
+  nextAttemptAt   DateTime  @default(now())
+  lockedAt        DateTime?
+  lockToken       String?   @unique
+  deliveredTokens String[]  @default([])
+  processedAt     DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([processedAt, nextAttemptAt])
+  @@index([userId, createdAt])
 }

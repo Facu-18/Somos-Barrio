@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { ClayCard } from '../../../components/ClayCard';
@@ -9,6 +9,7 @@ import { useAuth } from '../../../hooks/useAuth';
 
 interface NewsItem {
   id: string;
+  slug: string;
   title: string;
   excerpt: string;
   category: string;
@@ -54,35 +55,30 @@ export default function HomeScreen() {
   }
 
   return (
-    <ScrollView 
+    <FlatList
       style={styles.container} 
+      data={data ?? []}
+      keyExtractor={(news) => news.id}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-    >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.sectionTitle}>Últimas novedades</Text>
-          <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+      ListHeaderComponent={(
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.sectionTitle}>Últimas novedades</Text>
+            <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+          </View>
+          <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/(app)/profile')} style={styles.profileAvatar} accessibilityRole="button" accessibilityLabel="Abrir mi perfil">
+            {user?.avatarUrl ? <Image source={{ uri: user.avatarUrl }} style={styles.profileAvatarImage} /> : (
+              <Text style={styles.profileAvatarText}>{user?.name?.substring(0, 2).toUpperCase() || 'XX'}</Text>
+            )}
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity 
-          activeOpacity={0.8} 
-          onPress={() => router.push('/(app)/profile')}
-          style={styles.profileAvatar}
-        >
-          {user?.avatarUrl ? (
-            <Image source={{ uri: user.avatarUrl }} style={styles.profileAvatarImage} />
-          ) : (
-            <Text style={styles.profileAvatarText}>
-              {user?.name?.substring(0, 2).toUpperCase() || 'XX'}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
-      
-      {data?.map((news) => {
+      )}
+      renderItem={({ item: news }) => {
         const catStyle = getCategoryStyle(news.category);
         return (
-          <ClayCard key={news.id}>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => router.push({ pathname: '/(app)/news/[slug]', params: { slug: news.slug } })} accessibilityRole="button" accessibilityLabel={`Abrir noticia ${news.title}`}>
+          <ClayCard>
             <View style={styles.cardHeader}>
               <Text style={[styles.categoryBadge, { backgroundColor: catStyle.bg, color: catStyle.text }]}>
                 {news.category.charAt(0).toUpperCase() + news.category.slice(1).toLowerCase()}
@@ -94,14 +90,11 @@ export default function HomeScreen() {
               {news.excerpt || 'Sin descripción'}
             </Text>
           </ClayCard>
+          </TouchableOpacity>
         );
-      })}
-
-      {data?.length === 0 && (
-        <Text style={styles.emptyText}>Aún no hay noticias en este barrio.</Text>
-      )}
-
-    </ScrollView>
+      }}
+      ListEmptyComponent={<Text style={styles.emptyText}>Aún no hay noticias en este barrio.</Text>}
+    />
   );
 }
 

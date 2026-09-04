@@ -4,6 +4,7 @@ import { logger } from "./config/logger";
 import { connectDatabase, disconnectDatabase } from "./config/database";
 import { prisma } from "./lib/prisma";
 import { redis } from "./lib/redis";
+import { startNotificationProcessor, stopNotificationProcessor } from "./modules/notifications/notifications.processor";
 
 let server: ReturnType<typeof app.listen> | undefined;
 let shuttingDown = false;
@@ -15,6 +16,7 @@ const startServer = async (): Promise<void> => {
   server = app.listen(env.PORT, () => {
     logger.info(`Servidor listo en http://localhost:${env.PORT}${env.API_PREFIX}`);
   });
+  startNotificationProcessor();
 };
 
 const shutdown = async (signal: string): Promise<void> => {
@@ -33,6 +35,7 @@ const shutdown = async (signal: string): Promise<void> => {
   });
 
   clearTimeout(forceClose);
+  await stopNotificationProcessor();
   await Promise.allSettled([disconnectDatabase(), redis.quit()]);
   logger.info("Servicios cerrados correctamente");
 };

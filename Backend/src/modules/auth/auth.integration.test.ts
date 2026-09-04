@@ -1,11 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import { app } from "../../app";
-import { API } from "../../test/helpers";
+import { API, registerAndLogin, seedBarrio } from "../../test/helpers";
 
 describe("Auth — integration", () => {
   const email    = `int_auth_${Date.now()}@test.com`;
   const password = "Password123!";
+
+  beforeAll(async () => {
+    await seedBarrio("parque-liceo");
+  });
 
   it("POST /auth/register — crea usuario y devuelve accessToken", async () => {
     const res = await request(app)
@@ -98,7 +102,7 @@ describe("Auth — integration", () => {
     expect(meRes.status).toBe(401);
   });
 
-  it("flujo mobile — entrega, rota una sola vez y revoca refresh token", async () => {
+  it("flujo mobile — entrega, rota y revoca ambos tokens al cerrar sesion", async () => {
     const loginRes = await request(app)
       .post(`${API}/auth/mobile/login`)
       .send({ email, password });
@@ -129,9 +133,34 @@ describe("Auth — integration", () => {
       .send({ refreshToken: refreshRes.body.data.refreshToken });
     expect(logoutRes.status).toBe(204);
 
+    await request(app)
+      .get(`${API}/auth/me`)
+      .set("Authorization", `Bearer ${refreshRes.body.data.accessToken}`)
+      .expect(401);
+
     const revokedRefreshRes = await request(app)
       .post(`${API}/auth/mobile/refresh`)
       .send({ refreshToken: refreshRes.body.data.refreshToken });
     expect(revokedRefreshRes.status).toBe(401);
+  });
+
+  it("logout mobile sin access token elimina solo el push token propio indicado", async () => {
+    const mobileLogin = await request(app).post(`${API}/auth/mobile/login`).send({ email, password });
+    const pushToken = "ExpoPushToken[logout_device_123456]";
+    const other = await registerAndLogin({ name: "Otro logout" });
+    const otherPushToken = "ExpoPushToken[other_logout_device_123456]";
+    const { testPrisma } = await import("../../test/helpers");
+    await testPrisma.pushDevice.createMany({ data: [
+      { userId: mobileLogin.body.data.user.id, token: pushToken, platform: "android" },
+      { userId: other.user.id, token: otherPushToken, platform: "ios" }
+    ] });
+
+    await request(app).post(`${API}/auth/mobile/logout`).send({
+      refreshToken: mobileLogin.body.data.refreshToken,
+      pushToken
+    }).expect(204);
+
+    expect(await testPrisma.pushDevice.findUnique({ where: { token: pushToken } })).toBeNull();
+    expect(await testPrisma.pushDevice.findUnique({ where: { token: otherPushToken } })).not.toBeNull();
   });
 });

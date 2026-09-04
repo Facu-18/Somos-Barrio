@@ -10,7 +10,7 @@ type CreatePostInput = {
   category: string;
   images: string[];
   location?: string;
-  whatsapp?: string;
+  whatsapp: string;
 };
 
 type UpdatePostInput = Partial<{
@@ -24,7 +24,15 @@ type UpdatePostInput = Partial<{
   whatsapp: string;
 }>;
 
-const userSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
+const userSelect = { id: true, nickname: true, avatarUrl: true };
+
+function normalizeWhatsapp(value: string): string {
+  const trimmed = value.trim();
+  if (/[A-Za-z]/.test(trimmed)) throw new ApiError(400, "Numero de WhatsApp invalido");
+  const digits = (trimmed.startsWith("00") ? trimmed.slice(2) : trimmed).replace(/\D/g, "");
+  if (!/^[1-9]\d{7,14}$/.test(digits)) throw new ApiError(400, "Numero de WhatsApp invalido");
+  return `+${digits}`;
+}
 
 async function resolveBarrio(barrioSlug: string) {
   const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug } });
@@ -59,7 +67,6 @@ export const marketplaceService = {
           status: true,
           images: true,
           location: true,
-          whatsapp: true,
           views: true,
           createdAt: true,
           user: { select: userSelect }
@@ -95,7 +102,7 @@ export const marketplaceService = {
       data: {
         ...input,
         category: input.category as any,
-        whatsapp: input.whatsapp === "" ? null : input.whatsapp,
+        whatsapp: normalizeWhatsapp(input.whatsapp),
         userId,
         barrioId: barrio.id
       },
@@ -124,7 +131,7 @@ export const marketplaceService = {
       data: { 
         ...input, 
         category: input.category as any,
-        whatsapp: input.whatsapp === "" ? null : input.whatsapp
+        ...(input.whatsapp !== undefined ? { whatsapp: normalizeWhatsapp(input.whatsapp) } : {})
       },
       include: { user: { select: userSelect } }
     });

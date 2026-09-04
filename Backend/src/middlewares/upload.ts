@@ -37,14 +37,14 @@ export const verifyImageContent = (req: Request, _res: Response, next: NextFunct
   next();
 };
 
-export const uploadToCloudinary = (folder = "somos-barrio") =>
+export const uploadToCloudinary = (folder: string | ((req: Request) => string) = "somos-barrio") =>
   async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     if (!req.file) return next(new ApiError(400, "No se encontro ningun archivo"));
 
     try {
       const result = await new Promise<UploadApiResponse>((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
-          { folder, resource_type: "image", allowed_formats: ["jpg", "png", "webp", "gif"] },
+          { folder: typeof folder === "function" ? folder(req) : folder, resource_type: "image", allowed_formats: ["jpg", "png", "webp", "gif"] },
           (err, result) => {
             if (err || !result) reject(err ?? new Error("Cloudinary no devolvió resultado"));
             else resolve(result);

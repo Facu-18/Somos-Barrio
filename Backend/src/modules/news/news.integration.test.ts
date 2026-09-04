@@ -14,6 +14,7 @@ describe("Noticias — integration", () => {
   let editorToken: string;
   let vecinoToken: string;
   let newsSlug: string;
+  let vecinoId: string;
 
   beforeAll(async () => {
     const barrio = await seedBarrio(`news-barrio-${Date.now()}`);
@@ -27,6 +28,7 @@ describe("Noticias — integration", () => {
         name: "Editor Test",
         passwordHash: await bcrypt.hash("Editor123!", 10),
         role: UserRole.EDITOR,
+        barrioId: barrio.id,
       },
     });
     const edRes = await request(app)
@@ -34,8 +36,11 @@ describe("Noticias — integration", () => {
       .send({ email: editorEmail, password: "Editor123!" });
     editorToken = edRes.body.data?.accessToken;
 
-    const vecinoRes = await registerAndLogin({ name: "Vecino News" });
+    const vecinoRes = await registerAndLogin({ name: "Vecino News", barrioSlug });
     vecinoToken = vecinoRes.token;
+    vecinoId = vecinoRes.user.id;
+    const otherBarrio = await seedBarrio(`news-other-${Date.now()}`);
+    await registerAndLogin({ name: "Otro Barrio", barrioSlug: otherBarrio.slug });
   });
 
   it("GET /barrios/:slug/news — lista noticias (paginada)", async () => {
@@ -86,12 +91,24 @@ describe("Noticias — integration", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.status).toBe("PUBLISHED");
     expect(res.body.data.publishedAt).toBeTruthy();
+    const notifications = await prisma.notificationOutbox.findMany({ where: { data: { path: ["newsSlug"], equals: newsSlug } } });
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0].userId).toBe(vecinoId);
+    expect(notifications[0].data).toMatchObject({ barrioSlug, newsSlug });
+
+    await request(app)
+      .patch(`${API}/barrios/${barrioSlug}/news/${newsSlug}`)
+      .set("Authorization", `Bearer ${editorToken}`)
+      .send({ status: "PUBLISHED" });
+    expect(await prisma.notificationOutbox.count({ where: { data: { path: ["newsSlug"], equals: newsSlug } } })).toBe(1);
   });
 
   it("GET /barrios/:slug/news/:newsSlug — devuelve noticia publicada", async () => {
     const res = await request(app).get(`${API}/barrios/${barrioSlug}/news/${newsSlug}`);
     expect(res.status).toBe(200);
     expect(res.body.data.slug).toBe(newsSlug);
+    expect(res.body.data.author).not.toHaveProperty("name");
+    expect(res.body.data.author).not.toHaveProperty("avatarPublicId");
   });
 
   it("DELETE /barrios/:slug/news/:newsSlug — EDITOR puede borrar su noticia", async () => {

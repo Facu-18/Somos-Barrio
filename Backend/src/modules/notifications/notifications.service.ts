@@ -1,102 +1,112 @@
-import { GoogleAuth } from 'google-auth-library';
-import { prisma } from '../../lib/prisma';
-import fs from 'fs';
-import path from 'path';
+import { Prisma } from "@prisma/client";
+import { env } from "../../config/env";
+import { prisma } from "../../lib/prisma";
 
-// Define expected path for the service account key
-const SERVICE_ACCOUNT_PATH = path.resolve(__dirname, '../../../../firebase-service-account.json');
-let auth: GoogleAuth | null = null;
-let projectId: string | null = null;
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
-try {
-  if (fs.existsSync(SERVICE_ACCOUNT_PATH)) {
-    const serviceAccount = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_PATH, 'utf8'));
-    projectId = serviceAccount.project_id;
-    
-    auth = new GoogleAuth({
-      keyFile: SERVICE_ACCOUNT_PATH,
-      scopes: ['https://www.googleapis.com/auth/firebase.messaging']
-    });
-    console.log(`[FCM] Firebase Push Notifications configured for project ${projectId}`);
-  } else {
-    console.warn(`[FCM] Warning: ${SERVICE_ACCOUNT_PATH} not found. Push notifications will be disabled.`);
+export type OutboxNotification = {
+  userId: string;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+};
+
+type ExpoTicket = {
+  status: "ok" | "error";
+  message?: string;
+  details?: { error?: string };
+};
+
+export class PartialPushDeliveryError extends Error {
+  constructor(message: string, readonly deliveredTokens: string[]) {
+    super(message);
+    this.name = "PartialPushDeliveryError";
   }
-} catch (error) {
-  console.error('[FCM] Error initializing Google Auth:', error);
 }
 
 export const notificationsService = {
-  async registerDevice(userId: string, token: string, platform: string) {
-    // Upsert the token
+  registerDevice(userId: string, token: string, platform: string) {
     return prisma.pushDevice.upsert({
       where: { token },
-      update: { userId, platform, updatedAt: new Date() },
+      update: { userId, platform },
       create: { userId, token, platform }
     });
   },
 
-  async unregisterDevice(token: string) {
-    try {
-      await prisma.pushDevice.delete({ where: { token } });
-    } catch (e) {
-      // Ignore if not found
-    }
+  async unregisterDevice(userId: string, token: string): Promise<void> {
+    await prisma.pushDevice.deleteMany({ where: { userId, token } });
   },
 
-  async sendToUser(userId: string, title: string, body: string, data?: Record<string, string>) {
-    if (!auth || !projectId) {
-      console.log(`[FCM] Push skipped for user ${userId}: Firebase not configured.`);
-      return;
+  async unregisterDeviceByToken(token: string): Promise<void> {
+    await prisma.pushDevice.deleteMany({ where: { token } });
+  },
+
+  async enqueue(transaction: Prisma.TransactionClient, notifications: OutboxNotification[]): Promise<void> {
+    if (notifications.length === 0) return;
+    await transaction.notificationOutbox.createMany({
+      data: notifications.map((notification) => ({
+        ...notification,
+        data: notification.data as Prisma.InputJsonObject
+      }))
+    });
+  },
+
+  async deliver(userId: string, title: string, body: string, data: Prisma.JsonValue, deliveredTokens: string[] = []): Promise<void> {
+    const devices = await prisma.pushDevice.findMany({
+      where: { userId, ...(deliveredTokens.length > 0 ? { token: { notIn: deliveredTokens } } : {}) }
+    });
+    if (devices.length === 0 || env.NODE_ENV === "test") return;
+
+    const response = await fetch(EXPO_PUSH_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(env.EXPO_ACCESS_TOKEN ? { Authorization: `Bearer ${env.EXPO_ACCESS_TOKEN}` } : {})
+      },
+      signal: AbortSignal.timeout(env.NOTIFICATION_FETCH_TIMEOUT_MS),
+      body: JSON.stringify(devices.map((device) => ({
+        to: device.token,
+        title,
+        body,
+        data,
+        sound: "default",
+        priority: "high",
+        channelId: "default"
+      })))
+    });
+
+    if (!response.ok) throw new Error(`Expo Push Service respondio ${response.status}`);
+
+    const payload = await response.json() as { data?: ExpoTicket[] };
+    const tickets = payload.data;
+    if (!Array.isArray(tickets) || tickets.length !== devices.length) {
+      throw new Error("Respuesta invalida de Expo Push Service");
     }
 
-    const devices = await prisma.pushDevice.findMany({ where: { userId } });
-    if (devices.length === 0) return;
+    const terminalTokens: string[] = [];
+    const invalidTokens: string[] = [];
+    const transientErrors: string[] = [];
+    tickets.forEach((ticket, index) => {
+      const token = devices[index].token;
+      if (ticket.status !== "error") {
+        terminalTokens.push(token);
+        return;
+      }
+      const code = ticket.details?.error;
+      if (code === "DeviceNotRegistered") invalidTokens.push(token);
+      if (["MessageRateExceeded", "InvalidCredentials", "MismatchSenderId"].includes(code ?? "") || !code) {
+        transientErrors.push(ticket.message ?? code ?? "Error transitorio de Expo Push Service");
+      } else {
+        terminalTokens.push(token);
+      }
+    });
 
-    try {
-      const client = await auth.getClient();
-      const accessToken = await client.getAccessToken();
-
-      const promises = devices.map(async (device) => {
-        const payload = {
-          message: {
-            token: device.token,
-            notification: { title, body },
-            data: data || {},
-            android: {
-              priority: 'high',
-              notification: {
-                sound: 'default',
-                color: '#4A3B8C',
-                channel_id: 'default'
-              }
-            }
-          }
-        };
-
-        const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken.token}`
-          },
-          body: JSON.stringify(payload)
-        });
-
-        if (!res.ok) {
-          const errorData: any = await res.json();
-          // HTTP 404 or UNREGISTERED means the token is no longer valid
-          if (res.status === 404 || (errorData.error && errorData.error.details?.some((d: any) => d.errorCode === 'UNREGISTERED'))) {
-            console.log(`[FCM] Token expired for user ${userId}, removing token.`);
-            await this.unregisterDevice(device.token);
-          } else {
-            console.error('[FCM] Send error:', errorData);
-          }
-        }
-      });
-
-      await Promise.all(promises);
-    } catch (error) {
-      console.error('[FCM] Error sending push notification:', error);
+    if (invalidTokens.length > 0) {
+      await prisma.pushDevice.deleteMany({ where: { token: { in: invalidTokens } } });
+    }
+    if (transientErrors.length > 0) {
+      throw new PartialPushDeliveryError(transientErrors.join("; "), terminalTokens);
     }
   }
 };

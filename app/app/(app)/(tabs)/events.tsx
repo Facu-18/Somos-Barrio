@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
@@ -70,47 +70,41 @@ export default function EventsScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <FlatList
+        data={data ?? []}
+        keyExtractor={(event) => event.id}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-      >
-        <View style={styles.header}>
-          <Text style={styles.sectionTitle}>Eventos</Text>
-          <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
-        </View>
-
-        <View style={styles.filterContainer}>
-          <View style={styles.segmentedControl}>
-            <TouchableOpacity 
-              activeOpacity={0.8}
-              style={[styles.segmentBtn, upcoming && styles.segmentBtnActive]}
-              onPress={() => setUpcoming(true)}
-            >
-              <Text style={[styles.segmentText, upcoming && styles.segmentTextActive]}>Próximos</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              activeOpacity={0.8}
-              style={[styles.segmentBtn, !upcoming && styles.segmentBtnActive]}
-              onPress={() => setUpcoming(false)}
-            >
-              <Text style={[styles.segmentText, !upcoming && styles.segmentTextActive]}>Pasados</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.list}>
-          {data?.map((event, index) => {
-            const pStyle = getPlaceholderStyle(index);
+        ListHeaderComponent={(
+          <>
+            <View style={styles.header}>
+              <Text style={styles.sectionTitle}>Eventos</Text>
+              <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+            </View>
+            <View style={styles.filterContainer}>
+              <View style={styles.segmentedControl}>
+                <TouchableOpacity activeOpacity={0.8} style={[styles.segmentBtn, upcoming && styles.segmentBtnActive]} onPress={() => setUpcoming(true)} accessibilityRole="button" accessibilityState={{ selected: upcoming }}>
+                  <Text style={[styles.segmentText, upcoming && styles.segmentTextActive]}>Próximos</Text>
+                </TouchableOpacity>
+                <TouchableOpacity activeOpacity={0.8} style={[styles.segmentBtn, !upcoming && styles.segmentBtnActive]} onPress={() => setUpcoming(false)} accessibilityRole="button" accessibilityState={{ selected: !upcoming }}>
+                  <Text style={[styles.segmentText, !upcoming && styles.segmentTextActive]}>Pasados</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+        renderItem={({ item: event, index }) => {
+          const pStyle = getPlaceholderStyle(index);
             const eventDate = new Date(event.date);
             const day = eventDate.getDate();
             const month = eventDate.toLocaleDateString('es-AR', { month: 'short' }).toUpperCase();
-            
-            return (
-              <TouchableOpacity 
-                key={event.id} 
+          return (
+              <TouchableOpacity
                 activeOpacity={0.8} 
                 style={styles.card}
                 onPress={() => router.push({ pathname: '/(app)/event/[id]', params: { id: event.id } })}
+                accessibilityRole="button"
+                accessibilityLabel={`${event.title}, ${formatDate(event.date)}`}
               >
                 <View style={[styles.dateBadge, { backgroundColor: pStyle.bg }]}>
                   <Text style={[styles.dateBadgeMonth, { color: pStyle.text }]}>{month}</Text>
@@ -147,14 +141,10 @@ export default function EventsScreen() {
                   </View>
                 </View>
               </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {data?.length === 0 && (
-          <Text style={styles.emptyText}>No hay eventos {upcoming ? 'próximos' : 'pasados'}.</Text>
-        )}
-      </ScrollView>
+          );
+        }}
+        ListEmptyComponent={<Text style={styles.emptyText}>No hay eventos {upcoming ? 'próximos' : 'pasados'}.</Text>}
+      />
     </View>
   );
 }
@@ -173,9 +163,9 @@ const styles = StyleSheet.create({
   content: {
     paddingTop: 60,
     paddingBottom: 100, // Space for the absolute tab bar
+    paddingHorizontal: 22,
   },
   header: {
-    paddingHorizontal: 22,
     marginBottom: 20,
   },
   sectionTitle: {
@@ -190,7 +180,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   filterContainer: {
-    paddingHorizontal: 22,
     marginBottom: 20,
   },
   segmentedControl: {
@@ -219,7 +208,6 @@ const styles = StyleSheet.create({
     color: ClayTheme.colors.text,
   },
   list: {
-    paddingHorizontal: 22,
     gap: 16,
   },
   card: {
@@ -229,6 +217,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 16,
     ...ClayTheme.shadows.elevated,
+    marginBottom: 16,
   },
   dateBadge: {
     width: 60,

@@ -53,6 +53,8 @@ export const ClayButton: React.FC<ClayButtonProps> = ({
 
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
       activeOpacity={0.8}
       onPress={handlePress}
       disabled={disabled}

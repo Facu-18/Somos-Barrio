@@ -75,10 +75,11 @@ const limit10Param = queryParam("limit", { type: "integer", minimum: 1, maximum:
 
 const userSummary: OpenAPIV3.SchemaObject = {
   type: "object",
-  required: ["id", "name"],
-  description: "Resumen de usuario; las respuestas públicas incluyen avatarUrl y las vistas administrativas incluyen email.",
+  required: ["id"],
+  description: "Las respuestas públicas usan nickname/avatarUrl y no incluyen nombre legal ni ID interno del avatar. Las vistas administrativas pueden incluir name/email.",
   properties: {
-    id: cuid(), name: { type: "string" }, avatarUrl: nullableString(), email: { type: "string", format: "email" }
+    id: cuid(), nickname: nullableString(), avatarUrl: nullableString(),
+    name: { type: "string" }, email: { type: "string", format: "email" }
   }
 };
 
@@ -105,11 +106,13 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   },
   User: {
     type: "object",
-    required: ["id", "email", "name", "role", "avatarUrl", "barrioId", "barrio", "createdAt"],
+    required: ["id", "email", "name", "nickname", "bio", "role", "avatarUrl", "barrioId", "barrio", "createdAt"],
     properties: {
       id: cuid(),
       email: { type: "string", format: "email" },
       name: { type: "string" },
+      nickname: nullableString(),
+      bio: nullableString(),
       role: { type: "string", enum: ["VECINO", "NEGOCIO", "EDITOR", "ADMIN"] },
       avatarUrl: nullableString(),
       barrioId: nullableCuid(),
@@ -195,12 +198,13 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   },
   MarketplacePost: {
     type: "object",
-    required: ["id", "userId", "barrioId", "title", "description", "price", "currency", "category", "status", "images", "location", "views", "createdAt", "updatedAt"],
+    required: ["id", "userId", "barrioId", "title", "description", "price", "currency", "category", "status", "whatsapp", "images", "location", "views", "createdAt", "updatedAt"],
     properties: {
       id: cuid(), userId: cuid(), barrioId: cuid(), title: { type: "string" }, description: { type: "string" },
       price: { type: "integer", nullable: true, minimum: 0 }, currency: { type: "string", minLength: 3, maxLength: 3 },
       category: { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] },
       status: { type: "string", enum: ["ACTIVE", "SOLD", "PAUSED", "REPORTED"] },
+      whatsapp: { type: "string", nullable: true, pattern: "^\\+[1-9]\\d{7,14}$" },
       images: arrayOf({ type: "string", format: "uri" }), location: nullableString(), views: { type: "integer" },
       createdAt: dateTime(), updatedAt: dateTime(), user: ref("UserSummary")
     }
@@ -320,6 +324,30 @@ const refreshBody: OpenAPIV3.SchemaObject = {
   type: "object", required: ["refreshToken"],
   properties: { refreshToken: { type: "string", minLength: 64, maxLength: 256 } }
 };
+const mobileLogoutBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["refreshToken"],
+  properties: { ...refreshBody.properties, pushToken: { type: "string", pattern: "^(ExponentPushToken|ExpoPushToken)\\[[A-Za-z0-9_-]+\\]$" } }
+};
+const updateProfileBody: OpenAPIV3.SchemaObject = {
+  type: "object",
+  description: "avatarUrl y avatarPublicId deben enviarse juntos. Para borrar el avatar, ambos deben ser strings vacíos. Solo se aceptan assets subidos por /upload/avatar bajo el prefijo exclusivo del usuario.",
+  properties: {
+    nickname: { type: "string", nullable: true, minLength: 2, maxLength: 30 },
+    bio: { type: "string", maxLength: 160 },
+    avatarUrl: { oneOf: [{ type: "string", format: "uri" }, { type: "string", enum: [""] }] },
+    avatarPublicId: { type: "string", maxLength: 255, pattern: "^[A-Za-z0-9/_-]*$", description: "Vacío al borrar; en actualizaciones debe comenzar con somos-barrio/avatars/<userId>/" }
+  }
+};
+const expoDeviceBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["token", "platform"],
+  properties: {
+    token: { type: "string", pattern: "^(ExponentPushToken|ExpoPushToken)\\[[A-Za-z0-9_-]+\\]$" },
+    platform: { type: "string", enum: ["android", "ios"] }
+  }
+};
+const expoTokenBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["token"], properties: { token: expoDeviceBody.properties!.token }
+};
 const newsCategory = { type: "string", enum: ["SEGURIDAD", "OBRAS", "EVENTOS", "MUNICIPIO", "COMUNIDAD"] } satisfies OpenAPIV3.SchemaObject;
 const newsStatus = { type: "string", enum: ["DRAFT", "PENDING_REVIEW", "PUBLISHED", "ARCHIVED"] } satisfies OpenAPIV3.SchemaObject;
 const businessCategory = { type: "string", enum: ["GASTRONOMIA", "SALUD", "EDUCACION", "SERVICIOS", "HOGAR", "DEPORTES", "OTROS"] } satisfies OpenAPIV3.SchemaObject;
@@ -366,12 +394,12 @@ const updateBusinessBody: OpenAPIV3.SchemaObject = {
   }
 };
 const createMarketplaceBody: OpenAPIV3.SchemaObject = {
-  type: "object", required: ["title", "description", "category"],
+  type: "object", required: ["title", "description", "category", "whatsapp"],
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
     price: { type: "integer", minimum: 0 }, currency: { type: "string", minLength: 3, maxLength: 3, default: "ARS" },
-    category: marketplaceCategory, images: { type: "array", maxItems: 10, default: [], items: { type: "string", format: "uri" } },
-    location: { type: "string", maxLength: 255 }
+    category: marketplaceCategory, images: { type: "array", maxItems: 5, default: [], items: { type: "string", format: "uri" } },
+    location: { type: "string", maxLength: 120 }, whatsapp: { type: "string", minLength: 8, maxLength: 30, description: "Se normaliza a E.164" }
   }
 };
 const updateMarketplaceBody: OpenAPIV3.SchemaObject = {
@@ -379,7 +407,8 @@ const updateMarketplaceBody: OpenAPIV3.SchemaObject = {
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
     price: { type: "integer", minimum: 0 }, category: marketplaceCategory, status: marketplaceStatus,
-    images: { type: "array", maxItems: 10, items: { type: "string", format: "uri" } }, location: { type: "string", maxLength: 255 }
+    images: { type: "array", maxItems: 5, items: { type: "string", format: "uri" } }, location: { type: "string", maxLength: 120 },
+    whatsapp: { type: "string", minLength: 8, maxLength: 30, description: "Se normaliza a E.164" }
   }
 };
 const createEventBody: OpenAPIV3.SchemaObject = {
@@ -418,7 +447,7 @@ export const openapiSpec: OpenAPIV3.Document = {
   tags: [
     { name: "Health" }, { name: "Auth" }, { name: "Upload" }, { name: "Barrios" }, { name: "Noticias" },
     { name: "Comercios" }, { name: "Reseñas" }, { name: "Marketplace" }, { name: "Foro" }, { name: "Eventos" },
-    { name: "Mensajes" }, { name: "Búsqueda" }, { name: "Admin" }
+    { name: "Mensajes" }, { name: "Notificaciones" }, { name: "Búsqueda" }, { name: "Admin" }
   ],
   components: {
     securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" } },
@@ -491,7 +520,11 @@ export const openapiSpec: OpenAPIV3.Document = {
       }
     },
     "/auth/me": {
-      get: { tags: ["Auth"], summary: "Usuario autenticado", security: bearerSecurity, responses: { 200: ok(ref("User")), 401: unauthorized, 503: serviceUnavailable } }
+      get: { tags: ["Auth"], summary: "Usuario autenticado", security: bearerSecurity, responses: { 200: ok(ref("User")), 401: unauthorized, 503: serviceUnavailable } },
+      patch: {
+        tags: ["Auth"], summary: "Actualizar perfil", security: bearerSecurity, requestBody: jsonBody(updateProfileBody),
+        responses: { 200: ok(ref("User")), 400: badRequest, 401: unauthorized, 409: conflict, 503: serviceUnavailable }
+      }
     },
     "/auth/mobile/register": {
       post: {
@@ -513,8 +546,35 @@ export const openapiSpec: OpenAPIV3.Document = {
     },
     "/auth/mobile/logout": {
       post: {
-        tags: ["Auth"], summary: "Cerrar sesión móvil", security: bearerSecurity, requestBody: jsonBody(refreshBody),
+        tags: ["Auth"], summary: "Cerrar sesión móvil", security: [{ bearerAuth: [] }, {}], description: "Revoca el refresh token y, si se envía un access token vigente, también lo agrega a la blacklist. Si se envía pushToken, elimina solamente ese dispositivo cuando pertenece a la sesión resuelta.", requestBody: jsonBody(mobileLogoutBody),
         responses: { 204: noContent, 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+      }
+    },
+    "/notifications/register": {
+      post: {
+        tags: ["Notificaciones"], summary: "Registrar o reasignar un dispositivo Expo Push", security: bearerSecurity,
+        requestBody: jsonBody(expoDeviceBody),
+        responses: {
+          200: jsonResponse("Dispositivo registrado", {
+            type: "object", required: ["success", "data"],
+            properties: {
+              success: { type: "boolean", enum: [true] },
+              data: { type: "object", required: ["message"], properties: { message: { type: "string" } } }
+            }
+          }),
+          400: badRequest, 401: unauthorized, 503: serviceUnavailable
+        }
+      },
+      delete: {
+        tags: ["Notificaciones"], summary: "Desregistrar un dispositivo propio", security: bearerSecurity,
+        requestBody: jsonBody(expoTokenBody), responses: { 204: noContent, 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+      }
+    },
+    "/notifications/unregister": {
+      post: {
+        tags: ["Notificaciones"], summary: "Eliminar un registro push retenido", description: "Elimina exclusivamente el token Expo indicado. No requiere conservar credenciales de una sesión cerrada y está limitado por IP.",
+        requestBody: jsonBody(expoTokenBody),
+        responses: { 204: noContent, 400: badRequest, 429: { description: "Demasiadas solicitudes" }, 503: serviceUnavailable }
       }
     },
     "/upload": {
@@ -536,6 +596,19 @@ export const openapiSpec: OpenAPIV3.Document = {
             type: "object", required: ["url", "publicId"],
             properties: { url: { type: "string", format: "uri" }, publicId: { type: "string" } }
           }),
+          400: badRequest, 401: unauthorized, 413: errorResponse("Payload Too Large"), 422: unprocessable, 502: errorResponse("Bad Gateway"), 503: serviceUnavailable
+        }
+      }
+    },
+    "/upload/avatar": {
+      post: {
+        tags: ["Upload"], summary: "Subir un avatar propio", description: "Guarda la imagen bajo somos-barrio/avatars/<userId>/ para que solo el usuario autenticado pueda asociarla a su perfil.", security: bearerSecurity,
+        requestBody: {
+          required: true,
+          content: { "multipart/form-data": { schema: { type: "object", required: ["file"], properties: { file: { type: "string", format: "binary", description: "JPG, PNG, WebP o GIF; máximo 5 MB" } } } } }
+        },
+        responses: {
+          201: created({ type: "object", required: ["url", "publicId"], properties: { url: { type: "string", format: "uri" }, publicId: { type: "string", pattern: "^somos-barrio/avatars/[^/]+/.+$" } } }),
           400: badRequest, 401: unauthorized, 413: errorResponse("Payload Too Large"), 422: unprocessable, 502: errorResponse("Bad Gateway"), 503: serviceUnavailable
         }
       }
@@ -618,12 +691,12 @@ export const openapiSpec: OpenAPIV3.Document = {
       },
       post: {
         tags: ["Marketplace"], summary: "Crear publicación", security: bearerSecurity, requestBody: jsonBody(createMarketplaceBody),
-        responses: { 201: created(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable }
+        responses: { 201: created(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       }
     },
     "/barrios/{barrioSlug}/marketplace/{postId}": {
       parameters: [barrioSlugParam, pathParam("postId", cuid())],
-      get: { tags: ["Marketplace"], summary: "Obtener publicación activa e incrementar vistas", responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 404: notFound } },
+      get: { tags: ["Marketplace"], summary: "Obtener publicación activa e incrementar vistas", description: "Requiere pertenecer al barrio porque la respuesta incluye el contacto de WhatsApp.", security: bearerSecurity, responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } },
       patch: {
         tags: ["Marketplace"], summary: "Actualizar publicación", security: bearerSecurity, requestBody: jsonBody(updateMarketplaceBody),
         responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }

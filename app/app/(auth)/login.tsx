@@ -9,7 +9,7 @@ import { ClayButton } from '../../components/ClayButton';
 import { ClayInput } from '../../components/ClayInput';
 import { api, setAccessToken } from '../../lib/api';
 import { authStorage } from '../../lib/auth';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const loginSchema = z.object({
@@ -21,6 +21,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginScreen() {
   const [globalError, setGlobalError] = useState('');
+  const queryClient = useQueryClient();
 
   const { control, handleSubmit, formState: { errors } } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -38,6 +39,8 @@ export default function LoginScreen() {
     onSuccess: async (data) => {
       setAccessToken(data.accessToken);
       await authStorage.saveRefreshToken(data.refreshToken);
+      await queryClient.cancelQueries({ queryKey: ['auth', 'me'] });
+      queryClient.setQueryData(['auth', 'me'], data.user);
       router.replace('/(app)/(tabs)');
     },
     onError: (error: any) => {

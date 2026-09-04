@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 
-const userSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
+const userSelect = { id: true, nickname: true, avatarUrl: true };
 
 async function resolveBusiness(barrioSlug: string, businessSlug: string) {
   const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug } });

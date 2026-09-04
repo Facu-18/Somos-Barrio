@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,16 +12,21 @@ import { api } from '../../lib/api';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const marketSchema = z.object({
   title: z.string().min(3, 'El título es muy corto').max(255),
   description: z.string().min(5, 'Escribe una mejor descripción').max(2000),
   price: z.string().optional(),
-  whatsapp: z.string().regex(/^\+[1-9]\d{1,14}$/, "Debe ser un número internacional (ej. +54911...)").optional().or(z.literal("")),
+  whatsapp: z.string().min(1, 'WhatsApp es obligatorio').refine((value) => {
+    const digits = value.replace(/\D/g, '').replace(/^00/, '');
+    return /^[1-9]\d{7,14}$/.test(digits);
+  }, 'Ingresá el código de país y el número (ej. +54 9 11...)'),
   category: z.enum(['ELECTRONICA', 'ROPA', 'MUEBLES', 'DEPORTES', 'SE_BUSCA', 'SE_REGALA', 'OTROS']),
 });
 
 type MarketForm = z.infer<typeof marketSchema>;
+const normalizeWhatsApp = (value: string) => `+${value.replace(/\D/g, '').replace(/^00/, '')}`;
 
 const categories = [
   { label: 'Electrónica', value: 'ELECTRONICA' },
@@ -39,6 +44,7 @@ export default function CreateMarketScreen() {
   const [globalError, setGlobalError] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const { control, handleSubmit, setValue, watch, formState: { errors } } = useForm<MarketForm>({
     resolver: zodResolver(marketSchema),
@@ -50,16 +56,48 @@ export default function CreateMarketScreen() {
   const pickImage = async () => {
     if (selectedImages.length >= 3) return; // Limit to 3 images
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setSelectedImages([...selectedImages, result.assets[0].uri]);
-    }
+    Alert.alert(
+      "Seleccionar Foto",
+      "¿Desde dónde quieres agregar la foto?",
+      [
+        {
+          text: "Cámara",
+          onPress: async () => {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') {
+              Alert.alert('Permiso denegado', 'Necesitamos acceso a tu cámara para tomar fotos.');
+              return;
+            }
+            const result = await ImagePicker.launchCameraAsync({
+              allowsEditing: true,
+              aspect: [4, 3],
+              quality: 0.8,
+            });
+            if (!result.canceled) {
+              setSelectedImages((prev) => [...prev, result.assets[0].uri]);
+            }
+          }
+        },
+        {
+          text: "Galería",
+          onPress: async () => {
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ['images'],
+              allowsEditing: true,
+              aspect: [4, 3],
+              quality: 0.8,
+            });
+            if (!result.canceled) {
+              setSelectedImages((prev) => [...prev, result.assets[0].uri]);
+            }
+          }
+        },
+        {
+          text: "Cancelar",
+          style: "cancel"
+        }
+      ]
+    );
   };
 
   const uploadImages = async (uris: string[]): Promise<string[]> => {
@@ -96,7 +134,7 @@ export default function CreateMarketScreen() {
         description: data.description,
         price: parsedPrice,
         category: data.category,
-        whatsapp: data.whatsapp || undefined,
+        whatsapp: normalizeWhatsApp(data.whatsapp),
         images: uploadedUrls,
       });
       return response.data;
@@ -121,8 +159,8 @@ export default function CreateMarketScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Cerrar">
           <MaterialCommunityIcons name="close" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Publicar Producto</Text>
@@ -140,9 +178,11 @@ export default function CreateMarketScreen() {
               {selectedImages.map((uri, index) => (
                 <View key={index} style={styles.imagePreview}>
                   <Image source={{ uri }} style={styles.image} />
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.removeImageBtn}
                     onPress={() => setSelectedImages(selectedImages.filter((_, i) => i !== index))}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Quitar foto ${index + 1}`}
                   >
                     <MaterialCommunityIcons name="close" size={16} color="white" />
                   </TouchableOpacity>
@@ -150,7 +190,7 @@ export default function CreateMarketScreen() {
               ))}
               
               {selectedImages.length < 3 && (
-                <TouchableOpacity onPress={pickImage} style={styles.addImageBtn}>
+                 <TouchableOpacity onPress={pickImage} style={styles.addImageBtn} accessibilityRole="button" accessibilityLabel="Agregar foto">
                   <MaterialCommunityIcons name="camera-plus" size={30} color={ClayTheme.colors.textMuted} />
                 </TouchableOpacity>
               )}
@@ -194,16 +234,16 @@ export default function CreateMarketScreen() {
             render={({ field: { onChange, onBlur, value } }) => (
               <View>
                 <ClayInput
-                  label="WhatsApp (opcional)"
+                   label="WhatsApp"
                   placeholder="+5491100000000"
                   keyboardType="phone-pad"
                   onBlur={onBlur}
-                  onChangeText={onChange}
+                   onChangeText={onChange}
                   value={value}
                   error={errors.whatsapp?.message}
                 />
                 <Text style={{ fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 11, color: ClayTheme.colors.textMuted, marginLeft: 8, marginTop: 4 }}>
-                  Tu número será visible para todos los vecinos si lo incluyes.
+                   {value ? `Se publicará como ${normalizeWhatsApp(value)}` : 'Incluí código de país. Será visible para los vecinos.'}
                 </Text>
               </View>
             )}
@@ -272,7 +312,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 22,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 20,
     backgroundColor: ClayTheme.colors.surface,
     ...ClayTheme.shadows.elevated,

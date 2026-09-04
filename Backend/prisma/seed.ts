@@ -21,10 +21,11 @@ async function main(): Promise<void> {
 
   const adminUser = await prisma.user.upsert({
     where: { email: "admin@somosbarrio.local" },
-    update: {},
+    update: { barrioId: barrio.id, nickname: "Somos Barrio" },
     create: {
       email: "admin@somosbarrio.local",
       name: "Admin Somos Barrio",
+      nickname: "Somos Barrio",
       passwordHash: adminPasswordHash,
       role: UserRole.ADMIN,
       authProvider: AuthProvider.LOCAL,
@@ -34,7 +35,7 @@ async function main(): Promise<void> {
 
   const vecinoUser = await prisma.user.upsert({
     where: { email: "vecino@somosbarrio.local" },
-    update: {},
+    update: { barrioId: barrio.id, nickname: "Juancito" },
     create: {
       email: "vecino@somosbarrio.local",
       name: "Juan Perez",
@@ -66,10 +67,11 @@ async function main(): Promise<void> {
 
   const negocioOwner = await prisma.user.upsert({
     where: { email: "local@somosbarrio.local" },
-    update: {},
+    update: { barrioId: barrio.id, nickname: "Comerciante" },
     create: {
       email: "local@somosbarrio.local",
       name: "Comerciante Demo",
+      nickname: "Comerciante",
       passwordHash: await bcrypt.hash("Local1234!", 12),
       role: UserRole.NEGOCIO,
       authProvider: AuthProvider.LOCAL,
@@ -89,7 +91,7 @@ async function main(): Promise<void> {
       verified: true,
       photos: ["https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=400&q=80"],
       phone: "3510001111",
-      whatsapp: "3510001111"
+      whatsapp: "+543510001111"
     },
     {
       ownerId: adminUser.id,
@@ -101,7 +103,7 @@ async function main(): Promise<void> {
       description: "Todo en herramientas, pintura y materiales de construccion.",
       verified: true,
       photos: ["https://images.unsplash.com/photo-1533758349247-49f993d0d33e?auto=format&fit=crop&w=400&q=80"],
-      whatsapp: "3510002222"
+      whatsapp: "+543510002222"
     },
     {
       ownerId: vecinoUser.id,
@@ -136,7 +138,7 @@ async function main(): Promise<void> {
       category: MarketplaceCategory.DEPORTES,
       status: MarketplaceStatus.ACTIVE,
       images: ["https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=400&q=80"],
-      whatsapp: "+5493510000000"
+       whatsapp: "+5493510000000"
     },
     {
       userId: adminUser.id,
@@ -148,6 +150,7 @@ async function main(): Promise<void> {
       category: MarketplaceCategory.MUEBLES,
       status: MarketplaceStatus.ACTIVE,
       images: ["https://images.unsplash.com/photo-1505843490538-5133c6c7d0e1?auto=format&fit=crop&w=400&q=80"],
+      whatsapp: "+5493510002222"
     },
     {
       userId: negocioOwner.id,
@@ -164,12 +167,15 @@ async function main(): Promise<void> {
   ];
 
   for (const p of marketplacePosts) {
-    await prisma.marketplacePost.create({ data: p });
+    const existing = await prisma.marketplacePost.findFirst({
+      where: { userId: p.userId, barrioId: p.barrioId, title: p.title }
+    });
+    if (!existing) await prisma.marketplacePost.create({ data: p });
   }
 
   // A couple of forum threads
-  const consultasId = (await prisma.forumSubforum.findFirst({ where: { slug: "consultas" } }))?.id;
-  if (consultasId) {
+  const consultasId = (await prisma.forumSubforum.findFirst({ where: { barrioId: barrio.id, slug: "consultas" } }))?.id;
+  if (consultasId && !await prisma.forumThread.findFirst({ where: { subforumId: consultasId, title: "¿Alguien sabe si paso el basurero hoy?" } })) {
     await prisma.forumThread.create({
       data: {
         userId: vecinoUser.id,
@@ -181,8 +187,8 @@ async function main(): Promise<void> {
     });
   }
 
-  const recomendacionesId = (await prisma.forumSubforum.findFirst({ where: { slug: "recomendaciones" } }))?.id;
-  if (recomendacionesId) {
+  const recomendacionesId = (await prisma.forumSubforum.findFirst({ where: { barrioId: barrio.id, slug: "recomendaciones" } }))?.id;
+  if (recomendacionesId && !await prisma.forumThread.findFirst({ where: { subforumId: recomendacionesId, title: "Excelente la nueva ferreteria" } })) {
     await prisma.forumThread.create({
       data: {
         userId: adminUser.id,

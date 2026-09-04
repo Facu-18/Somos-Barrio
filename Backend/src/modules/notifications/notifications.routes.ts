@@ -1,25 +1,40 @@
-import { Router, Request, Response } from "express";
-import { asyncHandler } from "../../utils/async-handler";
+import { Request, Response, Router } from "express";
 import { requireAuth } from "../../middlewares/auth";
-import { notificationsService } from "./notifications.service";
-import { z } from "zod";
 import { validate } from "../../middlewares/validate";
+import { asyncHandler } from "../../utils/async-handler";
+import { deviceSchema, unregisterDeviceSchema } from "./notifications.schema";
+import { notificationsService } from "./notifications.service";
+import { deviceCleanupRateLimiter } from "../../middlewares/rate-limit";
 
 const notificationsRouter = Router();
-
-const registerSchema = z.object({
-  token: z.string().min(10),
-  platform: z.enum(["android", "ios", "web"])
-});
 
 notificationsRouter.post(
   "/register",
   requireAuth,
-  validate({ body: registerSchema }),
+  validate({ body: deviceSchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const { token, platform } = req.body;
-    await notificationsService.registerDevice(req.user!.id, token, platform);
-    res.json({ success: true, message: "Dispositivo registrado" });
+    await notificationsService.registerDevice(req.user!.id, req.body.token, req.body.platform);
+    res.json({ success: true, data: { message: "Dispositivo registrado" } });
+  })
+);
+
+notificationsRouter.delete(
+  "/register",
+  requireAuth,
+  validate({ body: unregisterDeviceSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    await notificationsService.unregisterDevice(req.user!.id, req.body.token);
+    res.status(204).send();
+  })
+);
+
+notificationsRouter.post(
+  "/unregister",
+  deviceCleanupRateLimiter,
+  validate({ body: unregisterDeviceSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    await notificationsService.unregisterDeviceByToken(req.body.token);
+    res.status(204).send();
   })
 );
 

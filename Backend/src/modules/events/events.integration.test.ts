@@ -13,14 +13,16 @@ describe("Eventos — integration", () => {
     const barrio = await seedBarrio(`events-barrio-${Date.now()}`);
     barrioSlug = barrio.slug;
 
-    const o = await registerAndLogin({ name: "Organizador" });
+    const o = await registerAndLogin({ name: "Organizador", barrioSlug });
     organizerToken = o.token;
-    const a = await registerAndLogin({ name: "Asistente" });
+    const a = await registerAndLogin({ name: "Asistente", barrioSlug });
     attendeeToken = a.token;
   });
 
   it("GET /barrios/:slug/events — lista (paginada) al inicio", async () => {
-    const res = await request(app).get(`${API}/barrios/${barrioSlug}/events`);
+    const res = await request(app)
+      .get(`${API}/barrios/${barrioSlug}/events`)
+      .set("Authorization", `Bearer ${attendeeToken}`);
     expect(res.status).toBe(200);
     // La respuesta tiene { data: { items: [], total, page, limit } }
     expect(Array.isArray(res.body.data.items)).toBe(true);
@@ -43,7 +45,9 @@ describe("Eventos — integration", () => {
   });
 
   it("GET /barrios/:slug/events/:eventId — obtiene evento", async () => {
-    const res = await request(app).get(`${API}/barrios/${barrioSlug}/events/${eventId}`);
+    const res = await request(app)
+      .get(`${API}/barrios/${barrioSlug}/events/${eventId}`)
+      .set("Authorization", `Bearer ${attendeeToken}`);
     expect(res.status).toBe(200);
     expect(res.body.data.id).toBe(eventId);
   });

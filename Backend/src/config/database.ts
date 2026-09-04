@@ -1,5 +1,6 @@
 import { logger } from "./logger";
 import { prisma } from "../lib/prisma";
+import { env } from "./env";
 
 const ensureParqueLiceo = async () => {
   const barrio = await prisma.barrio.upsert({
@@ -35,7 +36,7 @@ export const connectDatabase = async (): Promise<void> => {
   await prisma.$connect();
   logger.info("PostgreSQL conectado con Prisma");
   
-  if (process.env.NODE_ENV !== 'test') {
+  if (env.NODE_ENV !== "test") {
     await ensureParqueLiceo();
     logger.info("Barrio fundacional asegurado");
   }

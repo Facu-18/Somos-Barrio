@@ -1,17 +1,18 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../constants/ClayTheme';
 import { ClayButton } from '../../components/ClayButton';
 import { useAuth } from '../../hooks/useAuth';
-import { api, setAccessToken } from '../../lib/api';
-import { authStorage } from '../../lib/auth';
+import { logoutMobileSession } from '../../lib/api';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ProfileScreen() {
   const { data: user } = useAuth();
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
 
   const handleLogout = async () => {
     Alert.alert(
@@ -23,20 +24,15 @@ export default function ProfileScreen() {
           text: "Sí, salir", 
           style: "destructive",
           onPress: async () => {
-            try {
-              // Attempt API logout to clear refresh token on backend
-              await api.post('/auth/mobile/logout');
-            } catch {
-              console.log('Error logging out on backend, continuing local logout');
-            }
-            
-            // Clear local storage and tokens
-            await authStorage.deleteRefreshToken();
-            setAccessToken(null);
+            const remoteLogout = logoutMobileSession();
             queryClient.clear();
-            
-            // Redirect to login
+            queryClient.setQueryData(['auth', 'me'], null);
             router.replace('/(auth)/login');
+            try {
+              await remoteLogout;
+            } catch {
+              console.warn('No se pudo cerrar la sesión remota; se cerrará localmente.');
+            }
           }
         }
       ]
@@ -49,8 +45,8 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Volver">
           <MaterialCommunityIcons name="arrow-left" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Mi Perfil</Text>
@@ -101,7 +97,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 22,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 20,
     backgroundColor: ClayTheme.colors.surface,
     ...ClayTheme.shadows.elevated,

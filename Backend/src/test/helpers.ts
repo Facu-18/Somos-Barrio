@@ -17,14 +17,22 @@ export async function registerAndLogin(opts?: {
   email?: string;
   password?: string;
   name?: string;
+  barrioSlug?: string;
 }) {
   const email    = opts?.email    ?? `user_${Date.now()}@test.com`;
   const password = opts?.password ?? "Password123!";
   const name     = opts?.name     ?? "Test User";
+  const barrioSlug = opts?.barrioSlug ?? "parque-liceo";
+
+  await prisma.barrio.upsert({
+    where: { slug: barrioSlug },
+    update: {},
+    create: { name: "Barrio Test", slug: barrioSlug, city: "Cordoba", province: "Cordoba" }
+  });
 
   const res = await request(app)
     .post(`${API}/auth/register`)
-    .send({ email, password, name });
+    .send({ email, password, name, barrioSlug });
 
   return {
     token:  res.body.data?.accessToken as string,
@@ -39,9 +47,14 @@ export async function createAdminAndLogin() {
   const email    = `admin_${Date.now()}@test.com`;
   const password = "Admin1234!";
 
+  const barrio = await prisma.barrio.upsert({
+    where: { slug: "parque-liceo" },
+    update: {},
+    create: { name: "Parque Liceo", slug: "parque-liceo", city: "Cordoba", province: "Cordoba" }
+  });
   const hashed = await bcrypt.hash(password, 10);
   await prisma.user.create({
-    data: { email, name: "Admin Test", passwordHash: hashed, role: UserRole.ADMIN },
+    data: { email, name: "Admin Test", nickname: "Admin", passwordHash: hashed, role: UserRole.ADMIN, barrioId: barrio.id },
   });
 
   const res = await request(app)

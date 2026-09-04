@@ -1,25 +1,65 @@
-import { Stack, Redirect } from 'expo-router';
+import { Stack, Redirect, router } from 'expo-router';
 import { View, ActivityIndicator, Text } from 'react-native';
 import { ClayTheme } from '../../constants/ClayTheme';
 import { useAuth } from '../../hooks/useAuth';
 import { useEffect } from 'react';
 import * as Notifications from 'expo-notifications';
-import { registerForPushNotificationsAsync } from '../../lib/notifications';
+import {
+  activatePushRegistration,
+  addPushTokenRotationListener,
+  deactivatePushRegistration,
+  getNotificationRoute,
+  registerForPushNotificationsAsync,
+} from '../../lib/notifications';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function AppLayout() {
   const { data: user, isLoading, error } = useAuth();
+  const queryClient = useQueryClient();
+  const userId = user?.id;
 
   useEffect(() => {
-    if (user) {
-      registerForPushNotificationsAsync();
-
-      const subscription = Notifications.addNotificationReceivedListener(notification => {
-        console.log('Notificación recibida en foreground:', notification);
+    if (userId) {
+      activatePushRegistration(userId);
+      registerForPushNotificationsAsync(userId).catch((registrationError) => {
+        console.warn('No se pudieron registrar las notificaciones push.', registrationError);
       });
 
-      return () => subscription.remove();
+      const navigateFromNotification = (notification: Notifications.Notification) => {
+        const route = getNotificationRoute(notification.request.content.data);
+        if (route) router.push(route);
+      };
+
+      const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
+        const data = notification.request.content.data;
+        if ((data.type === 'forum_reply' || data.type === 'forum-reply') && typeof data.threadId === 'string') {
+          queryClient.invalidateQueries({ queryKey: ['thread-detail'], exact: false });
+        }
+      });
+      const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+        if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+          navigateFromNotification(response.notification);
+        }
+      });
+      const tokenSubscription = addPushTokenRotationListener(userId);
+
+      Notifications.getLastNotificationResponseAsync().then((response) => {
+        if (response?.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+          navigateFromNotification(response.notification);
+          Notifications.clearLastNotificationResponseAsync();
+        }
+      }).catch((notificationError) => {
+        console.warn('No se pudo procesar la notificación inicial.', notificationError);
+      });
+
+      return () => {
+        deactivatePushRegistration(userId);
+        receivedSubscription.remove();
+        responseSubscription.remove();
+        tokenSubscription?.remove();
+      };
     }
-  }, [user]);
+  }, [queryClient, userId]);
 
   if (isLoading) {
     return (
@@ -44,7 +84,7 @@ export default function AppLayout() {
   }
 
   return (
-    <Stack>
+    <Stack screenOptions={{ headerShown: false }}>
       {/* Las pestañas principales no tienen cabecera porque cada vista maneja su propio título */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       

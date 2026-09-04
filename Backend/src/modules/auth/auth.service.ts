@@ -7,6 +7,8 @@ import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { redis } from "../../lib/redis";
 import { ApiError } from "../../utils/api-error";
+import { cloudinary } from "../../lib/cloudinary";
+import { logger } from "../../config/logger";
 
 const RT_PREFIX = "rt:";
 const BL_PREFIX = "bl:";
@@ -31,7 +33,6 @@ type SafeUser = {
   bio: string | null;
   role: UserRole;
   avatarUrl: string | null;
-  avatarPublicId: string | null;
   barrioId: string | null;
   barrio: { id: string; name: string; slug: string } | null;
   createdAt: Date;
@@ -74,7 +75,6 @@ const toSafeUser = (user: {
   bio: user.bio,
   role: user.role,
   avatarUrl: user.avatarUrl,
-  avatarPublicId: user.avatarPublicId,
   barrioId: user.barrioId,
   barrio: user.barrio,
   createdAt: user.createdAt
@@ -151,7 +151,7 @@ export const authService = {
     const passwordHash = await bcrypt.hash(input.password, 12);
     const { user, refreshToken } = await prisma.$transaction(async (transaction) => {
       const createdUser = await transaction.user.create({
-        data: { email: input.email.toLowerCase(), name: input.name, passwordHash, barrioId },
+        data: { email: input.email.toLowerCase(), name: input.name, nickname: input.name, passwordHash, barrioId },
         select: safeUserSelect
       });
       const createdRefreshToken = await issueRefreshToken(createdUser.id);
@@ -205,13 +205,88 @@ export const authService = {
     }
   },
 
+  async mobileLogout(rawRefreshToken: string, pushToken?: string, accessToken?: string): Promise<void> {
+    let accessSession: { userId: string; blacklistKey: string; remainingMs: number } | undefined;
+    if (accessToken) {
+      try {
+        const payload = jwt.verify(accessToken, env.JWT_SECRET);
+        if (typeof payload === "object" && typeof payload.sub === "string" && typeof payload.jti === "string" && typeof payload.exp === "number") {
+          const remainingMs = payload.exp * 1000 - Date.now();
+          if (remainingMs > 0) {
+            accessSession = { userId: payload.sub, blacklistKey: `${BL_PREFIX}${payload.jti}`, remainingMs: Math.ceil(remainingMs) };
+          }
+        }
+      } catch {
+        // The refresh token can still authorize logout when the access token is absent or expired.
+      }
+    }
+
+    const key = `${RT_PREFIX}${hashToken(rawRefreshToken)}`;
+    const script = `
+      local userId = redis.call("GET", KEYS[1])
+      local accessUserId = ARGV[1]
+      if userId and accessUserId ~= "" and userId ~= accessUserId then return "MISMATCH" end
+      if userId then redis.call("DEL", KEYS[1]) end
+      if accessUserId ~= "" then redis.call("SET", ARGV[2], "1", "PX", ARGV[3]) end
+      return userId or accessUserId or false
+    `;
+    let userId: unknown;
+    try {
+      userId = await redis.eval(
+        script,
+        1,
+        key,
+        accessSession?.userId ?? "",
+        accessSession?.blacklistKey ?? "",
+        String(accessSession?.remainingMs ?? 0)
+      );
+    } catch {
+      throw sessionUnavailable();
+    }
+    if (userId === "MISMATCH") throw new ApiError(401, "Las credenciales de sesion no coinciden");
+    if (typeof userId !== "string") throw new ApiError(401, "Sesion invalida o expirada");
+    if (pushToken) {
+      await prisma.pushDevice.deleteMany({ where: { userId, token: pushToken } });
+    }
+  },
+
   async me(userId: string): Promise<SafeUser> {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: safeUserSelect });
     if (!user) throw new ApiError(401, "Usuario no encontrado");
     return toSafeUser(user);
   },
 
-  async updateProfile(userId: string, data: { nickname?: string; bio?: string; avatarUrl?: string; avatarPublicId?: string }): Promise<SafeUser> {
+  async updateProfile(userId: string, data: { nickname?: string | null; bio?: string; avatarUrl?: string; avatarPublicId?: string }): Promise<SafeUser> {
+    const current = await prisma.user.findUnique({ where: { id: userId }, select: { avatarPublicId: true } });
+    if (!current) throw new ApiError(401, "Usuario no encontrado");
+
+    if (data.avatarUrl && data.avatarPublicId) {
+      let parsed: URL;
+      try {
+        parsed = new URL(data.avatarUrl);
+      } catch {
+        throw new ApiError(400, "La imagen de perfil no es valida");
+      }
+      const segments = parsed.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+      const assetSegments = segments.slice(3);
+      if (assetSegments[0]?.match(/^v\d+$/)) assetSegments.shift();
+      const urlPublicId = assetSegments.join("/").replace(/\.[^.]+$/, "");
+      const validCloud = parsed.protocol === "https:"
+        && parsed.hostname === "res.cloudinary.com"
+        && segments[0] === env.CLOUDINARY_CLOUD_NAME
+        && segments[1] === "image"
+        && segments[2] === "upload";
+      const avatarPrefix = `somos-barrio/avatars/${userId}/`;
+      if (!validCloud || !data.avatarPublicId.startsWith(avatarPrefix) || urlPublicId !== data.avatarPublicId) {
+        throw new ApiError(400, "La URL y el ID de Cloudinary no coinciden");
+      }
+      const owner = await prisma.user.findFirst({
+        where: { avatarPublicId: data.avatarPublicId, id: { not: userId } },
+        select: { id: true }
+      });
+      if (owner) throw new ApiError(409, "La imagen ya pertenece a otro perfil");
+    }
+
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
@@ -222,6 +297,14 @@ export const authService = {
       },
       select: safeUserSelect
     });
+    const replacedPublicId = current.avatarPublicId && current.avatarPublicId !== user.avatarPublicId
+      ? current.avatarPublicId
+      : null;
+    if (replacedPublicId && env.NODE_ENV !== "test" && env.CLOUDINARY_CLOUD_NAME
+      && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET) {
+      void cloudinary.uploader.destroy(replacedPublicId, { resource_type: "image" })
+        .catch((error) => logger.warn({ err: error, publicId: replacedPublicId }, "No se pudo borrar avatar reemplazado"));
+    }
     return toSafeUser(user);
   }
 };

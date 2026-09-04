@@ -12,6 +12,8 @@ import { api } from '../../lib/api';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import type { ApiResponse, UploadResult } from '../../types/api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const profileSchema = z.object({
   nickname: z.string().min(2, "El apodo es muy corto").max(30, "El apodo es muy largo").optional().or(z.literal("")),
@@ -26,6 +28,7 @@ export default function EditProfileScreen() {
   const [globalError, setGlobalError] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(user?.avatarUrl || null);
   const [isUploading, setIsUploading] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const { control, handleSubmit, formState: { errors } } = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -48,10 +51,7 @@ export default function EditProfileScreen() {
     }
   };
 
-  const uploadImage = async (uri: string): Promise<string> => {
-    // If it's already an http url, it means it wasn't changed (it's the current avatarUrl)
-    if (uri.startsWith('http')) return uri;
-
+  const uploadImage = async (uri: string): Promise<UploadResult> => {
     const filename = uri.split('/').pop() || 'photo.jpg';
     const match = /\.(\w+)$/.exec(filename);
     const type = match ? `image/${match[1]}` : `image`;
@@ -59,30 +59,29 @@ export default function EditProfileScreen() {
     const formData = new FormData();
     formData.append('file', { uri, name: filename, type } as any);
     
-    const response = await api.post('/upload', formData, {
+    const response = await api.post<ApiResponse<UploadResult>>('/upload/avatar', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    return response.data.data.url;
+    return response.data.data;
   };
 
   const updateMutation = useMutation({
     mutationFn: async (data: ProfileForm) => {
-      let avatarUrl = user?.avatarUrl || '';
-      
+      let avatarUpdate: Pick<UploadResult, 'url' | 'publicId'> | null = null;
+
       if (selectedImage && selectedImage !== user?.avatarUrl) {
         setIsUploading(true);
-        avatarUrl = await uploadImage(selectedImage);
+        avatarUpdate = await uploadImage(selectedImage);
         setIsUploading(false);
       } else if (!selectedImage) {
-        avatarUrl = ''; // User removed image
+        avatarUpdate = { url: '', publicId: '' };
       }
 
-      // Evitamos mandar vacío si no hay cambios
-      const payload: any = {};
-      payload.nickname = data.nickname;
-      payload.bio = data.bio;
-      payload.avatarUrl = avatarUrl;
-      payload.avatarPublicId = ""; // Para implementaciones futuras si usamos Cloudinary ids directos
+      const payload = {
+        nickname: data.nickname?.trim() || null,
+        bio: data.bio?.trim() || '',
+        ...(avatarUpdate ? { avatarUrl: avatarUpdate.url, avatarPublicId: avatarUpdate.publicId } : {}),
+      };
 
       const response = await api.patch(`/auth/me`, payload);
       return response.data;
@@ -111,8 +110,8 @@ export default function EditProfileScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Volver">
           <MaterialCommunityIcons name="arrow-left" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Editar Perfil</Text>
@@ -136,7 +135,7 @@ export default function EditProfileScreen() {
             <View style={styles.avatarActions}>
               <ClayButton title="Cambiar foto" onPress={pickImage} style={styles.changePicBtn} />
               {selectedImage && (
-                <TouchableOpacity onPress={() => setSelectedImage(null)} style={styles.removePicBtn}>
+                <TouchableOpacity onPress={() => setSelectedImage(null)} style={styles.removePicBtn} accessibilityRole="button" accessibilityLabel="Quitar foto de perfil">
                   <Text style={styles.removePicText}>Quitar</Text>
                 </TouchableOpacity>
               )}
@@ -198,7 +197,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 22,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 20,
     backgroundColor: ClayTheme.colors.surface,
     ...ClayTheme.shadows.elevated,

@@ -9,7 +9,7 @@ type CreateEventInput = {
   location: string;
 };
 
-const userSelect = { id: true, name: true, nickname: true, avatarUrl: true, avatarPublicId: true };
+const userSelect = { id: true, nickname: true, avatarUrl: true };
 
 async function resolveBarrio(barrioSlug: string) {
   const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug } });

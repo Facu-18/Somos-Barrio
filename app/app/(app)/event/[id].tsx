@@ -1,11 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Image, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { ClayButton } from '../../../components/ClayButton';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface EventDetail {
   id: string;
@@ -30,8 +32,9 @@ export default function EventDetailScreen() {
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
 
-  const { data: event, isLoading } = useQuery({
+  const { data: event, isLoading, isError, refetch } = useQuery({
     queryKey: ['event-detail', barrioSlug, id],
     queryFn: async () => {
       const response = await api.get(`/barrios/${barrioSlug}/events/${id}`);
@@ -48,7 +51,8 @@ export default function EventDetailScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['event-detail', barrioSlug, id] });
       queryClient.invalidateQueries({ queryKey: ['events', barrioSlug] });
-    }
+    },
+    onError: () => Alert.alert('No se pudo guardar', 'Tu respuesta no cambió. Intentá nuevamente.'),
   });
 
   const getInitials = (name: string) => name.substring(0, 2).toUpperCase();
@@ -64,10 +68,19 @@ export default function EventDetailScreen() {
     }).replace(',', ' a las');
   };
 
-  if (isLoading || !event) {
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={ClayTheme.colors.primary} />
+      </View>
+    );
+  }
+
+  if (isError || !event) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.errorText}>No se pudo cargar el evento.</Text>
+        <ClayButton title="Reintentar" onPress={() => refetch()} style={{ marginTop: 20 }} />
       </View>
     );
   }
@@ -78,8 +91,8 @@ export default function EventDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Volver">
           <MaterialCommunityIcons name="arrow-left" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Evento</Text>
@@ -151,12 +164,15 @@ export default function EventDetailScreen() {
       </ScrollView>
       
       {/* RSVP Action Bar Fixed at Bottom */}
-      <View style={styles.rsvpContainer}>
-        <Text style={styles.rsvpPrompt}>¿Vas a ir?</Text>
+      <View style={[styles.rsvpContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <Text style={styles.rsvpPrompt}>{rsvpMutation.isPending ? 'Guardando respuesta...' : '¿Vas a ir?'}</Text>
         <View style={styles.rsvpButtons}>
           <TouchableOpacity 
             activeOpacity={0.8}
             onPress={() => rsvpMutation.mutate('GOING')}
+            disabled={rsvpMutation.isPending}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isGoing, disabled: rsvpMutation.isPending }}
             style={[styles.rsvpBtn, isGoing && styles.rsvpBtnActiveGoing]}
           >
             <MaterialCommunityIcons name="check-circle-outline" size={20} color={isGoing ? 'white' : ClayTheme.colors.textMuted} />
@@ -166,6 +182,9 @@ export default function EventDetailScreen() {
           <TouchableOpacity 
             activeOpacity={0.8}
             onPress={() => rsvpMutation.mutate('INTERESTED')}
+            disabled={rsvpMutation.isPending}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isInterested, disabled: rsvpMutation.isPending }}
             style={[styles.rsvpBtn, isInterested && styles.rsvpBtnActiveInterested]}
           >
             <MaterialCommunityIcons name="star-outline" size={20} color={isInterested ? 'white' : ClayTheme.colors.textMuted} />
@@ -175,6 +194,9 @@ export default function EventDetailScreen() {
           <TouchableOpacity 
             activeOpacity={0.8}
             onPress={() => rsvpMutation.mutate('NOT_GOING')}
+            disabled={rsvpMutation.isPending}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isNotGoing, disabled: rsvpMutation.isPending }}
             style={[styles.rsvpBtn, isNotGoing && styles.rsvpBtnActiveNotGoing]}
           >
             <MaterialCommunityIcons name="close-circle-outline" size={20} color={isNotGoing ? 'white' : ClayTheme.colors.textMuted} />
@@ -197,10 +219,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: ClayTheme.colors.background,
   },
+  errorText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    color: ClayTheme.colors.error,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingHorizontal: 20,
     paddingBottom: 20,
     backgroundColor: ClayTheme.colors.background,
@@ -311,7 +336,6 @@ const styles = StyleSheet.create({
     backgroundColor: ClayTheme.colors.surface,
     paddingHorizontal: 24,
     paddingTop: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     ...ClayTheme.shadows.elevated,

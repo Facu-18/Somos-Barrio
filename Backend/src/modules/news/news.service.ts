@@ -1,6 +1,7 @@
 import { NewsStatus, UserRole } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
+import { notificationsService } from "../notifications/notifications.service";
 
 type CreateNewsInput = {
   title: string;
@@ -20,10 +21,8 @@ type UpdateNewsInput = Partial<{
 
 const authorSelect = {
   id: true,
-  name: true,
   nickname: true,
   avatarUrl: true,
-  avatarPublicId: true
 };
 
 async function resolveBarrio(barrioSlug: string) {
@@ -117,10 +116,49 @@ export const newsService = {
       data.publishedAt = new Date();
     }
 
-    return prisma.news.update({
-      where: { id: news.id },
-      data,
-      include: { author: { select: authorSelect } }
+    return prisma.$transaction(async (transaction) => {
+      const mayBeFirstPublication = input.status === NewsStatus.PUBLISHED
+        && news.status !== NewsStatus.PUBLISHED
+        && news.publishedAt === null;
+      let firstPublication = false;
+      if (mayBeFirstPublication) {
+        const transition = await transaction.news.updateMany({
+          where: { id: news.id, status: { not: NewsStatus.PUBLISHED }, publishedAt: null },
+          data
+        });
+        firstPublication = transition.count === 1;
+        if (!firstPublication) {
+          delete data.publishedAt;
+          await transaction.news.update({ where: { id: news.id }, data });
+        }
+      } else {
+        await transaction.news.update({ where: { id: news.id }, data });
+      }
+
+      const updated = await transaction.news.findUniqueOrThrow({
+        where: { id: news.id },
+        include: { author: { select: authorSelect } }
+      });
+
+      if (firstPublication) {
+        const recipients = await transaction.user.findMany({
+          where: { barrioId: barrio.id, id: { notIn: [requesterId, news.authorId] } },
+          select: { id: true }
+        });
+        await notificationsService.enqueue(transaction, recipients.map(({ id }) => ({
+          userId: id,
+          title: "Nueva noticia en tu barrio",
+          body: updated.title,
+          data: {
+            type: "news",
+            barrioSlug,
+            newsSlug: updated.slug,
+            url: `/barrios/${barrioSlug}/news/${updated.slug}`
+          }
+        })));
+      }
+
+      return updated;
     });
   },
 

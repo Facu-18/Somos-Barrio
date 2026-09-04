@@ -1,10 +1,17 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
-import { authStorage } from './auth';
+import { authSession, authStorage } from './auth';
 
 // Use 10.0.2.2 for Android emulator to access localhost on the host machine
 const getBaseUrl = () => {
-  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
+  const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (configuredUrl) {
+    if (!/^https?:\/\/[^\s]+$/i.test(configuredUrl)) {
+      throw new Error('EXPO_PUBLIC_API_URL must be an absolute http(s) URL.');
+    }
+    return configuredUrl.replace(/\/$/, '');
+  }
+  if (!__DEV__) throw new Error('EXPO_PUBLIC_API_URL is required outside development.');
   return Platform.OS === 'android' ? 'http://10.0.2.2:4000/api/v1' : 'http://localhost:4000/api/v1';
 };
 
@@ -17,9 +24,10 @@ export const api = axios.create({
 
 let accessToken: string | null = null;
 let isRefreshing = false;
-let failedQueue: Array<{ resolve: (token: string) => void, reject: (err: any) => void }> = [];
+let isLoggingOut = false;
+let failedQueue: Array<{ resolve: (token: string) => void; reject: (err: unknown) => void }> = [];
 
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach(prom => {
     if (error) {
       prom.reject(error);
@@ -33,6 +41,51 @@ const processQueue = (error: any, token: string | null = null) => {
 export const setAccessToken = (token: string | null) => {
   accessToken = token;
 };
+
+export async function logoutMobileSession() {
+  isLoggingOut = true;
+  authSession.beginEnding();
+  let pushCleanupSucceeded = false;
+  let pushToken: string | null = null;
+  try {
+    while (isRefreshing) await new Promise((resolve) => setTimeout(resolve, 10));
+    const [refreshToken, storedPushToken] = await Promise.all([
+      authStorage.getRefreshToken(),
+      authStorage.getPushToken(),
+    ]);
+    pushToken = storedPushToken;
+    if (refreshToken) {
+      await axios.post(`${getBaseUrl()}/auth/mobile/logout`, {
+        refreshToken,
+        ...(pushToken ? { pushToken } : {}),
+      }, {
+        ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
+      });
+      pushCleanupSucceeded = Boolean(pushToken);
+    }
+  } finally {
+    setAccessToken(null);
+    try {
+      if (pushToken && !pushCleanupSucceeded) {
+        await authStorage.addPendingPushToken(pushToken).catch((error) => {
+          console.warn('No se pudo conservar la limpieza push pendiente.', error);
+        });
+      }
+      await Promise.allSettled([
+        authStorage.deleteRefreshToken(),
+        ...(pushToken ? [authStorage.deletePushToken()] : []),
+      ]);
+      if (pushToken && pushCleanupSucceeded) {
+        await authStorage.removePendingPushToken(pushToken).catch((error) => {
+          console.warn('No se pudo actualizar la limpieza push pendiente.', error);
+        });
+      }
+    } finally {
+      authSession.invalidate();
+      isLoggingOut = false;
+    }
+  }
+}
 
 // Request interceptor: add access token if we have it in memory
 api.interceptors.request.use((config) => {
@@ -51,6 +104,7 @@ api.interceptors.response.use(
     // If error is 401, not a retry yet, and not the login/refresh endpoints
     if (
       error.response?.status === 401 && 
+      !isLoggingOut &&
       !originalRequest._retry && 
       !originalRequest.url?.includes('/auth/mobile/login') &&
       !originalRequest.url?.includes('/auth/mobile/refresh')
@@ -100,9 +154,19 @@ api.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null);
         // Refresh token is invalid or expired
+        authSession.beginEnding();
         setAccessToken(null);
-        await authStorage.deleteRefreshToken();
-        // Here we could dispatch an event or use a global state to force navigation to login
+        const pushToken = await authStorage.getPushToken();
+        if (pushToken) {
+          await authStorage.addPendingPushToken(pushToken).catch((storageError) => {
+            console.warn('No se pudo conservar la limpieza push pendiente.', storageError);
+          });
+        }
+        await Promise.allSettled([
+          authStorage.deleteRefreshToken(),
+          ...(pushToken ? [authStorage.deletePushToken()] : []),
+        ]);
+        authSession.invalidate();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

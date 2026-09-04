@@ -1,7 +1,8 @@
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;
-  pages: number;
+  page: number;
+  limit: number;
 }
 
 export interface ApiResponse<T> {
@@ -20,10 +21,20 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  nickname?: string;
-  bio?: string;
-  avatarUrl?: string;
-  avatarPublicId?: string;
-  barrioSlug?: string;
-  barrio?: Barrio;
+  nickname: string | null;
+  bio: string | null;
+  avatarUrl: string | null;
+  avatarPublicId: string | null;
+  barrioSlug: string | null;
+  barrio: Barrio | null;
+}
+
+export interface UploadResult {
+  url: string;
+  publicId: string;
+}
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
 }

@@ -22,4 +22,14 @@ uploadRouter.post(
   uploadController.uploadImage
 );
 
+uploadRouter.post(
+  "/avatar",
+  requireAuth,
+  uploadRateLimiter,
+  uploadSingle,
+  verifyImageContent,
+  uploadToCloudinary((req) => `somos-barrio/avatars/${req.user!.id}`),
+  uploadController.uploadImage
+);
+
 export { uploadRouter };

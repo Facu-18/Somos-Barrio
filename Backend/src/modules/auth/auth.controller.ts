@@ -71,7 +71,9 @@ export const authController = {
   },
 
   async mobileLogout(req: Request, res: Response): Promise<void> {
-    await authService.logout(req.user!.jti, req.user!.tokenExp, req.body.refreshToken);
+    const authorization = req.headers.authorization;
+    const accessToken = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined;
+    await authService.mobileLogout(req.body.refreshToken, req.body.pushToken, accessToken);
     res.status(204).send();
   }
 };

@@ -18,6 +18,8 @@ const prisma = new PrismaClient({
 // Limpiar todas las tablas antes de cada suite de tests
 beforeAll(async () => {
   await prisma.$transaction([
+    prisma.notificationOutbox.deleteMany(),
+    prisma.pushDevice.deleteMany(),
     prisma.forumVote.deleteMany(),
     prisma.forumReply.deleteMany(),
     prisma.forumThread.deleteMany(),

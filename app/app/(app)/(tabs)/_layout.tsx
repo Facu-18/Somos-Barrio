@@ -2,8 +2,15 @@ import { Tabs } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { View, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+
+  // Calculate dynamic bottom padding based on device insets
+  const bottomPadding = Math.max(20, insets.bottom + 10);
+  const barHeight = 60 + bottomPadding;
+
   return (
     <Tabs
       screenOptions={{
@@ -20,8 +27,8 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: ClayTheme.colors.surface,
           borderTopWidth: 0,
-          height: 80,
-          paddingBottom: 20,
+          height: barHeight,
+          paddingBottom: bottomPadding,
           paddingTop: 10,
           borderTopLeftRadius: 30,
           borderTopRightRadius: 30,

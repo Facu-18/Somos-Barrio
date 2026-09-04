@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TouchableOpacity, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TouchableOpacity, Linking, Alert, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
@@ -7,6 +7,7 @@ import { useAuth } from '../../../hooks/useAuth';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ClayButton } from '../../../components/ClayButton';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Review {
   id: string;
@@ -36,8 +37,8 @@ interface BusinessDetail {
   verified: boolean;
   coverImage: string | null;
   photos: string[];
-  latitude: number | null;
-  longitude: number | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
   createdAt: string;
   owner: {
     id: string;
@@ -56,8 +57,10 @@ export default function BusinessDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
-  const { data: business, isLoading } = useQuery({
+  const { data: business, isLoading, isError, refetch } = useQuery({
     queryKey: ['business-detail', barrioSlug, slug],
     queryFn: async () => {
       const response = await api.get(`/barrios/${barrioSlug}/businesses/${slug}`);
@@ -72,38 +75,49 @@ export default function BusinessDetailScreen() {
     return new Date(dateString).toLocaleDateString('es-AR', { year: 'numeric', month: 'long', day: 'numeric' });
   };
 
-  const handleOpenLink = (url: string) => {
-    Linking.canOpenURL(url).then(supported => {
-      if (supported) {
-        Linking.openURL(url);
-      } else {
-        alert("No se puede abrir este enlace.");
-      }
-    });
+  const handleOpenLink = async (url: string) => {
+    try {
+      if (!await Linking.canOpenURL(url)) throw new Error('Unsupported URL');
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('No se pudo abrir', 'Revisá los datos de contacto e intentá nuevamente.');
+    }
   };
 
   const handleWhatsApp = () => {
     if (business?.whatsapp) {
-      handleOpenLink(`whatsapp://send?phone=${business.whatsapp}`);
+      const phone = business.whatsapp.replace(/\D/g, '');
+      handleOpenLink(`https://wa.me/${phone}`);
     }
   };
 
   const handlePhone = () => {
     if (business?.phone) {
-      handleOpenLink(`tel:${business.phone}`);
+      handleOpenLink(`tel:${business.phone.replace(/[^\d+]/g, '')}`);
     }
   };
 
   const handleInstagram = () => {
     if (business?.instagram) {
-      handleOpenLink(`https://instagram.com/${business.instagram}`);
+      const handle = business.instagram.replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/^@/, '').split(/[/?#]/)[0];
+      handleOpenLink(`https://instagram.com/${encodeURIComponent(handle)}`);
     }
+  };
+
+  const handleMap = () => {
+    if (!business) return;
+    const latitude = Number(business.latitude);
+    const longitude = Number(business.longitude);
+    const query = Number.isFinite(latitude) && Number.isFinite(longitude)
+      ? `${latitude},${longitude}`
+      : business.address;
+    handleOpenLink(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`);
   };
 
   const handleWeb = () => {
     if (business?.website) {
       // Ensure absolute URL
-      const url = business.website.startsWith('http') ? business.website : `https://${business.website}`;
+      const url = /^https?:\/\//i.test(business.website) ? business.website : `https://${business.website}`;
       handleOpenLink(url);
     }
   };
@@ -116,16 +130,17 @@ export default function BusinessDetailScreen() {
     );
   }
 
-  if (!business) {
+  if (isError || !business) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>Comercio no encontrado</Text>
-        <ClayButton title="Volver" onPress={() => router.back()} style={{ marginTop: 20 }} />
+        <Text style={styles.errorText}>No se pudo cargar el comercio.</Text>
+        <ClayButton title="Reintentar" onPress={() => refetch()} style={{ marginTop: 20 }} />
       </View>
     );
   }
 
   const averageRating = Number(business.ratingStats?.average || 0).toFixed(1).replace('.0', '');
+  const gallery = Array.from(new Set([business.coverImage, ...business.photos].filter((photo): photo is string => Boolean(photo))));
   
   // Categorias y colores (Misma logica que la card)
   let catBg = '#E1EFE2', catText = '#35663A';
@@ -139,8 +154,8 @@ export default function BusinessDetailScreen() {
   return (
     <View style={styles.container}>
       {/* Header back button overlay */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+      <View style={[styles.header, { top: insets.top + 8 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Volver">
           <MaterialCommunityIcons name="arrow-left" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
       </View>
@@ -148,8 +163,12 @@ export default function BusinessDetailScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         {/* Cover */}
         <View style={styles.coverContainer}>
-          {business.coverImage ? (
-            <Image source={{ uri: business.coverImage }} style={styles.coverImage} />
+          {gallery.length > 0 ? (
+            <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}>
+              {gallery.map((photo) => (
+                <Image key={photo} source={{ uri: photo }} style={[styles.coverImage, { width }]} />
+              ))}
+            </ScrollView>
           ) : (
             <View style={styles.placeholderCover}>
               <MaterialCommunityIcons name="storefront-outline" size={60} color={ClayTheme.colors.textMuted} />
@@ -194,6 +213,8 @@ export default function BusinessDetailScreen() {
             <Text style={styles.addressText}>{business.address}</Text>
           </View>
 
+          <Text style={styles.ownerText}>Atendido por {business.owner.nickname || business.owner.name}</Text>
+
           {business.description && (
             <Text style={styles.description}>{business.description}</Text>
           )}
@@ -201,8 +222,14 @@ export default function BusinessDetailScreen() {
 
         {/* Acciones rapidas */}
         <View style={styles.actionsGrid}>
+          <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleMap} accessibilityRole="link" accessibilityLabel="Abrir ubicación en el mapa">
+            <View style={[styles.actionIconContainer, { backgroundColor: '#D97745' }]}>
+              <MaterialCommunityIcons name="map-marker" size={24} color="white" />
+            </View>
+            <Text style={styles.actionLabel}>Mapa</Text>
+          </TouchableOpacity>
           {business.whatsapp && (
-            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleWhatsApp}>
+            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleWhatsApp} accessibilityRole="link" accessibilityLabel="Abrir WhatsApp">
               <View style={[styles.actionIconContainer, { backgroundColor: '#25D366' }]}>
                 <MaterialCommunityIcons name="whatsapp" size={24} color="white" />
               </View>
@@ -210,7 +237,7 @@ export default function BusinessDetailScreen() {
             </TouchableOpacity>
           )}
           {business.phone && (
-            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handlePhone}>
+            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handlePhone} accessibilityRole="link" accessibilityLabel="Llamar al comercio">
               <View style={[styles.actionIconContainer, { backgroundColor: ClayTheme.colors.primary }]}>
                 <MaterialCommunityIcons name="phone" size={24} color="white" />
               </View>
@@ -218,7 +245,7 @@ export default function BusinessDetailScreen() {
             </TouchableOpacity>
           )}
           {business.instagram && (
-            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleInstagram}>
+            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleInstagram} accessibilityRole="link" accessibilityLabel="Abrir Instagram">
               <View style={[styles.actionIconContainer, { backgroundColor: '#E1306C' }]}>
                 <MaterialCommunityIcons name="instagram" size={24} color="white" />
               </View>
@@ -226,7 +253,7 @@ export default function BusinessDetailScreen() {
             </TouchableOpacity>
           )}
           {business.website && (
-            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleWeb}>
+            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={handleWeb} accessibilityRole="link" accessibilityLabel="Abrir sitio web">
               <View style={[styles.actionIconContainer, { backgroundColor: ClayTheme.colors.text }]}>
                 <MaterialCommunityIcons name="web" size={24} color="white" />
               </View>
@@ -301,7 +328,6 @@ const styles = StyleSheet.create({
   },
   header: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 30,
     left: 20,
     zIndex: 10,
   },
@@ -430,6 +456,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: ClayTheme.colors.textInput,
     flex: 1,
+  },
+  ownerText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    fontSize: 13,
+    color: ClayTheme.colors.textMuted,
   },
   description: {
     fontFamily: ClayTheme.typography.fontFamily.medium,

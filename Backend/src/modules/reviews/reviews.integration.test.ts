@@ -12,7 +12,7 @@ describe("Reseñas — integration", () => {
     const barrio = await seedBarrio(`reviews-barrio-${Date.now()}`);
     barrioSlug = barrio.slug;
 
-    const owner = await registerAndLogin({ name: "Business Owner" });
+    const owner = await registerAndLogin({ name: "Business Owner", barrioSlug });
 
     const bSlug = `biz-reviews-${Date.now()}`;
     await request(app)
@@ -21,7 +21,7 @@ describe("Reseñas — integration", () => {
       .send({ name: "Comercio Reviews", slug: bSlug, category: "OTROS", address: "Calle 123" });
     businessSlug = bSlug;
 
-    const user = await registerAndLogin({ name: "Reviewer" });
+    const user = await registerAndLogin({ name: "Reviewer", barrioSlug });
     userToken = user.token;
   });
 
@@ -64,7 +64,7 @@ describe("Reseñas — integration", () => {
   });
 
   it("GET /reviews — calcula promedio correctamente", async () => {
-    const user2 = await registerAndLogin({ name: "Reviewer 2" });
+    const user2 = await registerAndLogin({ name: "Reviewer 2", barrioSlug });
 
     await request(app)
       .post(`${API}/barrios/${barrioSlug}/businesses/${businessSlug}/reviews`)
@@ -80,7 +80,7 @@ describe("Reseñas — integration", () => {
   });
 
   it("POST /reviews — rating fuera de rango devuelve 400", async () => {
-    const user3 = await registerAndLogin({ name: "Reviewer 3" });
+    const user3 = await registerAndLogin({ name: "Reviewer 3", barrioSlug });
 
     const res = await request(app)
       .post(`${API}/barrios/${barrioSlug}/businesses/${businessSlug}/reviews`)

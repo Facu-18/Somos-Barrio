@@ -73,7 +73,7 @@ describe("Admin — integration", () => {
 
   it("PATCH /admin/businesses/:id/verify — admin puede verificar comercio", async () => {
     const barrio = await seedBarrio(`verify-barrio-${Date.now()}`);
-    const owner = await registerAndLogin({ name: "Biz Owner" });
+    const owner = await registerAndLogin({ name: "Biz Owner", barrioSlug: barrio.slug });
 
     const bRes = await request(app)
       .post(`${API}/barrios/${barrio.slug}/businesses`)

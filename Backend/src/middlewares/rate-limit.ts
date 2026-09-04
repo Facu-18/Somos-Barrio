@@ -19,7 +19,7 @@ const isTest = env.NODE_ENV === "test";
 
 export const globalRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 200,
+  limit: env.NODE_ENV === "production" ? 200 : 2000,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   skip: (req) => isTest || req.originalUrl.startsWith(`${env.API_PREFIX}/health`),
@@ -55,4 +55,17 @@ export const uploadRateLimiter = rateLimit({
     message: "Alcanzaste el limite de imagenes por hora."
   },
   store: new RedisStore({ sendCommand, prefix: "rl:upload:" })
+});
+
+export const deviceCleanupRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: env.NODE_ENV === "production" ? 30 : 100,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skip: () => isTest,
+  message: {
+    success: false,
+    message: "Demasiados intentos de limpieza de dispositivos."
+  },
+  store: new RedisStore({ sendCommand, prefix: "rl:device-cleanup:" })
 });
