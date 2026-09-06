@@ -35,6 +35,12 @@ enum NewsStatus {
   ARCHIVED
 }
 
+enum NewsVoteValue {
+  CONFIRM
+  DISPUTE
+  UNSURE
+}
+
 enum BusinessCategory {
   GASTRONOMIA
   SALUD
@@ -113,6 +119,7 @@ model User {
   reviews               Review[]
   eventRsvps            EventRsvp[]
   forumVotes            ForumVote[]
+  newsVotes             NewsVote[]
   pushDevices           PushDevice[]
   notificationOutbox    NotificationOutbox[]
 
@@ -159,14 +166,40 @@ model News {
   content     String
   category    NewsCategory
   status      NewsStatus   @default(DRAFT)
+  editorObservation String?
   publishedAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  
+  confirmVotes Int @default(0)
+  disputeVotes Int @default(0)
+  unsureVotes  Int @default(0)
+  
+  aiSummary    Json?
+
   author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
   barrio      Barrio       @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  votes       NewsVote[]
 
   @@index([barrioId, status])
   @@index([category, publishedAt])
+}
+
+model NewsVote {
+  id        String        @id @default(cuid())
+  userId    String
+  newsId    String
+  value     NewsVoteValue
+  reason    String
+  sourceUrl String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  news News @relation(fields: [newsId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, newsId])
+  @@index([newsId])
 }
 
 model MarketplacePost {
@@ -216,6 +249,9 @@ model ForumThread {
   content    String
   upVotes    Int           @default(0)
   downVotes  Int           @default(0)
+  isClosed   Boolean       @default(false)
+  closedAt   DateTime?
+  closedById String?
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)

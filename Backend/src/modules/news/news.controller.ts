@@ -31,5 +31,35 @@ export const newsController = {
   async remove(req: Request, res: Response): Promise<void> {
     await newsService.remove(req.params.barrioSlug, req.params.newsSlug, req.user!.id, req.user!.role);
     res.status(204).send();
+  },
+
+  async listPending(req: Request, res: Response): Promise<void> {
+    const news = await newsService.listPending(req.params.barrioSlug);
+    res.json({ success: true, data: news });
+  },
+
+  async approve(req: Request, res: Response): Promise<void> {
+    const news = await newsService.approve(req.params.barrioSlug, req.params.newsSlug, req.body.aiSummary);
+    res.json({ success: true, data: news });
+  },
+
+  async reject(req: Request, res: Response): Promise<void> {
+    const news = await newsService.reject(req.params.barrioSlug, req.params.newsSlug, req.body.observation);
+    res.json({ success: true, data: news });
+  },
+
+  async vote(req: Request, res: Response): Promise<void> {
+    const vote = await newsService.vote(req.params.barrioSlug, req.params.newsSlug, req.user!.id, req.body);
+    res.json({ success: true, data: vote });
+  },
+
+  async getVotes(req: Request, res: Response): Promise<void> {
+    const votes = await newsService.getVotes(req.params.barrioSlug, req.params.newsSlug, req.query as any);
+    res.json({ success: true, data: votes });
+  },
+
+  async summarize(req: Request, res: Response): Promise<void> {
+    const summary = await newsService.summarize(req.params.barrioSlug, req.params.newsSlug);
+    res.json({ success: true, data: summary });
   }
 };

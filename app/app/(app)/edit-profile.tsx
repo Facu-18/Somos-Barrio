@@ -145,7 +145,7 @@ export default function EditProfileScreen() {
           <Controller
             control={control}
             name="nickname"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Apodo (Nickname)"
                 placeholder="Ej: Facu"
@@ -153,6 +153,8 @@ export default function EditProfileScreen() {
                 onChangeText={onChange}
                 value={value}
                 error={errors.nickname?.message}
+              
+                ref={ref}
               />
             )}
           />
@@ -160,7 +162,7 @@ export default function EditProfileScreen() {
           <Controller
             control={control}
             name="bio"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Biografía breve"
                 placeholder="Vecino del barrio desde 2010..."
@@ -171,6 +173,8 @@ export default function EditProfileScreen() {
                 multiline
                 numberOfLines={3}
                 style={{ height: 80, paddingTop: 16 }}
+              
+                ref={ref}
               />
             )}
           />

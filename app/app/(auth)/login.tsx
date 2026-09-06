@@ -75,7 +75,7 @@ export default function LoginScreen() {
           <Controller
             control={control}
             name="email"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Correo"
                 placeholder="mariela.ferran@correo.com"
@@ -85,6 +85,8 @@ export default function LoginScreen() {
                 onChangeText={onChange}
                 value={value}
                 error={errors.email?.message}
+              
+                ref={ref}
               />
             )}
           />
@@ -92,7 +94,7 @@ export default function LoginScreen() {
           <Controller
             control={control}
             name="password"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Contraseña"
                 placeholder="••••••••"
@@ -101,6 +103,8 @@ export default function LoginScreen() {
                 onChangeText={onChange}
                 value={value}
                 error={errors.password?.message}
+              
+                ref={ref}
               />
             )}
           />

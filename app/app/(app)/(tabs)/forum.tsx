@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
     color: ClayTheme.colors.textInput,
   },
   content: {
-    paddingBottom: 100, // Space for the absolute tab bar
+    paddingBottom: 24,
     paddingHorizontal: 22,
     paddingTop: 10,
   },
@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 24,
-    bottom: 118,
+    bottom: 24,
     width: 62,
     height: 62,
     borderRadius: 31,

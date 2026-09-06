@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, KeyboardAvoidingView, Platform, Image, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
@@ -33,7 +33,7 @@ const formatDate = (dateString: string) => {
 
 const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || 'XX';
 
-const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply }: { reply: ReplyNode; highlightedReplyId?: string; depth?: number; onReply: (id: string, name: string) => void }) => {
+const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply, isClosed = false }: { reply: ReplyNode; highlightedReplyId?: string; depth?: number; onReply: (id: string, name: string) => void; isClosed?: boolean }) => {
   const visualDepth = Math.min(depth, 3);
   const paddingLeft = visualDepth * 16;
   
@@ -57,21 +57,23 @@ const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply }: { reply: R
               <Text style={styles.timeAgo}>{formatDate(reply.createdAt)}</Text>
             </View>
           </View>
-          <TouchableOpacity 
-            style={styles.replyActionBtn}
-            onPress={() => onReply(reply.id, reply.user?.nickname || reply.user?.name)}
-            accessibilityRole="button"
-            accessibilityLabel={`Responder a ${reply.user?.nickname || reply.user?.name}`}
-          >
-            <MaterialCommunityIcons name="reply" size={16} color={ClayTheme.colors.primary} />
-            <Text style={styles.replyActionText}>Responder</Text>
-          </TouchableOpacity>
+          {!isClosed && (
+            <TouchableOpacity 
+              style={styles.replyActionBtn}
+              onPress={() => onReply(reply.id, reply.user?.nickname || reply.user?.name)}
+              accessibilityRole="button"
+              accessibilityLabel={`Responder a ${reply.user?.nickname || reply.user?.name}`}
+            >
+              <MaterialCommunityIcons name="reply" size={16} color={ClayTheme.colors.primary} />
+              <Text style={styles.replyActionText}>Responder</Text>
+            </TouchableOpacity>
+          )}
         </View>
         <Text style={styles.replyContent}>{reply.content}</Text>
       </View>
       
       {reply.children.map(child => (
-        <ReplyItem key={child.id} reply={child} highlightedReplyId={highlightedReplyId} depth={depth + 1} onReply={onReply} />
+        <ReplyItem key={child.id} reply={child} highlightedReplyId={highlightedReplyId} depth={depth + 1} onReply={onReply} isClosed={isClosed} />
       ))}
     </View>
   );
@@ -118,6 +120,30 @@ export default function ThreadDetailScreen() {
   const handleSendReply = () => {
     if (!replyContent.trim()) return;
     replyMutation.mutate(replyContent);
+  };
+
+  const closeThreadMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post(`/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${id}/close`);
+      return response.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['thread-detail', barrioSlug, subforumSlug, id] });
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.response?.data?.message || 'Error al cerrar el hilo');
+    }
+  });
+
+  const handleCloseThread = () => {
+    Alert.alert(
+      "Cerrar Hilo",
+      "¿Estás seguro que querés cerrar este hilo? Ya no se podrán publicar más respuestas y esta acción no se puede deshacer.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Cerrar", style: "destructive", onPress: () => closeThreadMutation.mutate() }
+      ]
+    );
   };
 
   const buildReplyTree = (replies: Reply[] = []): ReplyNode[] => {
@@ -203,6 +229,20 @@ export default function ThreadDetailScreen() {
               <MaterialCommunityIcons name="comment-text-outline" size={18} color={ClayTheme.colors.textMuted} />
               <Text style={styles.statText}>{thread.replies?.length || 0} respuestas</Text>
             </View>
+            {(thread.userId === user?.id || user?.role === 'ADMIN' || user?.role === 'EDITOR') && !thread.isClosed && (
+              <TouchableOpacity style={[styles.statItem, { marginLeft: 'auto' }]} onPress={handleCloseThread} disabled={closeThreadMutation.isPending}>
+                <MaterialCommunityIcons name="lock-outline" size={18} color={ClayTheme.colors.error} />
+                <Text style={[styles.statText, { color: ClayTheme.colors.error }]}>
+                  {closeThreadMutation.isPending ? "Cerrando..." : "Cerrar hilo"}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {thread.isClosed && (
+              <View style={[styles.statItem, { marginLeft: 'auto' }]}>
+                <MaterialCommunityIcons name="lock" size={18} color={ClayTheme.colors.textMuted} />
+                <Text style={styles.statText}>Cerrado</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -213,7 +253,8 @@ export default function ThreadDetailScreen() {
               key={node.id} 
               reply={node} 
               highlightedReplyId={replyId}
-              onReply={(id, name) => setReplyingTo({id, name})} 
+              onReply={(replyId, name) => setReplyingTo({id: replyId, name})} 
+              isClosed={thread.isClosed}
             />
           ))}
           
@@ -224,38 +265,45 @@ export default function ThreadDetailScreen() {
       </ScrollView>
 
       {/* Contextual Input Area */}
-      <View style={[styles.inputContainerWrapper, { paddingBottom: insets.bottom }]}>
-        {replyingTo && (
-          <View style={styles.replyContextBanner}>
-            <Text style={styles.replyContextText}>Respondiendo a <Text style={{fontFamily: ClayTheme.typography.fontFamily.bold}}>{replyingTo.name}</Text></Text>
-            <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyContextClose}>
-              <MaterialCommunityIcons name="close" size={18} color={ClayTheme.colors.textMuted} />
+      {thread.isClosed ? (
+        <View style={[styles.closedBanner, { paddingBottom: insets.bottom + 16 }]}>
+            <MaterialCommunityIcons name="lock" size={20} color={ClayTheme.colors.textMuted} />
+            <Text style={styles.closedBannerText}>Este hilo está cerrado a nuevas respuestas.</Text>
+        </View>
+      ) : (
+        <View style={[styles.inputContainerWrapper, { paddingBottom: insets.bottom }]}>
+          {replyingTo && (
+            <View style={styles.replyContextBanner}>
+              <Text style={styles.replyContextText}>Respondiendo a <Text style={{fontFamily: ClayTheme.typography.fontFamily.bold}}>{replyingTo.name}</Text></Text>
+              <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyContextClose}>
+                <MaterialCommunityIcons name="close" size={18} color={ClayTheme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          )}
+          <View style={styles.inputArea}>
+            <View style={styles.inputWrapper}>
+              <ClayInput 
+                placeholder={replyingTo ? "Escribí tu respuesta..." : "Comentar en el hilo..."}
+                value={replyContent}
+                onChangeText={setReplyContent}
+                multiline
+                style={styles.replyInput}
+              />
+            </View>
+            <TouchableOpacity 
+              style={[styles.sendButton, !replyContent.trim() && styles.sendButtonDisabled]} 
+              onPress={handleSendReply}
+              disabled={!replyContent.trim() || replyMutation.isPending}
+            >
+              {replyMutation.isPending ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <MaterialCommunityIcons name="send" size={20} color="white" />
+              )}
             </TouchableOpacity>
           </View>
-        )}
-        <View style={styles.inputArea}>
-          <View style={styles.inputWrapper}>
-            <ClayInput 
-              placeholder={replyingTo ? "Escribí tu respuesta..." : "Comentar en el hilo..."}
-              value={replyContent}
-              onChangeText={setReplyContent}
-              multiline
-              style={styles.replyInput}
-            />
-          </View>
-          <TouchableOpacity 
-            style={[styles.sendButton, !replyContent.trim() && styles.sendButtonDisabled]} 
-            onPress={handleSendReply}
-            disabled={!replyContent.trim() || replyMutation.isPending}
-          >
-            {replyMutation.isPending ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <MaterialCommunityIcons name="send" size={20} color="white" />
-            )}
-          </TouchableOpacity>
         </View>
-      </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -499,5 +547,20 @@ const styles = StyleSheet.create({
   sendButtonDisabled: {
     backgroundColor: ClayTheme.colors.textMuted,
     opacity: 0.5,
-  }
+  },
+  closedBanner: {
+    backgroundColor: ClayTheme.colors.surface,
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+  },
+  closedBannerText: {
+    fontFamily: ClayTheme.typography.fontFamily.semiBold,
+    fontSize: 14,
+    color: ClayTheme.colors.textMuted,
+  },
 });

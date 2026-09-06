@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { ClayCard } from '../../../components/ClayCard';
 import { useQuery } from '@tanstack/react-query';
@@ -63,15 +64,37 @@ export default function HomeScreen() {
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       ListHeaderComponent={(
         <View style={styles.header}>
-          <View>
-            <Text style={styles.sectionTitle}>Últimas novedades</Text>
-            <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+          <View style={styles.headerTop}>
+            <View>
+              <Text style={styles.sectionTitle}>Últimas novedades</Text>
+              <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+            </View>
+            <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/(app)/profile')} style={styles.profileAvatar} accessibilityRole="button" accessibilityLabel="Abrir mi perfil">
+              {user?.avatarUrl ? <Image source={{ uri: user.avatarUrl }} style={styles.profileAvatarImage} /> : (
+                <Text style={styles.profileAvatarText}>{user?.name?.substring(0, 2).toUpperCase() || 'XX'}</Text>
+              )}
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/(app)/profile')} style={styles.profileAvatar} accessibilityRole="button" accessibilityLabel="Abrir mi perfil">
-            {user?.avatarUrl ? <Image source={{ uri: user.avatarUrl }} style={styles.profileAvatarImage} /> : (
-              <Text style={styles.profileAvatarText}>{user?.name?.substring(0, 2).toUpperCase() || 'XX'}</Text>
+          
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => router.push('/(app)/create-news')}
+            >
+              <MaterialCommunityIcons name="pencil-plus" size={20} color={ClayTheme.colors.primary} />
+              <Text style={styles.actionButtonText}>Proponer noticia</Text>
+            </TouchableOpacity>
+
+            {(user?.role === 'EDITOR' || user?.role === 'ADMIN') && (
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.actionButtonSecondary]}
+                onPress={() => router.push('/(app)/news-inbox')}
+              >
+                <MaterialCommunityIcons name="inbox-outline" size={20} color={ClayTheme.colors.text} />
+                <Text style={[styles.actionButtonText, { color: ClayTheme.colors.text }]}>Revisión</Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
         </View>
       )}
       renderItem={({ item: news }) => {
@@ -106,7 +129,7 @@ const styles = StyleSheet.create({
   content: {
     padding: ClayTheme.spacing.lg,
     paddingTop: ClayTheme.spacing.xl,
-    paddingBottom: 100, // Space for the absolute tab bar
+    paddingBottom: 24,
   },
   loadingContainer: {
     flex: 1,
@@ -149,6 +172,33 @@ const styles = StyleSheet.create({
     fontFamily: ClayTheme.typography.fontFamily.extraBold,
     fontSize: 14,
     color: ClayTheme.colors.primaryText,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#E1EFE2',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  actionButtonSecondary: {
+    backgroundColor: ClayTheme.colors.inputBg,
+  },
+  actionButtonText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    fontSize: 13,
+    color: ClayTheme.colors.primary,
   },
   cardHeader: {
     flexDirection: 'row',

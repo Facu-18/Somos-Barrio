@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -9,7 +9,7 @@ import { ClayTheme } from '../../constants/ClayTheme';
 import { ClayButton } from '../../components/ClayButton';
 import { ClayInput } from '../../components/ClayInput';
 import { api } from '../../lib/api';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,6 +38,7 @@ const categories = [
 ];
 
 export default function CreateMarketScreen() {
+  const { postId } = useLocalSearchParams<{ postId?: string }>();
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
@@ -46,10 +47,32 @@ export default function CreateMarketScreen() {
   const [isUploading, setIsUploading] = useState(false);
   const insets = useSafeAreaInsets();
 
-  const { control, handleSubmit, setValue, watch, formState: { errors } } = useForm<MarketForm>({
+  const { data: postToEdit, isLoading: isLoadingPost } = useQuery({
+    queryKey: ['market', barrioSlug, postId],
+    queryFn: async () => {
+      const response = await api.get(`/barrios/${barrioSlug}/marketplace/${postId}`);
+      return response.data.data;
+    },
+    enabled: !!postId,
+  });
+
+  const { control, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<MarketForm>({
     resolver: zodResolver(marketSchema),
     defaultValues: { title: '', description: '', price: '', whatsapp: '', category: 'OTROS' }
   });
+
+  React.useEffect(() => {
+    if (postToEdit) {
+      reset({
+        title: postToEdit.title,
+        description: postToEdit.description,
+        price: postToEdit.price ? postToEdit.price.toString() : '',
+        whatsapp: postToEdit.whatsapp,
+        category: postToEdit.category,
+      });
+      setSelectedImages(postToEdit.images || []);
+    }
+  }, [postToEdit, reset]);
 
   const selectedCategory = watch('category');
 
@@ -129,18 +152,27 @@ export default function CreateMarketScreen() {
 
       const parsedPrice = data.price ? parseInt(data.price, 10) : 0;
 
-      const response = await api.post(`/barrios/${barrioSlug}/marketplace`, {
+      const payload = {
         title: data.title,
         description: data.description,
         price: parsedPrice,
         category: data.category,
         whatsapp: normalizeWhatsApp(data.whatsapp),
-        images: uploadedUrls,
-      });
+        images: uploadedUrls.length > 0 ? uploadedUrls : selectedImages, // If not uploading new, keep existing
+      };
+
+      const response = postId
+        ? await api.patch(`/barrios/${barrioSlug}/marketplace/${postId}`, payload)
+        : await api.post(`/barrios/${barrioSlug}/marketplace`, payload);
+      
       return response.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['market', barrioSlug] });
+      queryClient.invalidateQueries({ queryKey: ['market', barrioSlug, 'me'] });
+      if (postId) {
+        queryClient.invalidateQueries({ queryKey: ['market', barrioSlug, postId] });
+      }
       router.back();
     },
     onError: (error: any) => {
@@ -163,7 +195,7 @@ export default function CreateMarketScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Cerrar">
           <MaterialCommunityIcons name="close" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Publicar Producto</Text>
+        <Text style={styles.headerTitle}>{postId ? 'Editar Producto' : 'Publicar Producto'}</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -200,7 +232,7 @@ export default function CreateMarketScreen() {
           <Controller
             control={control}
             name="title"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Título del producto"
                 placeholder="Ej: Bicicleta rodado 26"
@@ -208,6 +240,8 @@ export default function CreateMarketScreen() {
                 onChangeText={onChange}
                 value={value}
                 error={errors.title?.message}
+              
+                ref={ref}
               />
             )}
           />
@@ -215,7 +249,7 @@ export default function CreateMarketScreen() {
           <Controller
             control={control}
             name="price"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Precio ($ ARS)"
                 placeholder="Dejar vacío si es gratis"
@@ -224,6 +258,8 @@ export default function CreateMarketScreen() {
                 onChangeText={onChange}
                 value={value}
                 error={errors.price?.message}
+              
+                ref={ref}
               />
             )}
           />
@@ -231,7 +267,7 @@ export default function CreateMarketScreen() {
           <Controller
             control={control}
             name="whatsapp"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <View>
                 <ClayInput
                    label="WhatsApp"
@@ -241,7 +277,9 @@ export default function CreateMarketScreen() {
                    onChangeText={onChange}
                   value={value}
                   error={errors.whatsapp?.message}
-                />
+                
+                ref={ref}
+              />
                 <Text style={{ fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 11, color: ClayTheme.colors.textMuted, marginLeft: 8, marginTop: 4 }}>
                    {value ? `Se publicará como ${normalizeWhatsApp(value)}` : 'Incluí código de país. Será visible para los vecinos.'}
                 </Text>
@@ -275,7 +313,7 @@ export default function CreateMarketScreen() {
           <Controller
             control={control}
             name="description"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Descripción"
                 placeholder="Detalles sobre el estado, medidas, zona..."
@@ -286,14 +324,16 @@ export default function CreateMarketScreen() {
                 multiline
                 numberOfLines={4}
                 style={{ height: 100, paddingTop: 16 }}
+              
+                ref={ref}
               />
             )}
           />
 
           <ClayButton 
-            title={createMutation.isPending || isUploading ? "Publicando..." : "Publicar"} 
+            title={createMutation.isPending || isUploading ? "Guardando..." : (postId ? "Guardar cambios" : "Publicar")} 
             onPress={handleSubmit(onSubmit)} 
-            disabled={createMutation.isPending || isUploading}
+            disabled={createMutation.isPending || isUploading || isLoadingPost}
             style={styles.submitButton}
           />
         </View>

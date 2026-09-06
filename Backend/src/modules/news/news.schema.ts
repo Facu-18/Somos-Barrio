@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { NewsCategory, NewsStatus } from "@prisma/client";
+import { NewsCategory, NewsStatus, NewsVoteValue } from "@prisma/client";
 
 export const newsSlugParamSchema = z.object({
   barrioSlug: z.string().min(1),
@@ -26,4 +26,10 @@ export const updateNewsSchema = z.object({
   content: z.string().min(10).optional(),
   category: z.nativeEnum(NewsCategory).optional(),
   status: z.nativeEnum(NewsStatus).optional()
+});
+
+export const newsVoteSchema = z.object({
+  value: z.nativeEnum(NewsVoteValue),
+  reason: z.string().min(10, "El fundamento debe tener al menos 10 caracteres").max(1000),
+  sourceUrl: z.string().url("Debe ser una URL válida").max(500).optional().or(z.literal(''))
 });

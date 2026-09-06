@@ -277,6 +277,136 @@ export const forumService = {
     requesterRole: UserRole
   ) {
     const barrio = await resolveBarrio(barrioSlug);
+  },
+
+  async voteThread(
+    barrioSlug: string,
+    subforumSlug: string,
+    threadId: string,
+    userId: string,
+    value: 1 | -1
+  ) {
+    const barrio = await resolveBarrio(barrioSlug);
+    const subforum = await resolveSubforum(barrio.id, subforumSlug);
+
+    const thread = await prisma.forumThread.findFirst({ where: { id: threadId, subforumId: subforum.id } });
+    if (!thread) throw new ApiError(404, "Hilo no encontrado");
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.forumVote.findUnique({
+        where: { userId_threadId: { userId, threadId } }
+      });
+
+      if (existing) {
+        if (existing.value === value) {
+          // Toggle off: quitar voto
+          await tx.forumVote.delete({ where: { userId_threadId: { userId, threadId } } });
+          await tx.forumThread.update({
+            where: { id: threadId },
+            data: {
+              upVotes:   { decrement: value === 1  ? 1 : 0 },
+              downVotes: { decrement: value === -1 ? 1 : 0 }
+            }
+          });
+          return { voted: false, value: null };
+        } else {
+          // Cambiar sentido del voto
+          await tx.forumVote.update({
+            where: { userId_threadId: { userId, threadId } },
+            data: { value }
+          });
+          await tx.forumThread.update({
+            where: { id: threadId },
+            data: {
+              upVotes:   { increment: value === 1  ? 1 : -1 },
+              downVotes: { increment: value === -1 ? 1 : -1 }
+            }
+          });
+          return { voted: true, value };
+        }
+      } else {
+        await tx.forumVote.create({ data: { userId, threadId, value } });
+        await tx.forumThread.update({
+          where: { id: threadId },
+          data: {
+            upVotes:   { increment: value === 1  ? 1 : 0 },
+            downVotes: { increment: value === -1 ? 1 : 0 }
+          }
+        });
+        return { voted: true, value };
+      }
+    });
+  },
+
+  async voteReply(
+    barrioSlug: string,
+    subforumSlug: string,
+    threadId: string,
+    replyId: string,
+    userId: string,
+    value: 1 | -1
+  ) {
+    const barrio = await resolveBarrio(barrioSlug);
+    const subforum = await resolveSubforum(barrio.id, subforumSlug);
+
+    const thread = await prisma.forumThread.findFirst({ where: { id: threadId, subforumId: subforum.id } });
+    if (!thread) throw new ApiError(404, "Hilo no encontrado");
+
+    const reply = await prisma.forumReply.findFirst({ where: { id: replyId, threadId } });
+    if (!reply) throw new ApiError(404, "Respuesta no encontrada");
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.forumVote.findUnique({
+        where: { userId_replyId: { userId, replyId } }
+      });
+
+      if (existing) {
+        if (existing.value === value) {
+          await tx.forumVote.delete({ where: { userId_replyId: { userId, replyId } } });
+          await tx.forumReply.update({
+            where: { id: replyId },
+            data: {
+              upVotes:   { decrement: value === 1  ? 1 : 0 },
+              downVotes: { decrement: value === -1 ? 1 : 0 }
+            }
+          });
+          return { voted: false, value: null };
+        } else {
+          await tx.forumVote.update({
+            where: { userId_replyId: { userId, replyId } },
+            data: { value }
+          });
+          await tx.forumReply.update({
+            where: { id: replyId },
+            data: {
+              upVotes:   { increment: value === 1  ? 1 : -1 },
+              downVotes: { increment: value === -1 ? 1 : -1 }
+            }
+          });
+          return { voted: true, value };
+        }
+      } else {
+        await tx.forumVote.create({ data: { userId, replyId, value } });
+        await tx.forumReply.update({
+          where: { id: replyId },
+          data: {
+            upVotes:   { increment: value === 1  ? 1 : 0 },
+            downVotes: { increment: value === -1 ? 1 : 0 }
+          }
+        });
+        return { voted: true, value };
+      }
+    });
+  },
+
+  async deleteThread(
+    barrioSlug: string,
+    subforumSlug: string,
+    threadId: string,
+    requesterId: string,
+    requesterRole: UserRole
+  ) {
+    const barrio = await resolveBarrio(barrioSlug);
     const subforum = await resolveSubforum(barrio.id, subforumSlug);
 
     const thread = await prisma.forumThread.findFirst({ where: { id: threadId, subforumId: subforum.id } });
@@ -287,5 +417,36 @@ export const forumService = {
     }
 
     await prisma.forumThread.delete({ where: { id: thread.id } });
+  },
+
+  async closeThread(
+    barrioSlug: string,
+    subforumSlug: string,
+    threadId: string,
+    requesterId: string,
+    requesterRole: UserRole
+  ) {
+    const barrio = await resolveBarrio(barrioSlug);
+    const subforum = await resolveSubforum(barrio.id, subforumSlug);
+
+    const thread = await prisma.forumThread.findFirst({ where: { id: threadId, subforumId: subforum.id } });
+    if (!thread) throw new ApiError(404, "Hilo no encontrado");
+
+    if (thread.userId !== requesterId && requesterRole !== UserRole.ADMIN && requesterRole !== UserRole.EDITOR) {
+      throw new ApiError(403, "No tienes permisos para cerrar este hilo");
+    }
+
+    if (thread.isClosed) {
+      throw new ApiError(400, "El hilo ya se encuentra cerrado");
+    }
+
+    return prisma.forumThread.update({
+      where: { id: thread.id },
+      data: {
+        isClosed: true,
+        closedAt: new Date(),
+        closedById: requesterId
+      }
+    });
   }
 };

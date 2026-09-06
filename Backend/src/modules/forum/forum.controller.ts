@@ -78,5 +78,16 @@ export const forumController = {
       req.user!.role
     );
     res.status(204).send();
+  },
+
+  async closeThread(req: Request, res: Response): Promise<void> {
+    const thread = await forumService.closeThread(
+      req.params.barrioSlug,
+      req.params.subforumSlug,
+      req.params.threadId,
+      req.user!.id,
+      req.user!.role
+    );
+    res.json({ success: true, data: thread });
   }
 };

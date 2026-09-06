@@ -8,13 +8,13 @@ interface ClayInputProps extends TextInputProps {
   containerStyle?: StyleProp<ViewStyle>;
 }
 
-export const ClayInput: React.FC<ClayInputProps> = ({
+export const ClayInput = React.forwardRef<TextInput, ClayInputProps>(({
   label,
   error,
   containerStyle,
   style,
   ...props
-}) => {
+}, ref) => {
   return (
     <View style={[styles.container, containerStyle]}>
       {label && <Text style={styles.label}>{label}</Text>}
@@ -23,6 +23,7 @@ export const ClayInput: React.FC<ClayInputProps> = ({
         error ? styles.inputWrapperError : null,
       ]}>
         <TextInput
+          ref={ref}
           style={[styles.input, style]}
           placeholderTextColor={ClayTheme.colors.textMuted}
           {...props}
@@ -31,7 +32,9 @@ export const ClayInput: React.FC<ClayInputProps> = ({
       {error && <Text style={styles.errorText}>{error}</Text>}
     </View>
   );
-};
+});
+
+ClayInput.displayName = 'ClayInput';
 
 const styles = StyleSheet.create({
   container: {

@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 60,
-    paddingBottom: 100, // Space for the absolute tab bar
+    paddingBottom: 24,
     paddingHorizontal: 22,
   },
   header: {

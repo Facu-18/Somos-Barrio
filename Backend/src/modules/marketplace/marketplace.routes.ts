@@ -19,6 +19,14 @@ marketplaceRouter.get(
 );
 
 marketplaceRouter.get(
+  "/me",
+  requireAuth,
+  requireBarrioMember,
+  validate({ query: marketplaceListQuerySchema }),
+  asyncHandler(marketplaceController.listMe)
+);
+
+marketplaceRouter.get(
   "/:postId",
   requireAuth,
   requireBarrioMember,

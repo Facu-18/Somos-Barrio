@@ -7,6 +7,11 @@ export const marketplaceController = {
     res.json({ success: true, data: result });
   },
 
+  async listMe(req: Request, res: Response): Promise<void> {
+    const result = await marketplaceService.listMe(req.params.barrioSlug, req.user!.id, req.query as any);
+    res.json({ success: true, data: result });
+  },
+
   async getById(req: Request, res: Response): Promise<void> {
     const post = await marketplaceService.getById(req.params.barrioSlug, req.params.postId);
     res.json({ success: true, data: post });

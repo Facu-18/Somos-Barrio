@@ -14,6 +14,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
+        headerShown: false,
         headerStyle: {
           backgroundColor: ClayTheme.colors.background,
           shadowOpacity: 0,
@@ -32,7 +33,6 @@ export default function TabsLayout() {
           paddingTop: 10,
           borderTopLeftRadius: 30,
           borderTopRightRadius: 30,
-          position: 'absolute',
           ...ClayTheme.shadows.elevated,
         },
         tabBarActiveTintColor: ClayTheme.colors.primary,

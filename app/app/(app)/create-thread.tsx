@@ -75,7 +75,7 @@ export default function CreateThreadScreen() {
           <Controller
             control={control}
             name="title"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Título"
                 placeholder="Ej: ¿Alguien sabe a qué hora pasa el basurero?"
@@ -83,6 +83,8 @@ export default function CreateThreadScreen() {
                 onChangeText={onChange}
                 value={value}
                 error={errors.title?.message}
+              
+                ref={ref}
               />
             )}
           />
@@ -90,7 +92,7 @@ export default function CreateThreadScreen() {
           <Controller
             control={control}
             name="content"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Detalle"
                 placeholder="Escribí acá toda la información..."
@@ -101,6 +103,8 @@ export default function CreateThreadScreen() {
                 multiline
                 numberOfLines={6}
                 style={{ height: 120, paddingTop: 16 }}
+              
+                ref={ref}
               />
             )}
           />

@@ -78,6 +78,29 @@ export const marketplaceService = {
     return { items, total, page: opts.page, limit: opts.limit };
   },
 
+  async listMe(barrioSlug: string, userId: string, opts: { page: number; limit: number }) {
+    const barrio = await resolveBarrio(barrioSlug);
+    const skip = (opts.page - 1) * opts.limit;
+
+    const where = {
+      barrioId: barrio.id,
+      userId
+    };
+
+    const [items, total] = await Promise.all([
+      prisma.marketplacePost.findMany({
+        where,
+        skip,
+        take: opts.limit,
+        orderBy: { createdAt: "desc" },
+        include: { user: { select: userSelect } }
+      }),
+      prisma.marketplacePost.count({ where })
+    ]);
+
+    return { items, total, page: opts.page, limit: opts.limit };
+  },
+
   async getById(barrioSlug: string, postId: string) {
     const barrio = await resolveBarrio(barrioSlug);
 

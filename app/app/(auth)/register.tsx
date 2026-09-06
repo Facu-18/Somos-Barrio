@@ -76,7 +76,7 @@ export default function RegisterScreen() {
           <Controller
             control={control}
             name="name"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Nombre completo"
                 placeholder="Mariela Ferrán"
@@ -85,6 +85,8 @@ export default function RegisterScreen() {
                 onChangeText={onChange}
                 value={value}
                 error={errors.name?.message}
+              
+                ref={ref}
               />
             )}
           />
@@ -92,7 +94,7 @@ export default function RegisterScreen() {
           <Controller
             control={control}
             name="email"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Correo"
                 placeholder="mariela.ferran@correo.com"
@@ -102,6 +104,8 @@ export default function RegisterScreen() {
                 onChangeText={onChange}
                 value={value}
                 error={errors.email?.message}
+              
+                ref={ref}
               />
             )}
           />
@@ -109,7 +113,7 @@ export default function RegisterScreen() {
           <Controller
             control={control}
             name="password"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { onChange, onBlur, value, ref } }) => (
               <ClayInput
                 label="Contraseña"
                 placeholder="••••••••"
@@ -118,6 +122,8 @@ export default function RegisterScreen() {
                 onChangeText={onChange}
                 value={value}
                 error={errors.password?.message}
+              
+                ref={ref}
               />
             )}
           />

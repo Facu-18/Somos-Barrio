@@ -21,6 +21,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  role: 'USER' | 'EDITOR' | 'ADMIN';
   nickname: string | null;
   bio: string | null;
   avatarUrl: string | null;

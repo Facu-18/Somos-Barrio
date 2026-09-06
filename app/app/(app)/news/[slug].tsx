@@ -1,12 +1,14 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ClayButton } from '../../../components/ClayButton';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { useAuth } from '../../../hooks/useAuth';
 import { api } from '../../../lib/api';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useState } from 'react';
 
 interface NewsDetail {
   id: string;
@@ -16,7 +18,20 @@ interface NewsDetail {
   content: string;
   category: string;
   publishedAt: string;
-  author: { nickname: string | null };
+  confirmVotes: number;
+  disputeVotes: number;
+  unsureVotes: number;
+  aiSummary: { summary: string; provider: string } | null;
+  author: { nickname: string | null; name: string };
+}
+
+interface NewsVote {
+  id: string;
+  value: 'CONFIRM' | 'DISPUTE' | 'UNSURE';
+  reason: string;
+  sourceUrl: string | null;
+  createdAt: string;
+  user: { nickname: string | null; name: string; avatarUrl: string | null };
 }
 
 export default function NewsDetailScreen() {
@@ -32,6 +47,48 @@ export default function NewsDetailScreen() {
     },
     enabled: Boolean(barrioSlug && slug),
   });
+  
+  const { data: votesData } = useQuery({
+    queryKey: ['news-votes', barrioSlug, slug],
+    queryFn: async () => {
+      const response = await api.get(`/barrios/${barrioSlug}/news/${slug}/votes`);
+      return response.data.data.items as NewsVote[];
+    },
+    enabled: Boolean(barrioSlug && slug),
+  });
+
+  const queryClient = useQueryClient();
+  const [voteModalVisible, setVoteModalVisible] = useState(false);
+  const [selectedVote, setSelectedVote] = useState<'CONFIRM' | 'DISPUTE' | 'UNSURE' | null>(null);
+  const [reason, setReason] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
+
+  const voteMutation = useMutation({
+    mutationFn: async () => {
+      await api.post(`/barrios/${barrioSlug}/news/${slug}/vote`, {
+        value: selectedVote,
+        reason,
+        sourceUrl: sourceUrl.trim() || undefined
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['news-detail', barrioSlug, slug] });
+      queryClient.invalidateQueries({ queryKey: ['news-votes', barrioSlug, slug] });
+      setVoteModalVisible(false);
+      setReason('');
+      setSourceUrl('');
+      setSelectedVote(null);
+      Alert.alert("Éxito", "Tu voto ha sido registrado.");
+    },
+    onError: (error: any) => {
+      Alert.alert("Error", error.response?.data?.message || "No se pudo registrar tu voto.");
+    }
+  });
+
+  const openVoteModal = (val: 'CONFIRM' | 'DISPUTE' | 'UNSURE') => {
+    setSelectedVote(val);
+    setVoteModalVisible(true);
+  };
 
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator size="large" color={ClayTheme.colors.primary} /></View>;
@@ -62,9 +119,107 @@ export default function NewsDetailScreen() {
           {news.author.nickname ? ` · ${news.author.nickname}` : ''}
         </Text>
         {news.excerpt ? <Text style={styles.excerpt}>{news.excerpt}</Text> : null}
+        
+        {news.aiSummary && (
+          <View style={styles.aiSummaryBox}>
+            <View style={styles.aiSummaryHeader}>
+              <MaterialCommunityIcons name="auto-fix" size={18} color="#7B1FA2" />
+              <Text style={styles.aiSummaryTitle}>Resumen destacado</Text>
+            </View>
+            <Text style={styles.aiSummaryText}>{news.aiSummary.summary}</Text>
+          </View>
+        )}
+
         <View style={styles.divider} />
         <Text style={styles.body}>{news.content}</Text>
+        
+        <View style={styles.verificationSection}>
+          <Text style={styles.verificationTitle}>Verificación Comunitaria</Text>
+          <Text style={styles.verificationDesc}>¿Esta información es correcta? Dejá tu voto con un fundamento.</Text>
+          
+          <View style={styles.voteButtonsRow}>
+            <TouchableOpacity style={[styles.voteBtn, styles.voteBtnConfirm]} onPress={() => openVoteModal('CONFIRM')}>
+              <MaterialCommunityIcons name="check-circle" size={22} color="#2E7D32" />
+              <Text style={[styles.voteBtnText, { color: '#2E7D32' }]}>{news.confirmVotes} Confirman</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={[styles.voteBtn, styles.voteBtnDispute]} onPress={() => openVoteModal('DISPUTE')}>
+              <MaterialCommunityIcons name="close-circle" size={22} color="#C62828" />
+              <Text style={[styles.voteBtnText, { color: '#C62828' }]}>{news.disputeVotes} Disputan</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={[styles.voteBtn, styles.voteBtnUnsure]} onPress={() => openVoteModal('UNSURE')}>
+              <MaterialCommunityIcons name="help-circle" size={22} color="#E65100" />
+              <Text style={[styles.voteBtnText, { color: '#E65100' }]}>{news.unsureVotes} Dudan</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        {votesData && votesData.length > 0 && (
+          <View style={styles.votesList}>
+            <Text style={styles.votesListTitle}>Fundamentos de los vecinos</Text>
+            {votesData.map(v => (
+              <View key={v.id} style={styles.voteItem}>
+                <View style={styles.voteItemHeader}>
+                  <Text style={styles.voteItemAuthor}>{v.user.nickname || v.user.name}</Text>
+                  <View style={[
+                    styles.voteBadge, 
+                    v.value === 'CONFIRM' ? styles.badgeConfirm : v.value === 'DISPUTE' ? styles.badgeDispute : styles.badgeUnsure
+                  ]}>
+                    <Text style={[
+                      styles.voteBadgeText,
+                      v.value === 'CONFIRM' ? styles.badgeTextConfirm : v.value === 'DISPUTE' ? styles.badgeTextDispute : styles.badgeTextUnsure
+                    ]}>
+                      {v.value === 'CONFIRM' ? 'CONFIRMA' : v.value === 'DISPUTE' ? 'DISPUTA' : 'DUDA'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.voteItemReason}>{v.reason}</Text>
+                {v.sourceUrl && <Text style={styles.voteItemSource}>Fuente: {v.sourceUrl}</Text>}
+              </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
+
+      <Modal visible={voteModalVisible} transparent animationType="slide">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Fundamentá tu voto</Text>
+            <Text style={styles.modalDesc}>Por favor, explicá por qué {selectedVote === 'CONFIRM' ? 'confirmás' : selectedVote === 'DISPUTE' ? 'disputás' : 'dudás de'} esta noticia (mínimo 10 caracteres).</Text>
+            
+            <TextInput
+              style={styles.textInput}
+              multiline
+              placeholder="Escribe tu justificación aquí..."
+              value={reason}
+              onChangeText={setReason}
+            />
+            
+            <TextInput
+              style={[styles.textInput, { minHeight: 50 }]}
+              placeholder="URL de fuente confiable (Opcional)"
+              value={sourceUrl}
+              onChangeText={setSourceUrl}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalBtnCancel} onPress={() => setVoteModalVisible(false)}>
+                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalBtnSubmit, (reason.length < 10 || voteMutation.isPending) && { opacity: 0.5 }]} 
+                onPress={() => voteMutation.mutate()}
+                disabled={reason.length < 10 || voteMutation.isPending}
+              >
+                <Text style={styles.modalBtnSubmitText}>{voteMutation.isPending ? 'Enviando...' : 'Votar'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -85,4 +240,42 @@ const styles = StyleSheet.create({
   body: { fontFamily: ClayTheme.typography.fontFamily.regular, fontSize: 17, lineHeight: 28, color: ClayTheme.colors.text },
   error: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 16, color: ClayTheme.colors.error, textAlign: 'center' },
   retry: { marginTop: 20 },
+  aiSummaryBox: { marginTop: 24, backgroundColor: '#F3E5F5', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#E1BEE7' },
+  aiSummaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  aiSummaryTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 14, color: '#7B1FA2' },
+  aiSummaryText: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 15, lineHeight: 22, color: '#4A148C' },
+  verificationSection: { marginTop: 40, padding: 20, backgroundColor: '#F8F9FA', borderRadius: 16, borderWidth: 1, borderColor: '#E9ECEF' },
+  verificationTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 18, color: ClayTheme.colors.text, marginBottom: 4 },
+  verificationDesc: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 13, color: ClayTheme.colors.textMuted, marginBottom: 16 },
+  voteButtonsRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  voteBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
+  voteBtnConfirm: { backgroundColor: '#E8F5E9', borderColor: '#C8E6C9' },
+  voteBtnDispute: { backgroundColor: '#FFEBEE', borderColor: '#FFCDD2' },
+  voteBtnUnsure:  { backgroundColor: '#FFF3E0', borderColor: '#FFE0B2' },
+  voteBtnText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 14 },
+  votesList: { marginTop: 30 },
+  votesListTitle: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 16, color: ClayTheme.colors.text, marginBottom: 12 },
+  voteItem: { backgroundColor: ClayTheme.colors.surface, padding: 16, borderRadius: 12, marginBottom: 10, ...ClayTheme.shadows.elevated },
+  voteItemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  voteItemAuthor: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 14, color: ClayTheme.colors.text },
+  voteBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  badgeConfirm: { backgroundColor: '#E8F5E9' },
+  badgeDispute: { backgroundColor: '#FFEBEE' },
+  badgeUnsure:  { backgroundColor: '#FFF3E0' },
+  voteBadgeText: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 10 },
+  badgeTextConfirm: { color: '#2E7D32' },
+  badgeTextDispute: { color: '#C62828' },
+  badgeTextUnsure:  { color: '#E65100' },
+  voteItemReason: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 14, color: ClayTheme.colors.textInput, lineHeight: 20 },
+  voteItemSource: { fontFamily: ClayTheme.typography.fontFamily.semiBold, fontSize: 12, color: ClayTheme.colors.primary, marginTop: 8 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { backgroundColor: 'white', width: '100%', borderRadius: 24, padding: 24, ...ClayTheme.shadows.elevated },
+  modalTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 20, color: ClayTheme.colors.text, marginBottom: 8 },
+  modalDesc: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 14, color: ClayTheme.colors.textMuted, marginBottom: 20, lineHeight: 20 },
+  textInput: { backgroundColor: ClayTheme.colors.inputBg, borderRadius: 12, padding: 16, fontFamily: ClayTheme.typography.fontFamily.regular, fontSize: 15, color: ClayTheme.colors.textInput, minHeight: 100, textAlignVertical: 'top', marginBottom: 16 },
+  modalActions: { flexDirection: 'row', gap: 12 },
+  modalBtnCancel: { flex: 1, backgroundColor: ClayTheme.colors.inputBg, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalBtnCancelText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 15, color: ClayTheme.colors.text },
+  modalBtnSubmit: { flex: 1, backgroundColor: ClayTheme.colors.primary, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalBtnSubmitText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 15, color: 'white' },
 });

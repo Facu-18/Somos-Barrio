@@ -68,9 +68,14 @@ export default function MarketScreen() {
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         ListHeaderComponent={(
           <>
-            <View style={styles.header}>
-              <Text style={styles.sectionTitle}>Mercado</Text>
-              <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+            <View style={styles.headerContainer}>
+              <View style={styles.header}>
+                <Text style={styles.sectionTitle}>Mercado</Text>
+                <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/(app)/my-posts')} style={styles.myPostsButton} accessibilityLabel="Mis publicaciones">
+                <MaterialCommunityIcons name="store-cog" size={22} color={ClayTheme.colors.primaryText} />
+              </TouchableOpacity>
             </View>
             <View style={styles.searchContainer}>
               <View style={styles.searchInput} accessibilityLabel="Búsqueda de mercado no disponible">
@@ -144,12 +149,16 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 60,
-    paddingBottom: 100, // Space for the absolute tab bar
+    paddingBottom: 24,
     paddingHorizontal: 22,
   },
-  header: {
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 20,
   },
+  header: {},
   sectionTitle: {
     fontFamily: ClayTheme.typography.fontFamily.extraBold,
     fontSize: 28,
@@ -160,6 +169,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: ClayTheme.colors.textMuted,
     marginTop: 2,
+  },
+  myPostsButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: ClayTheme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...ClayTheme.shadows.elevated,
   },
   searchContainer: {
     marginBottom: 20,
@@ -246,7 +264,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 24,
-    bottom: 118,
+    bottom: 24,
     width: 62,
     height: 62,
     borderRadius: 31,

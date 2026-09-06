@@ -59,6 +59,15 @@ forumRouter.delete(
   asyncHandler(forumController.deleteThread)
 );
 
+// POST /barrios/:barrioSlug/forum/:subforumSlug/threads/:threadId/close
+forumRouter.post(
+  "/:subforumSlug/threads/:threadId/close",
+  requireAuth,
+  requireBarrioMember,
+  validate({ params: forumThreadParamSchema }),
+  asyncHandler(forumController.closeThread)
+);
+
 // POST /barrios/:barrioSlug/forum/:subforumSlug/threads/:threadId/vote
 forumRouter.post(
   "/:subforumSlug/threads/:threadId/vote",
