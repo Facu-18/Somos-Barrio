@@ -139,6 +139,7 @@ export default function BusinessDetailScreen() {
 
   const averageRating = Number(business.ratingStats?.average || 0).toFixed(1).replace('.0', '');
   const gallery = Array.from(new Set([business.coverImage, ...business.photos].filter((photo): photo is string => Boolean(photo))));
+  const userHasReviewed = business.reviews.some(r => r.user.id === user?.id);
   
   // Categorias y colores (Misma logica que la card)
   let catBg = '#E1EFE2', catText = '#35663A';
@@ -262,7 +263,19 @@ export default function BusinessDetailScreen() {
 
         {/* Reseñas */}
         <View style={styles.reviewsSection}>
-          <Text style={styles.sectionTitle}>Reseñas</Text>
+          <View style={styles.reviewsHeader}>
+            <Text style={styles.sectionTitle}>Reseñas</Text>
+            {!userHasReviewed && (
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: '/business/review', params: { slug } })}
+                style={styles.addReviewButton}
+                activeOpacity={0.7}
+              >
+                <MaterialCommunityIcons name="pencil-outline" size={20} color={ClayTheme.colors.primary} />
+                <Text style={styles.addReviewText}>Escribir</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           
           {business.reviews.length === 0 ? (
             <Text style={styles.emptyText}>Este comercio aún no tiene reseñas. ¡Sé el primero en calificarlo!</Text>
@@ -502,7 +515,26 @@ const styles = StyleSheet.create({
     fontFamily: ClayTheme.typography.fontFamily.extraBold,
     fontSize: 22,
     color: ClayTheme.colors.text,
+  },
+  reviewsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
+  },
+  addReviewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#E1EFE2',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  addReviewText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    fontSize: 14,
+    color: ClayTheme.colors.primaryText,
   },
   emptyText: {
     fontFamily: ClayTheme.typography.fontFamily.medium,
