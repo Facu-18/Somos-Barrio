@@ -3,7 +3,17 @@ import { UserRole } from "@prisma/client";
 import { asyncHandler } from "../../utils/async-handler";
 import { validate } from "../../middlewares/validate";
 import { requireAuth, requireRole, requireBarrioMember } from "../../middlewares/auth";
-import { newsListQuerySchema, createNewsSchema, updateNewsSchema, newsSlugParamSchema, newsVoteSchema } from "./news.schema";
+import { aiRateLimiter } from "../../middlewares/rate-limit";
+import {
+  approveNewsSchema,
+  createNewsSchema,
+  newsAssistSchema,
+  newsListQuerySchema,
+  newsSlugParamSchema,
+  newsVoteSchema,
+  rejectNewsSchema,
+  updateNewsSchema
+} from "./news.schema";
 import { newsController } from "./news.controller";
 
 const newsRouter = Router({ mergeParams: true });
@@ -12,6 +22,31 @@ newsRouter.get(
   "/",
   validate({ query: newsListQuerySchema }),
   asyncHandler(newsController.list)
+);
+
+newsRouter.get(
+  "/mine",
+  requireAuth,
+  requireBarrioMember,
+  validate({ query: newsListQuerySchema }),
+  asyncHandler(newsController.listMine)
+);
+
+newsRouter.get(
+  "/manage/:newsSlug",
+  requireAuth,
+  requireBarrioMember,
+  validate({ params: newsSlugParamSchema }),
+  asyncHandler(newsController.getManagedBySlug)
+);
+
+newsRouter.get(
+  "/editorial/pending",
+  requireAuth,
+  requireRole(UserRole.EDITOR, UserRole.ADMIN),
+  requireBarrioMember,
+  validate({ query: newsListQuerySchema }),
+  asyncHandler(newsController.listPending)
 );
 
 newsRouter.get(
@@ -28,6 +63,15 @@ newsRouter.post(
   asyncHandler(newsController.create)
 );
 
+newsRouter.post(
+  "/assist",
+  requireAuth,
+  requireBarrioMember,
+  aiRateLimiter,
+  validate({ body: newsAssistSchema }),
+  asyncHandler(newsController.assist)
+);
+
 newsRouter.patch(
   "/:newsSlug",
   requireAuth,
@@ -40,6 +84,7 @@ newsRouter.delete(
   "/:newsSlug",
   requireAuth,
   requireRole(UserRole.EDITOR, UserRole.ADMIN),
+  requireBarrioMember,
   validate({ params: newsSlugParamSchema }),
   asyncHandler(newsController.remove)
 );
@@ -58,34 +103,21 @@ newsRouter.get(
   asyncHandler(newsController.getVotes)
 );
 
-newsRouter.get(
-  "/editorial/pending",
-  requireAuth,
-  requireRole(UserRole.EDITOR, UserRole.ADMIN),
-  validate({ query: newsListQuerySchema }),
-  asyncHandler(newsController.listPending)
-);
-
 newsRouter.post(
   "/:newsSlug/approve",
   requireAuth,
   requireRole(UserRole.EDITOR, UserRole.ADMIN),
-  validate({ 
-    params: newsSlugParamSchema,
-    body: z.object({ aiSummary: z.any().optional() }).optional()
-  }),
+  requireBarrioMember,
+  validate({ params: newsSlugParamSchema, body: approveNewsSchema }),
   asyncHandler(newsController.approve)
 );
 
-import { z } from "zod";
 newsRouter.post(
   "/:newsSlug/reject",
   requireAuth,
   requireRole(UserRole.EDITOR, UserRole.ADMIN),
-  validate({ 
-    params: newsSlugParamSchema, 
-    body: z.object({ observation: z.string().min(5).max(1000) }) 
-  }),
+  requireBarrioMember,
+  validate({ params: newsSlugParamSchema, body: rejectNewsSchema }),
   asyncHandler(newsController.reject)
 );
 
@@ -93,8 +125,20 @@ newsRouter.post(
   "/editorial/:newsSlug/summarize",
   requireAuth,
   requireRole(UserRole.EDITOR, UserRole.ADMIN),
+  requireBarrioMember,
+  aiRateLimiter,
   validate({ params: newsSlugParamSchema }),
   asyncHandler(newsController.summarize)
+);
+
+newsRouter.post(
+  "/editorial/:newsSlug/improve",
+  requireAuth,
+  requireRole(UserRole.EDITOR, UserRole.ADMIN),
+  requireBarrioMember,
+  aiRateLimiter,
+  validate({ params: newsSlugParamSchema }),
+  asyncHandler(newsController.improve)
 );
 
 export { newsRouter };

@@ -43,9 +43,9 @@ export default function CreateNewsScreen() {
   const insets = useSafeAreaInsets();
 
   const { data: newsToEdit, isLoading: isLoadingNews } = useQuery({
-    queryKey: ['news-detail', barrioSlug, existingSlug],
+    queryKey: ['news-manage', barrioSlug, existingSlug],
     queryFn: async () => {
-      const response = await api.get(`/barrios/${barrioSlug}/news/${existingSlug}`);
+      const response = await api.get(`/barrios/${barrioSlug}/news/manage/${existingSlug}`);
       return response.data.data;
     },
     enabled: !!existingSlug,
@@ -68,6 +68,25 @@ export default function CreateNewsScreen() {
   }, [newsToEdit, reset]);
 
   const selectedCategory = watch('category');
+  const currentTitle = watch('title');
+  const currentContent = watch('content');
+
+  const improveMutation = useMutation({
+    mutationFn: async (data: NewsForm) => {
+      const response = await api.post(`/barrios/${barrioSlug}/news/assist`, data);
+      return response.data.data as { excerpt: string; content: string };
+    },
+    onSuccess: (improved) => {
+      setValue('excerpt', improved.excerpt, { shouldDirty: true, shouldValidate: true });
+      setValue('content', improved.content, { shouldDirty: true, shouldValidate: true });
+      Alert.alert('Texto mejorado', 'Qwen actualizó la descripción y el cuerpo. Revisalos antes de enviar la noticia.');
+    },
+    onError: (error: any) => {
+      Alert.alert('No se pudo mejorar', error.response?.data?.message || 'No se pudo conectar con el modelo de IA.');
+    },
+  });
+
+  const improveWithAi = handleSubmit((data) => improveMutation.mutate(data));
 
   const createMutation = useMutation({
     mutationFn: async (data: NewsForm) => {
@@ -87,8 +106,8 @@ export default function CreateNewsScreen() {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['news', barrioSlug] });
-      queryClient.invalidateQueries({ queryKey: ['my-posts', barrioSlug] });
+      queryClient.invalidateQueries({ queryKey: ['news-mine', barrioSlug] });
+      queryClient.invalidateQueries({ queryKey: ['news-pending', barrioSlug] });
       Alert.alert("Éxito", "La noticia fue enviada a revisión y pronto será revisada por un editor.", [
         { text: "OK", onPress: () => router.back() }
       ]);
@@ -204,6 +223,23 @@ export default function CreateNewsScreen() {
             )}
           />
 
+          <TouchableOpacity
+            style={[styles.aiButton, (improveMutation.isPending || currentTitle.length < 3 || currentContent.length < 10) && styles.aiButtonDisabled]}
+            onPress={improveWithAi}
+            disabled={improveMutation.isPending || currentTitle.length < 3 || currentContent.length < 10}
+            accessibilityRole="button"
+            accessibilityLabel="Mejorar descripción y cuerpo con inteligencia artificial"
+          >
+            {improveMutation.isPending ? (
+              <Text style={styles.aiButtonText}>Qwen está mejorando el texto...</Text>
+            ) : (
+              <>
+                <MaterialCommunityIcons name="auto-fix" size={21} color={ClayTheme.categories.MUNICIPIO.text} />
+                <Text style={styles.aiButtonText}>Mejorar descripción y cuerpo con IA</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
           <ClayButton 
             title={createMutation.isPending ? "Enviando..." : "Enviar a revisión"} 
             onPress={handleSubmit(onSubmit)} 
@@ -240,8 +276,11 @@ const styles = StyleSheet.create({
   categoryText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13, color: ClayTheme.colors.text },
   categoryTextActive: { color: ClayTheme.colors.primaryText },
   observationBanner: {
-    backgroundColor: '#FFE5E5', padding: 16, borderRadius: 16, flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: ClayTheme.colors.errorBg, padding: 16, borderRadius: ClayTheme.borders.radiusTile, flexDirection: 'row', alignItems: 'flex-start',
   },
   observationTitle: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 14, color: ClayTheme.colors.error, marginBottom: 4 },
   observationText: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 13, color: ClayTheme.colors.error },
+  aiButton: { minHeight: 56, borderRadius: ClayTheme.borders.radiusPill, paddingHorizontal: 22, backgroundColor: ClayTheme.categories.MUNICIPIO.bg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  aiButtonDisabled: { opacity: 0.45 },
+  aiButtonText: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 14, color: ClayTheme.categories.MUNICIPIO.text, textAlign: 'center' },
 });

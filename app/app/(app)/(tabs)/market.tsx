@@ -1,4 +1,5 @@
 import React from 'react';
+import { listPerf } from '../../../constants/ListPerf';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, Image, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
@@ -6,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { EmptyState } from '../../../components/EmptyState';
 
 interface MarketItem {
   id: string;
@@ -60,6 +62,7 @@ export default function MarketScreen() {
   return (
     <View style={styles.container}>
       <FlatList
+        {...listPerf}
         data={data ?? []}
         keyExtractor={(item) => item.id}
         numColumns={2}
@@ -119,7 +122,15 @@ export default function MarketScreen() {
               </TouchableOpacity>
             );
         }}
-        ListEmptyComponent={<Text style={styles.emptyText}>Aún no hay publicaciones en el mercado.</Text>}
+        ListEmptyComponent={
+          <EmptyState 
+            iconName="storefront-outline" 
+            title="Todavía nadie publicó nada" 
+            description="Sé la primera persona en publicar algo." 
+            actionLabel="Publicar algo" 
+            onAction={() => router.push('/(app)/create-market')} 
+          />
+        }
       />
 
       {/* FAB Button */}
@@ -149,7 +160,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 60,
-    paddingBottom: 24,
+    paddingBottom: 120, // space for tab bar
     paddingHorizontal: 22,
   },
   headerContainer: {
@@ -264,7 +275,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 24,
-    bottom: 24,
+    bottom: 110, // space for tab bar
     width: 62,
     height: 62,
     borderRadius: 31,

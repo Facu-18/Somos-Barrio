@@ -1,13 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal, TextInput, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ClayButton } from '../../../components/ClayButton';
-import { ClayTheme } from '../../../constants/ClayTheme';
+import { ClayTheme, categoryLabel, categoryStyle } from '../../../constants/ClayTheme';
 import { useAuth } from '../../../hooks/useAuth';
 import { api } from '../../../lib/api';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import React, { useState } from 'react';
 
 interface NewsDetail {
@@ -17,12 +16,13 @@ interface NewsDetail {
   excerpt: string | null;
   content: string;
   category: string;
-  publishedAt: string;
+  status: 'DRAFT' | 'PENDING_REVIEW' | 'PUBLISHED' | 'ARCHIVED';
+  publishedAt: string | null;
   confirmVotes: number;
   disputeVotes: number;
   unsureVotes: number;
   aiSummary: { summary: string; provider: string } | null;
-  author: { nickname: string | null; name: string };
+  author: { nickname: string | null };
 }
 
 interface NewsVote {
@@ -31,18 +31,21 @@ interface NewsVote {
   reason: string;
   sourceUrl: string | null;
   createdAt: string;
-  user: { nickname: string | null; name: string; avatarUrl: string | null };
+  user: { nickname: string | null; avatarUrl: string | null };
 }
 
 export default function NewsDetailScreen() {
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { slug, preview } = useLocalSearchParams<{ slug: string; preview?: string }>();
   const { data: user } = useAuth();
   const barrioSlug = user?.barrio?.slug;
   const insets = useSafeAreaInsets();
   const { data: news, isLoading, isError, refetch } = useQuery({
-    queryKey: ['news-detail', barrioSlug, slug],
+    queryKey: ['news-detail', barrioSlug, slug, preview],
     queryFn: async () => {
-      const response = await api.get(`/barrios/${barrioSlug}/news/${slug}`);
+      const endpoint = preview === '1'
+        ? `/barrios/${barrioSlug}/news/manage/${slug}`
+        : `/barrios/${barrioSlug}/news/${slug}`;
+      const response = await api.get(endpoint);
       return response.data.data as NewsDetail;
     },
     enabled: Boolean(barrioSlug && slug),
@@ -54,7 +57,7 @@ export default function NewsDetailScreen() {
       const response = await api.get(`/barrios/${barrioSlug}/news/${slug}/votes`);
       return response.data.data.items as NewsVote[];
     },
-    enabled: Boolean(barrioSlug && slug),
+    enabled: Boolean(barrioSlug && slug && preview !== '1'),
   });
 
   const queryClient = useQueryClient();
@@ -112,10 +115,12 @@ export default function NewsDetailScreen() {
         <View style={styles.headerSpacer} />
       </View>
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 24) + 20 }]}>
-        <Text style={styles.category}>{news.category.charAt(0) + news.category.slice(1).toLowerCase()}</Text>
+        <Text style={[styles.category, { backgroundColor: categoryStyle(news.category).bg, color: categoryStyle(news.category).text }]}>{categoryLabel(news.category)}</Text>
         <Text style={styles.title}>{news.title}</Text>
         <Text style={styles.meta}>
-          {new Date(news.publishedAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })}
+          {news.publishedAt
+            ? new Date(news.publishedAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
+            : news.status === 'PENDING_REVIEW' ? 'Pendiente de revisión' : 'Borrador'}
           {news.author.nickname ? ` · ${news.author.nickname}` : ''}
         </Text>
         {news.excerpt ? <Text style={styles.excerpt}>{news.excerpt}</Text> : null}
@@ -123,7 +128,7 @@ export default function NewsDetailScreen() {
         {news.aiSummary && (
           <View style={styles.aiSummaryBox}>
             <View style={styles.aiSummaryHeader}>
-              <MaterialCommunityIcons name="auto-fix" size={18} color="#7B1FA2" />
+              <MaterialCommunityIcons name="auto-fix" size={18} color={ClayTheme.categories.MUNICIPIO.text} />
               <Text style={styles.aiSummaryTitle}>Resumen destacado</Text>
             </View>
             <Text style={styles.aiSummaryText}>{news.aiSummary.summary}</Text>
@@ -133,27 +138,27 @@ export default function NewsDetailScreen() {
         <View style={styles.divider} />
         <Text style={styles.body}>{news.content}</Text>
         
-        <View style={styles.verificationSection}>
+        {news.status === 'PUBLISHED' && <View style={styles.verificationSection}>
           <Text style={styles.verificationTitle}>Verificación Comunitaria</Text>
           <Text style={styles.verificationDesc}>¿Esta información es correcta? Dejá tu voto con un fundamento.</Text>
           
           <View style={styles.voteButtonsRow}>
             <TouchableOpacity style={[styles.voteBtn, styles.voteBtnConfirm]} onPress={() => openVoteModal('CONFIRM')}>
-              <MaterialCommunityIcons name="check-circle" size={22} color="#2E7D32" />
-              <Text style={[styles.voteBtnText, { color: '#2E7D32' }]}>{news.confirmVotes} Confirman</Text>
+              <MaterialCommunityIcons name="check-circle-outline" size={22} color={ClayTheme.states.positive.text} />
+              <Text style={[styles.voteBtnText, { color: ClayTheme.states.positive.text }]}>{news.confirmVotes} Confirman</Text>
             </TouchableOpacity>
             
             <TouchableOpacity style={[styles.voteBtn, styles.voteBtnDispute]} onPress={() => openVoteModal('DISPUTE')}>
-              <MaterialCommunityIcons name="close-circle" size={22} color="#C62828" />
-              <Text style={[styles.voteBtnText, { color: '#C62828' }]}>{news.disputeVotes} Disputan</Text>
+              <MaterialCommunityIcons name="close-circle-outline" size={22} color={ClayTheme.states.danger.text} />
+              <Text style={[styles.voteBtnText, { color: ClayTheme.states.danger.text }]}>{news.disputeVotes} Disputan</Text>
             </TouchableOpacity>
             
             <TouchableOpacity style={[styles.voteBtn, styles.voteBtnUnsure]} onPress={() => openVoteModal('UNSURE')}>
-              <MaterialCommunityIcons name="help-circle" size={22} color="#E65100" />
-              <Text style={[styles.voteBtnText, { color: '#E65100' }]}>{news.unsureVotes} Dudan</Text>
+              <MaterialCommunityIcons name="help-circle-outline" size={22} color={ClayTheme.states.warning.text} />
+              <Text style={[styles.voteBtnText, { color: ClayTheme.states.warning.text }]}>{news.unsureVotes} Dudan</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </View>}
         
         {votesData && votesData.length > 0 && (
           <View style={styles.votesList}>
@@ -161,7 +166,7 @@ export default function NewsDetailScreen() {
             {votesData.map(v => (
               <View key={v.id} style={styles.voteItem}>
                 <View style={styles.voteItemHeader}>
-                  <Text style={styles.voteItemAuthor}>{v.user.nickname || v.user.name}</Text>
+                  <Text style={styles.voteItemAuthor}>{v.user.nickname || 'Vecino/a'}</Text>
                   <View style={[
                     styles.voteBadge, 
                     v.value === 'CONFIRM' ? styles.badgeConfirm : v.value === 'DISPUTE' ? styles.badgeDispute : styles.badgeUnsure
@@ -232,7 +237,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 18, color: ClayTheme.colors.text },
   headerSpacer: { width: 40 },
   content: { padding: 24, paddingTop: 34 },
-  category: { alignSelf: 'flex-start', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#EAE7F2', color: '#57508A', fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 12 },
+  category: { alignSelf: 'flex-start', overflow: 'hidden', borderRadius: ClayTheme.borders.radiusPill, paddingHorizontal: 14, paddingVertical: 7, fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 12 },
   title: { marginTop: 18, fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 30, lineHeight: 37, color: ClayTheme.colors.text },
   meta: { marginTop: 12, fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 13, color: ClayTheme.colors.textMuted },
   excerpt: { marginTop: 24, fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 18, lineHeight: 27, color: ClayTheme.colors.textInput },
@@ -240,42 +245,42 @@ const styles = StyleSheet.create({
   body: { fontFamily: ClayTheme.typography.fontFamily.regular, fontSize: 17, lineHeight: 28, color: ClayTheme.colors.text },
   error: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 16, color: ClayTheme.colors.error, textAlign: 'center' },
   retry: { marginTop: 20 },
-  aiSummaryBox: { marginTop: 24, backgroundColor: '#F3E5F5', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#E1BEE7' },
+  aiSummaryBox: { marginTop: 24, backgroundColor: ClayTheme.categories.MUNICIPIO.bg, borderRadius: ClayTheme.borders.radiusTile, padding: 18 },
   aiSummaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  aiSummaryTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 14, color: '#7B1FA2' },
-  aiSummaryText: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 15, lineHeight: 22, color: '#4A148C' },
-  verificationSection: { marginTop: 40, padding: 20, backgroundColor: '#F8F9FA', borderRadius: 16, borderWidth: 1, borderColor: '#E9ECEF' },
+  aiSummaryTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 14, color: ClayTheme.categories.MUNICIPIO.text },
+  aiSummaryText: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 15, lineHeight: 22, color: ClayTheme.categories.MUNICIPIO.text },
+  verificationSection: { marginTop: 40, padding: 20, backgroundColor: ClayTheme.colors.inputBg, borderRadius: ClayTheme.borders.radiusElevated, ...ClayTheme.shadows.sunk },
   verificationTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 18, color: ClayTheme.colors.text, marginBottom: 4 },
   verificationDesc: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 13, color: ClayTheme.colors.textMuted, marginBottom: 16 },
   voteButtonsRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  voteBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
-  voteBtnConfirm: { backgroundColor: '#E8F5E9', borderColor: '#C8E6C9' },
-  voteBtnDispute: { backgroundColor: '#FFEBEE', borderColor: '#FFCDD2' },
-  voteBtnUnsure:  { backgroundColor: '#FFF3E0', borderColor: '#FFE0B2' },
+  voteBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: ClayTheme.hitSize, paddingHorizontal: 16, borderRadius: ClayTheme.borders.radiusPill },
+  voteBtnConfirm: { backgroundColor: ClayTheme.states.positive.bg },
+  voteBtnDispute: { backgroundColor: ClayTheme.states.danger.bg },
+  voteBtnUnsure:  { backgroundColor: ClayTheme.states.warning.bg },
   voteBtnText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 14 },
   votesList: { marginTop: 30 },
   votesListTitle: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 16, color: ClayTheme.colors.text, marginBottom: 12 },
-  voteItem: { backgroundColor: ClayTheme.colors.surface, padding: 16, borderRadius: 12, marginBottom: 10, ...ClayTheme.shadows.elevated },
+  voteItem: { backgroundColor: ClayTheme.colors.surface, padding: 16, borderRadius: ClayTheme.borders.radiusTile, marginBottom: 12, ...ClayTheme.shadows.elevated },
   voteItemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   voteItemAuthor: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 14, color: ClayTheme.colors.text },
-  voteBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  badgeConfirm: { backgroundColor: '#E8F5E9' },
-  badgeDispute: { backgroundColor: '#FFEBEE' },
-  badgeUnsure:  { backgroundColor: '#FFF3E0' },
+  voteBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: ClayTheme.borders.radiusPill },
+  badgeConfirm: { backgroundColor: ClayTheme.states.positive.bg },
+  badgeDispute: { backgroundColor: ClayTheme.states.danger.bg },
+  badgeUnsure:  { backgroundColor: ClayTheme.states.warning.bg },
   voteBadgeText: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 10 },
-  badgeTextConfirm: { color: '#2E7D32' },
-  badgeTextDispute: { color: '#C62828' },
-  badgeTextUnsure:  { color: '#E65100' },
+  badgeTextConfirm: { color: ClayTheme.states.positive.text },
+  badgeTextDispute: { color: ClayTheme.states.danger.text },
+  badgeTextUnsure:  { color: ClayTheme.states.warning.text },
   voteItemReason: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 14, color: ClayTheme.colors.textInput, lineHeight: 20 },
   voteItemSource: { fontFamily: ClayTheme.typography.fontFamily.semiBold, fontSize: 12, color: ClayTheme.colors.primary, marginTop: 8 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: { backgroundColor: 'white', width: '100%', borderRadius: 24, padding: 24, ...ClayTheme.shadows.elevated },
+  modalContent: { backgroundColor: ClayTheme.colors.surface, width: '100%', borderRadius: ClayTheme.borders.radiusElevated, padding: 24, ...ClayTheme.shadows.elevated },
   modalTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 20, color: ClayTheme.colors.text, marginBottom: 8 },
   modalDesc: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 14, color: ClayTheme.colors.textMuted, marginBottom: 20, lineHeight: 20 },
-  textInput: { backgroundColor: ClayTheme.colors.inputBg, borderRadius: 12, padding: 16, fontFamily: ClayTheme.typography.fontFamily.regular, fontSize: 15, color: ClayTheme.colors.textInput, minHeight: 100, textAlignVertical: 'top', marginBottom: 16 },
+  textInput: { backgroundColor: ClayTheme.colors.inputBg, borderRadius: ClayTheme.borders.radiusSunk, padding: 16, fontFamily: ClayTheme.typography.fontFamily.regular, fontSize: 15, color: ClayTheme.colors.textInput, minHeight: 100, textAlignVertical: 'top', marginBottom: 16 },
   modalActions: { flexDirection: 'row', gap: 12 },
-  modalBtnCancel: { flex: 1, backgroundColor: ClayTheme.colors.inputBg, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalBtnCancel: { flex: 1, backgroundColor: ClayTheme.colors.surfaceFlat, minHeight: ClayTheme.hitSize, borderRadius: ClayTheme.borders.radiusPill, alignItems: 'center', justifyContent: 'center' },
   modalBtnCancelText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 15, color: ClayTheme.colors.text },
-  modalBtnSubmit: { flex: 1, backgroundColor: ClayTheme.colors.primary, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  modalBtnSubmitText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 15, color: 'white' },
+  modalBtnSubmit: { flex: 1, backgroundColor: ClayTheme.colors.primary, minHeight: ClayTheme.hitSize, borderRadius: ClayTheme.borders.radiusPill, alignItems: 'center', justifyContent: 'center', ...ClayTheme.shadows.primary },
+  modalBtnSubmitText: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 15, color: ClayTheme.colors.primaryText },
 });

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { listPerf } from '../../../constants/ListPerf';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
@@ -6,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { EmptyState } from '../../../components/EmptyState';
 
 interface EventItem {
   id: string;
@@ -17,7 +19,6 @@ interface EventItem {
   };
   myRsvp: 'GOING' | 'INTERESTED' | 'NOT_GOING' | null;
   user: {
-    name: string;
     nickname: string | null;
     avatarUrl: string | null;
   };
@@ -48,7 +49,7 @@ export default function EventsScreen() {
     }).replace(',', ' a las');
   };
 
-  const getInitials = (name: string) => name.substring(0, 2).toUpperCase();
+  const getInitials = (name?: string | null) => (name?.trim()?.slice(0, 2) || '?').toUpperCase();
 
   const getPlaceholderStyle = (index: number) => {
     const styles = [
@@ -71,6 +72,7 @@ export default function EventsScreen() {
   return (
     <View style={styles.container}>
       <FlatList
+        {...listPerf}
         data={data ?? []}
         keyExtractor={(event) => event.id}
         contentContainerStyle={styles.content}
@@ -127,11 +129,11 @@ export default function EventsScreen() {
                       ) : (
                         <View style={[styles.organizerAvatar, { backgroundColor: '#EAE7F2', justifyContent: 'center', alignItems: 'center' }]}>
                           <Text style={{ fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 8, color: '#57508A' }}>
-                            {getInitials(event.user.name)}
+                            {getInitials(event.user.nickname)}
                           </Text>
                         </View>
                       )}
-                      <Text style={styles.organizerName}>por {event.user.nickname || event.user.name}</Text>
+                      <Text style={styles.organizerName}>por {event.user.nickname || 'un vecino'}</Text>
                     </View>
 
                     <View style={[styles.rsvpsBadge, { backgroundColor: pStyle.badgeBg }]}>
@@ -143,7 +145,15 @@ export default function EventsScreen() {
               </TouchableOpacity>
           );
         }}
-        ListEmptyComponent={<Text style={styles.emptyText}>No hay eventos {upcoming ? 'próximos' : 'pasados'}.</Text>}
+        ListEmptyComponent={
+          <EmptyState 
+            iconName="calendar-blank-outline" 
+            title={`No hay eventos ${upcoming ? 'próximos' : 'pasados'}`} 
+            description="Sé la primera persona en organizar algo." 
+            actionLabel="Organizá el primero" 
+            onAction={() => console.log('TODO: Create event')} 
+          />
+        }
       />
     </View>
   );
@@ -162,7 +172,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 60,
-    paddingBottom: 24,
+    paddingBottom: 120, // space for absolute tab bar
     paddingHorizontal: 22,
   },
   header: {

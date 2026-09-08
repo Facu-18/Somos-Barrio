@@ -1,20 +1,37 @@
 {
   "artboards": [
-    { "file": "Login.dc.html",    "x": 0,    "y": 0,    "w": 390, "h": 844,  "title": "Login" },
-    { "file": "Main.dc.html",     "x": 470,  "y": 0,    "w": 390, "h": 844,  "title": "Inicio · feed" },
-    { "file": "Noticia.dc.html",  "x": 940,  "y": 0,    "w": 390, "h": 844,  "title": "Detalle de noticia" },
-    { "file": "Mercado.dc.html",  "x": 1410, "y": 0,    "w": 390, "h": 844,  "title": "Mercado" },
-    { "file": "Comercio.dc.html", "x": 0,    "y": 964,  "w": 390, "h": 844,  "title": "Detalle de comercio" },
-    { "file": "Foro.dc.html",     "x": 470,  "y": 964,  "w": 390, "h": 844,  "title": "Foro" },
-    { "file": "Estilos.dc.html",  "x": 940,  "y": 964,  "w": 980, "h": 1240, "title": "Hoja de estilos" }
+    { "file": "Login.dc.html",       "x": 0,    "y": 0,    "w": 390, "h": 844,  "title": "Login" },
+    { "file": "Main.dc.html",        "x": 470,  "y": 0,    "w": 390, "h": 844,  "title": "Inicio · con novedades" },
+    { "file": "InicioVacio.dc.html", "x": 940,  "y": 0,    "w": 390, "h": 844,  "title": "Inicio · vacío" },
+    { "file": "Noticia.dc.html",     "x": 1410, "y": 0,    "w": 390, "h": 844,  "title": "Detalle de noticia" },
+    { "file": "Mercado.dc.html",     "x": 1880, "y": 0,    "w": 390, "h": 844,  "title": "Mercado" },
+    { "file": "Comercio.dc.html",    "x": 0,    "y": 964,  "w": 390, "h": 844,  "title": "Detalle de comercio" },
+    { "file": "Foro.dc.html",        "x": 470,  "y": 964,  "w": 390, "h": 844,  "title": "Foro" },
+    { "file": "Eventos.dc.html",     "x": 940,  "y": 964,  "w": 390, "h": 844,  "title": "Eventos" },
+    { "file": "Perfil.dc.html",      "x": 1410, "y": 964,  "w": 390, "h": 844,  "title": "Mi perfil" },
+    { "file": "Estilos.dc.html",     "x": 0,    "y": 1928, "w": 980, "h": 1500, "title": "Hoja de estilos" }
   ],
   "annotations": [
     {
       "id": "nota-base",
       "x": 0,
-      "y": -150,
-      "w": 860,
-      "text": "Somos Barrio · claymorfismo minimalista.\nMockups estáticos, 390x844. Se deja libre la franja superior (~56 px) en vez de dibujar una status bar falsa: en el dispositivo la real se pinta encima.\nEl botón primario usa texto verde oscuro sobre #7BC47F; el blanco no llega al contraste mínimo."
+      "y": -170,
+      "w": 900,
+      "text": "Somos Barrio · claymorfismo minimalista. Mockups estáticos, 390x844.\nAjustado a la app real: barrio Parque Liceo, tab bar de 5 (Inicio, Mercado, Comercios, Foro, Eventos).\nSe deja libre la franja superior (~56 px) en vez de dibujar una status bar falsa: en el dispositivo la real se pinta encima."
+    },
+    {
+      "id": "nota-inicio",
+      "x": 470,
+      "y": -96,
+      "w": 390,
+      "text": "El título y el avatar ya no compiten: \"Proponer\" pasa a FAB extendido, así el header nunca desborda."
+    },
+    {
+      "id": "nota-perfil",
+      "x": 1410,
+      "y": -96,
+      "w": 390,
+      "text": "\"Cerrar sesión\" deja de ser una barra roja llena: superficie clara con texto #B4553F."
     }
   ],
   "launch": { "view": "canvas" }

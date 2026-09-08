@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { listPerf } from '../../constants/ListPerf';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, KeyboardAvoidingView, Platform, TextInput, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../constants/ClayTheme';
@@ -17,9 +18,20 @@ interface PendingNews {
   category: string;
   createdAt: string;
   author: {
-    nickname: string;
-    name: string;
+    nickname: string | null;
   };
+}
+
+interface AiSummary {
+  summary: string;
+  provider: string;
+  model: string;
+  generatedAt: string;
+}
+
+interface AiEditorialDraft extends AiSummary {
+  excerpt: string;
+  content: string;
 }
 
 export default function NewsInboxScreen() {
@@ -33,7 +45,9 @@ export default function NewsInboxScreen() {
   
   const [summarizingNews, setSummarizingNews] = useState<string | null>(null);
   const [aiSummaryText, setAiSummaryText] = useState('');
-  const [aiSummaryData, setAiSummaryData] = useState<any>(null);
+  const [aiExcerptText, setAiExcerptText] = useState('');
+  const [aiContentText, setAiContentText] = useState('');
+  const [aiSummaryData, setAiSummaryData] = useState<AiEditorialDraft | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['news-pending', barrioSlug],
@@ -45,13 +59,17 @@ export default function NewsInboxScreen() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: async ({ slug, aiSummary }: { slug: string; aiSummary?: any }) => {
-      await api.post(`/barrios/${barrioSlug}/news/${slug}/approve`, { aiSummary });
+    mutationFn: async ({ slug, aiSummary, excerpt, content }: { slug: string; aiSummary?: AiSummary; excerpt?: string; content?: string }) => {
+      await api.post(`/barrios/${barrioSlug}/news/${slug}/approve`, { aiSummary, excerpt, content });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['news-pending', barrioSlug] });
+      queryClient.invalidateQueries({ queryKey: ['news', barrioSlug] });
+      queryClient.invalidateQueries({ queryKey: ['news-mine', barrioSlug] });
       setSummarizingNews(null);
       setAiSummaryText('');
+      setAiExcerptText('');
+      setAiContentText('');
       setAiSummaryData(null);
       Alert.alert("Éxito", "La noticia ha sido publicada.");
     },
@@ -68,6 +86,7 @@ export default function NewsInboxScreen() {
       setRejectingNews(null);
       setObservation('');
       queryClient.invalidateQueries({ queryKey: ['news-pending', barrioSlug] });
+      queryClient.invalidateQueries({ queryKey: ['news-mine', barrioSlug] });
       Alert.alert("Rechazada", "La noticia fue devuelta al autor con tus observaciones.");
     },
     onError: (error: any) => {
@@ -88,12 +107,14 @@ export default function NewsInboxScreen() {
 
   const summarizeMutation = useMutation({
     mutationFn: async (slug: string) => {
-      const response = await api.post(`/barrios/${barrioSlug}/news/editorial/${slug}/summarize`);
-      return response.data.data;
+      const response = await api.post(`/barrios/${barrioSlug}/news/editorial/${slug}/improve`);
+      return response.data.data as AiEditorialDraft;
     },
     onSuccess: (data) => {
       setAiSummaryData(data);
       setAiSummaryText(data.summary);
+      setAiExcerptText(data.excerpt);
+      setAiContentText(data.content);
     },
     onError: (error: any) => {
       Alert.alert("Error de IA", error.response?.data?.message || "No se pudo generar el resumen.");
@@ -108,9 +129,16 @@ export default function NewsInboxScreen() {
 
   const handleApproveWithSummary = () => {
     if (!summarizingNews || !aiSummaryData) return;
-    approveMutation.mutate({ 
-      slug: summarizingNews, 
-      aiSummary: { ...aiSummaryData, summary: aiSummaryText } 
+    approveMutation.mutate({
+      slug: summarizingNews,
+      excerpt: aiExcerptText,
+      content: aiContentText,
+      aiSummary: {
+        summary: aiSummaryText,
+        provider: aiSummaryData.provider,
+        model: aiSummaryData.model,
+        generatedAt: aiSummaryData.generatedAt,
+      }
     });
   };
 
@@ -145,6 +173,7 @@ export default function NewsInboxScreen() {
       </View>
 
       <FlatList
+        {...listPerf}
         data={data ?? []}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.content}
@@ -158,10 +187,13 @@ export default function NewsInboxScreen() {
               <Text style={styles.timeAgo}>{formatDate(item.createdAt)}</Text>
             </View>
             <Text style={styles.cardTitle}>{item.title}</Text>
-            <Text style={styles.authorText}>Por {item.author.nickname || item.author.name}</Text>
+            <Text style={styles.authorText}>Por {item.author.nickname || 'Vecino/a'}</Text>
             
             <View style={styles.actionsRow}>
-              <TouchableOpacity style={styles.previewBtn} onPress={() => router.push(`/(app)/news/${item.slug}`)}>
+              <TouchableOpacity
+                style={styles.previewBtn}
+                onPress={() => router.push({ pathname: '/(app)/news/[slug]', params: { slug: item.slug, preview: '1' } })}
+              >
                 <MaterialCommunityIcons name="eye-outline" size={20} color={ClayTheme.colors.text} />
                 <Text style={styles.previewBtnText}>Ver Noticia</Text>
               </TouchableOpacity>
@@ -178,7 +210,8 @@ export default function NewsInboxScreen() {
                   style={styles.summarizeBtn} 
                   onPress={() => handleSummarize(item.slug)}
                 >
-                  <MaterialCommunityIcons name="auto-fix" size={20} color="#7B1FA2" />
+                  <MaterialCommunityIcons name="auto-fix" size={20} color={ClayTheme.categories.MUNICIPIO.text} />
+                  <Text style={styles.summarizeBtnText}>Mejorar</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -200,7 +233,11 @@ export default function NewsInboxScreen() {
         animationType="fade"
       >
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <ScrollView
+            style={styles.aiModal}
+            contentContainerStyle={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text style={styles.modalTitle}>Observaciones</Text>
             <Text style={styles.modalDesc}>Indicá al autor qué debe corregir para que la noticia sea aprobada.</Text>
             
@@ -225,7 +262,7 @@ export default function NewsInboxScreen() {
                 <Text style={styles.modalBtnSubmitText}>{rejectMutation.isPending ? 'Enviando...' : 'Rechazar'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -235,17 +272,40 @@ export default function NewsInboxScreen() {
         animationType="slide"
       >
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>✨ Resumen con IA</Text>
+          <ScrollView
+            style={styles.aiModal}
+            contentContainerStyle={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.modalTitle}>Edición asistida por IA</Text>
             
             {summarizeMutation.isPending ? (
               <View style={styles.aiLoading}>
-                <ActivityIndicator size="large" color="#7B1FA2" />
-                <Text style={styles.aiLoadingText}>Leyendo la noticia y extrayendo puntos clave...</Text>
+                <ActivityIndicator size="large" color={ClayTheme.categories.MUNICIPIO.text} />
+                <Text style={styles.aiLoadingText}>Mejorando descripción, cuerpo y resumen sin cambiar los hechos...</Text>
               </View>
             ) : aiSummaryData ? (
               <View>
-                <Text style={styles.modalDesc}>Revisá y editá el resumen antes de publicar. Este texto aparecerá como destacado en la noticia.</Text>
+                <Text style={styles.modalDesc}>Revisá cada propuesta antes de publicar. La IA puede equivocarse y no debe agregar hechos.</Text>
+
+                <Text style={styles.inputLabel}>Descripción</Text>
+                <TextInput
+                  style={styles.textInput}
+                  multiline
+                  value={aiExcerptText}
+                  onChangeText={setAiExcerptText}
+                  maxLength={500}
+                />
+
+                <Text style={styles.inputLabel}>Cuerpo de la noticia</Text>
+                <TextInput
+                  style={[styles.textInput, styles.bodyInput]}
+                  multiline
+                  value={aiContentText}
+                  onChangeText={setAiContentText}
+                />
+
+                <Text style={styles.inputLabel}>Resumen destacado</Text>
                 
                 <TextInput
                   style={styles.textInput}
@@ -257,13 +317,13 @@ export default function NewsInboxScreen() {
                 <Text style={styles.aiMeta}>Generado por {aiSummaryData.provider}</Text>
 
                 <View style={styles.modalActions}>
-                  <TouchableOpacity style={styles.modalBtnCancel} onPress={() => { setSummarizingNews(null); setAiSummaryData(null); }}>
+                  <TouchableOpacity style={styles.modalBtnCancel} onPress={() => { setSummarizingNews(null); setAiSummaryData(null); setAiExcerptText(''); setAiContentText(''); }}>
                     <Text style={styles.modalBtnCancelText}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
-                    style={[styles.modalBtnSubmit, { backgroundColor: '#7B1FA2' }]} 
+                    style={[styles.modalBtnSubmit, { backgroundColor: ClayTheme.categories.MUNICIPIO.dot }]} 
                     onPress={handleApproveWithSummary}
-                    disabled={approveMutation.isPending}
+                    disabled={approveMutation.isPending || !aiExcerptText.trim() || aiContentText.trim().length < 10 || !aiSummaryText.trim()}
                   >
                     <Text style={styles.modalBtnSubmitText}>{approveMutation.isPending ? 'Publicando...' : 'Publicar con Resumen'}</Text>
                   </TouchableOpacity>
@@ -276,7 +336,7 @@ export default function NewsInboxScreen() {
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
     </View>
@@ -302,24 +362,28 @@ const styles = StyleSheet.create({
   timeAgo: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 12, color: ClayTheme.colors.textMuted },
   cardTitle: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 18, color: ClayTheme.colors.text, marginBottom: 4 },
   authorText: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 13, color: ClayTheme.colors.textMuted, marginBottom: 16 },
-  actionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.05)', paddingTop: 16 },
+  actionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, marginTop: 4 },
   previewBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ClayTheme.colors.inputBg, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
   previewBtnText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13, color: ClayTheme.colors.text },
-  rejectBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFE5E5', alignItems: 'center', justifyContent: 'center' },
-  summarizeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3E5F5', alignItems: 'center', justifyContent: 'center' },
+  rejectBtn: { width: ClayTheme.hitSize, height: ClayTheme.hitSize, borderRadius: ClayTheme.borders.radiusPill, backgroundColor: ClayTheme.colors.errorBg, alignItems: 'center', justifyContent: 'center' },
+  summarizeBtn: { minHeight: ClayTheme.hitSize, borderRadius: ClayTheme.borders.radiusPill, backgroundColor: ClayTheme.categories.MUNICIPIO.bg, paddingHorizontal: 14, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' },
+  summarizeBtnText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 12, color: ClayTheme.categories.MUNICIPIO.text },
   approveBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: ClayTheme.colors.primary, paddingHorizontal: 16, borderRadius: 18 },
   approveBtnText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13, color: ClayTheme.colors.primaryText },
   emptyText: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 15, color: ClayTheme.colors.textMuted, textAlign: 'center', marginTop: 40 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: { backgroundColor: 'white', width: '100%', borderRadius: 24, padding: 24, ...ClayTheme.shadows.elevated },
+  modalContent: { backgroundColor: ClayTheme.colors.surface, width: '100%', borderRadius: ClayTheme.borders.radiusElevated, padding: 24, ...ClayTheme.shadows.elevated },
+  aiModal: { width: '100%', maxHeight: '92%', borderRadius: 24 },
   modalTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 20, color: ClayTheme.colors.text, marginBottom: 8 },
   modalDesc: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 14, color: ClayTheme.colors.textMuted, marginBottom: 20, lineHeight: 20 },
   textInput: { backgroundColor: ClayTheme.colors.inputBg, borderRadius: 12, padding: 16, fontFamily: ClayTheme.typography.fontFamily.regular, fontSize: 15, color: ClayTheme.colors.textInput, minHeight: 100, textAlignVertical: 'top', marginBottom: 24 },
+  bodyInput: { minHeight: 180 },
+  inputLabel: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13, color: ClayTheme.colors.text, marginBottom: 6 },
   modalActions: { flexDirection: 'row', gap: 12 },
   modalBtnCancel: { flex: 1, backgroundColor: ClayTheme.colors.inputBg, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   modalBtnCancelText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 15, color: ClayTheme.colors.text },
   modalBtnSubmit: { flex: 1, backgroundColor: ClayTheme.colors.error, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  modalBtnSubmitText: { fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 15, color: 'white' },
+  modalBtnSubmitText: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 15, color: ClayTheme.colors.primaryText },
   aiLoading: { padding: 40, alignItems: 'center', gap: 16 },
   aiLoadingText: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 14, color: ClayTheme.colors.textMuted, textAlign: 'center' },
   aiMeta: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 11, color: ClayTheme.colors.textMuted, textAlign: 'right', marginBottom: 16 }

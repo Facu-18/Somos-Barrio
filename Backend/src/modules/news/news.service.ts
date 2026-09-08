@@ -1,4 +1,4 @@
-import { NewsStatus, UserRole, NewsVoteValue } from "@prisma/client";
+import { NewsStatus, Prisma, UserRole, NewsVoteValue } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 import { notificationsService } from "../notifications/notifications.service";
@@ -10,6 +10,7 @@ export type CreateNewsInput = {
   excerpt?: string;
   content: string;
   category: string;
+  status: NewsStatus;
 };
 
 export type UpdateNewsInput = Partial<{
@@ -24,6 +25,19 @@ const authorSelect = {
   id: true,
   nickname: true,
   avatarUrl: true,
+};
+
+type AiSummaryInput = {
+  summary: string;
+  provider: string;
+  model: string;
+  generatedAt: string;
+};
+
+type ApproveNewsInput = {
+  aiSummary?: AiSummaryInput;
+  excerpt?: string;
+  content?: string;
 };
 
 async function resolveBarrio(barrioSlug: string) {
@@ -84,6 +98,45 @@ export const newsService = {
     return news;
   },
 
+  async listMine(barrioSlug: string, authorId: string, opts: { page: number; limit: number }) {
+    const barrio = await resolveBarrio(barrioSlug);
+    const skip = (opts.page - 1) * opts.limit;
+    const where = { barrioId: barrio.id, authorId };
+    const [items, total] = await Promise.all([
+      prisma.news.findMany({
+        where,
+        skip,
+        take: opts.limit,
+        orderBy: { updatedAt: "desc" },
+        include: { author: { select: authorSelect } }
+      }),
+      prisma.news.count({ where })
+    ]);
+
+    return { items, total, page: opts.page, limit: opts.limit };
+  },
+
+  async getManagedBySlug(
+    barrioSlug: string,
+    newsSlug: string,
+    requesterId: string,
+    requesterRole: UserRole
+  ) {
+    const barrio = await resolveBarrio(barrioSlug);
+    const news = await prisma.news.findFirst({
+      where: { barrioId: barrio.id, slug: newsSlug },
+      include: { author: { select: authorSelect } }
+    });
+    if (!news) throw new ApiError(404, "Noticia no encontrada");
+
+    const isEditor = requesterRole === UserRole.EDITOR || requesterRole === UserRole.ADMIN;
+    if (news.authorId !== requesterId && !isEditor) {
+      throw new ApiError(403, "No tienes permisos para ver esta propuesta");
+    }
+
+    return news;
+  },
+
   async create(barrioSlug: string, authorId: string, input: CreateNewsInput) {
     const barrio = await resolveBarrio(barrioSlug);
 
@@ -117,64 +170,31 @@ export const newsService = {
       throw new ApiError(403, "No tienes permisos para editar esta noticia");
     }
 
-    if (requesterRole === UserRole.VECINO || requesterRole === UserRole.NEGOCIO) {
-      if (input.status && input.status !== NewsStatus.DRAFT && input.status !== NewsStatus.PENDING_REVIEW) {
-        throw new ApiError(403, "No tienes permisos para publicar noticias directamente");
-      }
+    const isEditor = requesterRole === UserRole.EDITOR || requesterRole === UserRole.ADMIN;
+    if (!isEditor && news.status !== NewsStatus.DRAFT) {
+      throw new ApiError(409, "Solo puedes editar propuestas en borrador");
+    }
+    if (news.status === NewsStatus.PUBLISHED || news.status === NewsStatus.ARCHIVED) {
+      throw new ApiError(409, "Una noticia publicada o archivada no puede editarse desde este flujo");
+    }
+    if (input.status && input.status !== NewsStatus.DRAFT && input.status !== NewsStatus.PENDING_REVIEW) {
+      throw new ApiError(400, "Usa el flujo editorial para publicar o archivar noticias");
+    }
+    if (input.status === NewsStatus.PENDING_REVIEW && news.status !== NewsStatus.DRAFT) {
+      throw new ApiError(409, "La noticia ya fue enviada a revisión");
     }
 
     const data: Record<string, unknown> = { ...input };
+    if (input.title !== undefined || input.content !== undefined || input.excerpt !== undefined) {
+      data.aiSummary = null;
+    }
     if (input.status === NewsStatus.PENDING_REVIEW) {
       data.editorObservation = null;
     }
-    if (input.status === NewsStatus.PUBLISHED && !news.publishedAt) {
-      data.publishedAt = new Date();
-    }
-
-    return prisma.$transaction(async (transaction) => {
-      const mayBeFirstPublication = input.status === NewsStatus.PUBLISHED
-        && news.status !== NewsStatus.PUBLISHED
-        && news.publishedAt === null;
-      let firstPublication = false;
-      
-      if (mayBeFirstPublication) {
-        const transition = await transaction.news.updateMany({
-          where: { id: news.id, status: { not: NewsStatus.PUBLISHED }, publishedAt: null },
-          data
-        });
-        firstPublication = transition.count === 1;
-        if (!firstPublication) {
-          delete data.publishedAt;
-          await transaction.news.update({ where: { id: news.id }, data });
-        }
-      } else {
-        await transaction.news.update({ where: { id: news.id }, data });
-      }
-
-      const updated = await transaction.news.findUniqueOrThrow({
-        where: { id: news.id },
-        include: { author: { select: authorSelect } }
-      });
-
-      if (firstPublication) {
-        const recipients = await transaction.user.findMany({
-          where: { barrioId: barrio.id, id: { notIn: [requesterId, news.authorId] } },
-          select: { id: true }
-        });
-        await notificationsService.enqueue(transaction, recipients.map(({ id }) => ({
-          userId: id,
-          title: "Nueva noticia en tu barrio",
-          body: updated.title,
-          data: {
-            type: "news",
-            barrioSlug,
-            newsSlug: updated.slug,
-            url: `/barrios/${barrioSlug}/news/${updated.slug}`
-          }
-        })));
-      }
-
-      return updated;
+    return prisma.news.update({
+      where: { id: news.id },
+      data,
+      include: { author: { select: authorSelect } }
     });
   },
 
@@ -191,16 +211,8 @@ export const newsService = {
     await prisma.news.delete({ where: { id: news.id } });
   },
 
-  async listPending(barrioSlug: string, opts?: { page: number; limit: number }) {
+  async listPending(barrioSlug: string, opts: { page: number; limit: number }) {
     const barrio = await resolveBarrio(barrioSlug);
-    
-    if (!opts) {
-      return prisma.news.findMany({
-        where: { barrioId: barrio.id, status: NewsStatus.PENDING_REVIEW },
-        orderBy: { createdAt: "asc" },
-        include: { author: { select: authorSelect } }
-      });
-    }
 
     const skip = (opts.page - 1) * opts.limit;
     const where = {
@@ -222,7 +234,7 @@ export const newsService = {
     return { items, total, page: opts.page, limit: opts.limit };
   },
 
-  async approve(barrioSlug: string, newsSlug: string, aiSummary?: any) {
+  async approve(barrioSlug: string, newsSlug: string, requesterId: string, input: ApproveNewsInput) {
     const barrio = await resolveBarrio(barrioSlug);
 
     const news = await prisma.news.findFirst({
@@ -232,36 +244,41 @@ export const newsService = {
     if (!news) throw new ApiError(404, "Noticia no encontrada o no está en revisión");
 
     return prisma.$transaction(async (transaction) => {
-      const mayBeFirstPublication = news.publishedAt === null;
-
-      const updated = await transaction.news.update({
-        where: { id: news.id },
+      const transition = await transaction.news.updateMany({
+        where: { id: news.id, status: NewsStatus.PENDING_REVIEW, publishedAt: null },
         data: {
           status: NewsStatus.PUBLISHED,
           publishedAt: new Date(),
           editorObservation: null,
-          aiSummary: aiSummary ? aiSummary : null
-        },
+          aiSummary: input.aiSummary ?? Prisma.DbNull,
+          ...(input.excerpt !== undefined ? { excerpt: input.excerpt } : {}),
+          ...(input.content !== undefined ? { content: input.content } : {})
+        }
+      });
+      if (transition.count !== 1) {
+        throw new ApiError(409, "La noticia ya no está pendiente de revisión");
+      }
+
+      const updated = await transaction.news.findUniqueOrThrow({
+        where: { id: news.id },
         include: { author: { select: authorSelect } }
       });
 
-      if (mayBeFirstPublication) {
-        const recipients = await transaction.user.findMany({
-          where: { barrioId: barrio.id, id: { notIn: [news.authorId] } },
-          select: { id: true }
-        });
-        await notificationsService.enqueue(transaction, recipients.map(({ id }) => ({
-          userId: id,
-          title: "Nueva noticia en tu barrio",
-          body: updated.title,
-          data: {
-            type: "news",
-            barrioSlug,
-            newsSlug: updated.slug,
-            url: `/barrios/${barrioSlug}/news/${updated.slug}`
-          }
-        })));
-      }
+      const recipients = await transaction.user.findMany({
+        where: { barrioId: barrio.id, id: { notIn: [news.authorId, requesterId] } },
+        select: { id: true }
+      });
+      await notificationsService.enqueue(transaction, recipients.map(({ id }) => ({
+        userId: id,
+        title: "Nueva noticia en tu barrio",
+        body: updated.title,
+        data: {
+          type: "news",
+          barrioSlug,
+          newsSlug: updated.slug,
+          url: `/barrios/${barrioSlug}/news/${updated.slug}`
+        }
+      })));
 
       return updated;
     });
@@ -270,15 +287,21 @@ export const newsService = {
   async reject(barrioSlug: string, newsSlug: string, observation: string) {
     const barrio = await resolveBarrio(barrioSlug);
 
-    const news = await prisma.news.findFirst({ where: { barrioId: barrio.id, slug: newsSlug } });
-    if (!news) throw new ApiError(404, "Noticia no encontrada");
-    
-    return prisma.news.update({
+    const news = await prisma.news.findFirst({
+      where: { barrioId: barrio.id, slug: newsSlug, status: NewsStatus.PENDING_REVIEW }
+    });
+    if (!news) throw new ApiError(404, "Noticia no encontrada o no está en revisión");
+
+    const transition = await prisma.news.updateMany({
+      where: { id: news.id, status: NewsStatus.PENDING_REVIEW },
+      data: { status: NewsStatus.DRAFT, editorObservation: observation }
+    });
+    if (transition.count !== 1) {
+      throw new ApiError(409, "La noticia ya no está pendiente de revisión");
+    }
+
+    return prisma.news.findUniqueOrThrow({
       where: { id: news.id },
-      data: {
-        status: NewsStatus.DRAFT,
-        editorObservation: observation
-      },
       include: { author: { select: authorSelect } }
     });
   },
@@ -382,10 +405,25 @@ export const newsService = {
   async summarize(barrioSlug: string, newsSlug: string) {
     const barrio = await resolveBarrio(barrioSlug);
     const news = await prisma.news.findFirst({
-      where: { barrioId: barrio.id, slug: newsSlug }
+      where: { barrioId: barrio.id, slug: newsSlug, status: NewsStatus.PENDING_REVIEW }
     });
-    if (!news) throw new ApiError(404, "Noticia no encontrada");
+    if (!news) throw new ApiError(404, "Noticia no encontrada o no está en revisión");
 
     return newsSummaryProvider.summarizeNews(news.title, news.content);
+  },
+
+  async improve(barrioSlug: string, newsSlug: string) {
+    const barrio = await resolveBarrio(barrioSlug);
+    const news = await prisma.news.findFirst({
+      where: { barrioId: barrio.id, slug: newsSlug, status: NewsStatus.PENDING_REVIEW }
+    });
+    if (!news) throw new ApiError(404, "Noticia no encontrada o no está en revisión");
+
+    return newsSummaryProvider.improveNews(news.title, news.excerpt, news.content);
+  },
+
+  async assist(barrioSlug: string, input: { title: string; excerpt?: string; content: string }) {
+    await resolveBarrio(barrioSlug);
+    return newsSummaryProvider.improveNews(input.title, input.excerpt || null, input.content);
   }
 };

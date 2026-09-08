@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #F2F0EB; color: #3B3733; -webkit-font-smoothing: antialiased;
+           font-family: 'Nunito', 'Avenir Next Rounded', 'Trebuchet MS', system-ui, sans-serif; }
+    a { color: #4E8F54; text-decoration: none; }
+    a:hover { color: #3C7042; }
+    .clay      { box-shadow: inset 2px 2px 4px rgba(255,255,255,.95), inset -3px -4px 7px rgba(186,176,161,.32), 9px 13px 26px rgba(176,165,150,.26); }
+    .clay-sm   { box-shadow: inset 1px 1px 2px rgba(255,255,255,.95), inset -2px -2px 4px rgba(186,176,161,.30), 4px 6px 13px rgba(176,165,150,.22); }
+    .clay-sunk { box-shadow: inset 4px 5px 9px rgba(181,171,156,.45), inset -3px -3px 7px rgba(255,255,255,.95); }
+    .clay-green{ box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(74,131,78,.42), 8px 12px 24px rgba(123,196,127,.34); }
+    .clay-terra{ box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(178,110,50,.38), 8px 12px 24px rgba(240,168,104,.32); }
+    .clay-sky  { box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(84,124,164,.35), 8px 12px 24px rgba(143,184,222,.32); }
+    .clay-err  { box-shadow: inset 4px 5px 9px rgba(196,150,140,.42), inset -3px -3px 7px rgba(255,255,255,.92); }
+  </style>
+</helmet>
+<div style="width:390px;height:844px;background:#F2F0EB;position:relative;overflow:hidden">
+
+  <div style="padding:56px 22px 0;display:flex;align-items:center;gap:14px">
+    <div class="clay-sm" style="width:46px;height:46px;border-radius:50%;background:#FAF8F5;display:flex;align-items:center;justify-content:center;color:#3B3733;flex-shrink:0">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 5-7 7 7 7"/></svg>
+    </div>
+    <div style="font-size:19px;font-weight:800;color:#3B3733">Mi perfil</div>
+  </div>
+
+  <div style="padding:30px 22px 0;display:flex;flex-direction:column;gap:26px">
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:14px">
+      <div class="clay-green" style="width:96px;height:96px;border-radius:50%;background:#7BC47F;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:800;color:#1F4A26">JU</div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
+        <div style="font-size:24px;font-weight:800;line-height:1.15;color:#3B3733">Juan</div>
+        <div style="font-size:14px;font-weight:500;color:#8A827A">juan@example.com</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="background:#E1EFE2;color:#35663A;font-size:12px;font-weight:800;padding:7px 15px;border-radius:999px">Parque Liceo</span>
+        <span style="background:#EBE8E1;color:#756C63;font-size:12px;font-weight:700;padding:7px 15px;border-radius:999px">Vecino</span>
+      </div>
+      <div style="font-size:12.5px;font-weight:600;color:#9A9188">En el barrio desde marzo de 2026</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="clay-green" style="height:56px;border-radius:999px;background:#7BC47F;display:flex;align-items:center;justify-content:center;gap:9px;color:#1F4A26">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.95" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 19.5h3.2L18.4 8.8a1.6 1.6 0 0 0 0-2.3l-1-1a1.6 1.6 0 0 0-2.3 0L4.5 16.3z"/></svg>
+        <span style="font-size:16px;font-weight:800">Editar perfil</span>
+      </div>
+      <div class="clay" style="height:56px;border-radius:999px;background:#FAF8F5;display:flex;align-items:center;justify-content:center;gap:9px;color:#B4553F">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14"/><path d="M10 16.5 5.5 12 10 7.5M5.5 12h9"/></svg>
+        <span style="font-size:16px;font-weight:700">Cerrar sesión</span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

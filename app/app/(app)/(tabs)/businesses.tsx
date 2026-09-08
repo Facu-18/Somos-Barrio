@@ -1,11 +1,13 @@
 import React from 'react';
+import { listPerf } from '../../../constants/ListPerf';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, Image, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { ClayTheme } from '../../../constants/ClayTheme';
+import { ClayTheme, categoryStyle } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { EmptyState } from '../../../components/EmptyState';
 
 interface BusinessItem {
   id: string;
@@ -34,16 +36,6 @@ export default function BusinessesScreen() {
     enabled: !!user,
   });
 
-  const getCategoryStyle = (category: string) => {
-    switch (category) {
-      case 'GASTRONOMIA': return { bg: '#F7E0D2', text: '#9A5227' };
-      case 'SALUD': return { bg: '#E2ECF6', text: '#3E6288' };
-      case 'EDUCACION': return { bg: '#F6EBD2', text: '#856520' };
-      case 'SERVICIOS': return { bg: '#EAE7F2', text: '#57508A' };
-      default: return { bg: '#E1EFE2', text: '#35663A' };
-    }
-  };
-
   const getPlaceholderStyle = (index: number) => {
     const styles = [
       { bg: '#F4E9DC', geo1: '#F0A868', geo2: '#D9B45C' },
@@ -63,6 +55,7 @@ export default function BusinessesScreen() {
 
   return (
     <FlatList
+        {...listPerf}
       style={styles.container} 
       data={data ?? []}
       keyExtractor={(business) => business.id}
@@ -83,7 +76,7 @@ export default function BusinessesScreen() {
         </>
       )}
       renderItem={({ item: business, index }) => {
-          const catStyle = getCategoryStyle(business.category);
+          const catStyle = categoryStyle(business.category);
           const pStyle = getPlaceholderStyle(index);
 
           return (
@@ -138,7 +131,13 @@ export default function BusinessesScreen() {
             </TouchableOpacity>
           );
       }}
-      ListEmptyComponent={<Text style={styles.emptyText}>Aún no hay comercios registrados.</Text>}
+      ListEmptyComponent={
+        <EmptyState 
+          iconName="store" 
+          title="Todavía no hay comercios" 
+          description="Contactate con la administración para registrar el tuyo." 
+        />
+      }
     />
   );
 }
@@ -156,7 +155,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 60,
-    paddingBottom: 24,
+    paddingBottom: 120, // space for absolute tab bar
     paddingHorizontal: 22,
   },
   header: {

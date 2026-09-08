@@ -14,7 +14,8 @@ describe("Noticias — integration", () => {
   let editorToken: string;
   let vecinoToken: string;
   let newsSlug: string;
-  let vecinoId: string;
+  let draftSlug: string;
+  let observerId: string;
 
   beforeAll(async () => {
     const barrio = await seedBarrio(`news-barrio-${Date.now()}`);
@@ -38,7 +39,8 @@ describe("Noticias — integration", () => {
 
     const vecinoRes = await registerAndLogin({ name: "Vecino News", barrioSlug });
     vecinoToken = vecinoRes.token;
-    vecinoId = vecinoRes.user.id;
+    const observerRes = await registerAndLogin({ name: "Observador News", barrioSlug });
+    observerId = observerRes.user.id;
     const otherBarrio = await seedBarrio(`news-other-${Date.now()}`);
     await registerAndLogin({ name: "Otro Barrio", barrioSlug: otherBarrio.slug });
   });
@@ -65,41 +67,88 @@ describe("Noticias — integration", () => {
     expect(res.status).toBe(201);
     expect(res.body.data.slug).toBe(slug);
     expect(res.body.data.status).toBe("DRAFT");
-    newsSlug = slug;
+    draftSlug = slug;
   });
 
-  it("POST /barrios/:slug/news — VECINO no puede crear noticia (403)", async () => {
+  it("POST /barrios/:slug/news — VECINO puede enviar una propuesta a revisión", async () => {
+    const slug = `propuesta-vecino-${Date.now()}`;
     const res = await request(app)
       .post(`${API}/barrios/${barrioSlug}/news`)
       .set("Authorization", `Bearer ${vecinoToken}`)
       .send({
         title: "Intento vecino",
-        slug: `intento-${Date.now()}`,
+        slug,
         content: "Contenido intento.",
         category: "COMUNIDAD",
+        status: "PENDING_REVIEW",
       });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
+    expect(res.body.data.status).toBe("PENDING_REVIEW");
+    newsSlug = slug;
   });
 
-  it("PATCH /barrios/:slug/news/:newsSlug — EDITOR puede publicar noticia", async () => {
+  it("GET /barrios/:slug/news/mine — devuelve las propuestas del autor", async () => {
     const res = await request(app)
-      .patch(`${API}/barrios/${barrioSlug}/news/${newsSlug}`)
+      .get(`${API}/barrios/${barrioSlug}/news/mine`)
+      .set("Authorization", `Bearer ${vecinoToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toEqual(expect.arrayContaining([expect.objectContaining({ slug: newsSlug })]));
+  });
+
+  it("GET /barrios/:slug/news/manage/:newsSlug — permite previsualizar al autor", async () => {
+    const res = await request(app)
+      .get(`${API}/barrios/${barrioSlug}/news/manage/${newsSlug}`)
+      .set("Authorization", `Bearer ${vecinoToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe("PENDING_REVIEW");
+  });
+
+  it("PATCH /barrios/:slug/news/:newsSlug — no permite publicar fuera del flujo editorial", async () => {
+    const res = await request(app)
+      .patch(`${API}/barrios/${barrioSlug}/news/${draftSlug}`)
       .set("Authorization", `Bearer ${editorToken}`)
       .send({ status: "PUBLISHED" });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("GET /editorial/pending y POST /approve — publican una propuesta una sola vez", async () => {
+    const pending = await request(app)
+      .get(`${API}/barrios/${barrioSlug}/news/editorial/pending`)
+      .set("Authorization", `Bearer ${editorToken}`);
+    expect(pending.status).toBe(200);
+    expect(pending.body.data.items).toEqual(expect.arrayContaining([expect.objectContaining({ slug: newsSlug })]));
+
+    const res = await request(app)
+      .post(`${API}/barrios/${barrioSlug}/news/${newsSlug}/approve`)
+      .set("Authorization", `Bearer ${editorToken}`)
+      .send({
+        excerpt: "Descripción revisada por el editor.",
+        content: "Contenido revisado de la noticia con suficiente información.",
+        aiSummary: {
+          summary: "Resumen revisado.",
+          provider: "OpenAI-Compatible",
+          model: "test-model",
+          generatedAt: new Date().toISOString(),
+        },
+      });
 
     expect(res.status).toBe(200);
     expect(res.body.data.status).toBe("PUBLISHED");
-    expect(res.body.data.publishedAt).toBeTruthy();
+    expect(res.body.data.aiSummary.summary).toBe("Resumen revisado.");
     const notifications = await prisma.notificationOutbox.findMany({ where: { data: { path: ["newsSlug"], equals: newsSlug } } });
     expect(notifications).toHaveLength(1);
-    expect(notifications[0].userId).toBe(vecinoId);
+    expect(notifications[0].userId).toBe(observerId);
     expect(notifications[0].data).toMatchObject({ barrioSlug, newsSlug });
 
-    await request(app)
-      .patch(`${API}/barrios/${barrioSlug}/news/${newsSlug}`)
+    const duplicate = await request(app)
+      .post(`${API}/barrios/${barrioSlug}/news/${newsSlug}/approve`)
       .set("Authorization", `Bearer ${editorToken}`)
-      .send({ status: "PUBLISHED" });
+      .send({});
+    expect(duplicate.status).toBe(404);
     expect(await prisma.notificationOutbox.count({ where: { data: { path: ["newsSlug"], equals: newsSlug } } })).toBe(1);
   });
 

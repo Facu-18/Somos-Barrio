@@ -1,4 +1,5 @@
 import React from 'react';
+import { listPerf } from '../../constants/ListPerf';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -62,6 +63,7 @@ export default function MyPostsScreen() {
       </View>
 
       <FlatList
+        {...listPerf}
         data={data?.items || []}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}

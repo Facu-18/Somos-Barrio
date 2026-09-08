@@ -31,7 +31,7 @@ const formatDate = (dateString: string) => {
   return date.toLocaleDateString('es-AR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
-const getInitials = (name: string) => name?.substring(0, 2).toUpperCase() || 'XX';
+const getInitials = (name?: string | null) => (name?.trim()?.slice(0, 2) || '?').toUpperCase();
 
 const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply, isClosed = false }: { reply: ReplyNode; highlightedReplyId?: string; depth?: number; onReply: (id: string, name: string) => void; isClosed?: boolean }) => {
   const visualDepth = Math.min(depth, 3);
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
     gap: 20,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
+    borderTopColor: ClayTheme.colors.divider,
   },
   statItem: {
     flexDirection: 'row',
@@ -429,18 +429,14 @@ const styles = StyleSheet.create({
     ...ClayTheme.shadows.elevated,
   },
   replyCardNested: {
-    borderRadius: 16,
-    padding: 12,
-    backgroundColor: '#FAFAFA',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
-    shadowOpacity: 0,
-    elevation: 0,
+    borderRadius: ClayTheme.borders.radiusSunk,
+    padding: 14,
+    backgroundColor: ClayTheme.colors.surfaceFlat,
+    ...ClayTheme.shadows.none,
   },
   replyCardHighlighted: {
-    borderWidth: 2,
-    borderColor: ClayTheme.colors.primary,
-    backgroundColor: '#FFF8DD',
+    backgroundColor: ClayTheme.states.warning.bg,
+    ...ClayTheme.shadows.elevated,
   },
   replyHeader: {
     flexDirection: 'row',
@@ -498,7 +494,7 @@ const styles = StyleSheet.create({
   inputContainerWrapper: {
     backgroundColor: ClayTheme.colors.surface,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
+    borderTopColor: ClayTheme.colors.divider,
   },
   replyContextBanner: {
     flexDirection: 'row',
@@ -556,7 +552,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
+    borderTopColor: ClayTheme.colors.divider,
   },
   closedBannerText: {
     fontFamily: ClayTheme.typography.fontFamily.semiBold,

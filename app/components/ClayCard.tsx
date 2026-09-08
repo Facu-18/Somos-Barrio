@@ -5,10 +5,16 @@ import { ClayTheme } from '../constants/ClayTheme';
 interface ClayCardProps {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
-  color?: 'surface' | 'background';
+  color?: 'surface' | 'background' | 'surfaceFlat';
   padding?: 'none' | 'sm' | 'md' | 'lg';
+  /**
+   * `elevated` es la unidad de contenido. `flat` es para lo que ya vive dentro
+   * de otra superficie: el sistema no anida cards elevadas dentro de cards.
+   */
   type?: 'elevated' | 'flat';
 }
+
+const PADDING = { none: 0, sm: 12, md: 16, lg: 20 } as const;
 
 export const ClayCard: React.FC<ClayCardProps> = ({
   children,
@@ -16,41 +22,25 @@ export const ClayCard: React.FC<ClayCardProps> = ({
   color = 'surface',
   padding = 'lg',
   type = 'elevated',
-}) => {
-  const getBackgroundColor = () => {
-    return ClayTheme.colors[color];
-  };
-
-  const getPadding = () => {
-    switch (padding) {
-      case 'none': return 0;
-      case 'sm': return 12;
-      case 'md': return 18;
-      case 'lg': return 24;
-      default: return 18;
-    }
-  };
-
-  return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: getBackgroundColor(),
-          padding: getPadding(),
-        },
-        type === 'elevated' ? ClayTheme.shadows.elevated : {},
-        style,
-      ]}
-    >
-      {children}
-    </View>
-  );
-};
+}) => (
+  <View
+    style={[
+      styles.card,
+      { backgroundColor: ClayTheme.colors[color], padding: PADDING[padding] },
+      type === 'elevated' && styles.elevated,
+      style,
+    ]}
+  >
+    {children}
+  </View>
+);
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 28, // Clay cards are very round
-    marginBottom: ClayTheme.spacing.lg,
+    borderRadius: ClayTheme.borders.radiusElevated,
+    marginBottom: ClayTheme.spacing.md,
+  },
+  elevated: {
+    ...ClayTheme.shadows.elevated,
   },
 });

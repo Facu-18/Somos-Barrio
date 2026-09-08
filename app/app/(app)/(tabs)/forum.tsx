@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { listPerf } from '../../../constants/ListPerf';
 import { View, Text, StyleSheet, ScrollView, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
@@ -6,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { EmptyState } from '../../../components/EmptyState';
 
 interface Subforum {
   id: string;
@@ -66,9 +68,7 @@ export default function ForumScreen() {
     return date.toLocaleDateString('es-AR', { month: 'short', day: 'numeric' });
   };
 
-  const getInitials = (name: string) => {
-    return name.substring(0, 2).toUpperCase();
-  };
+  const getInitials = (name?: string | null) => (name?.trim()?.slice(0, 2) || '?').toUpperCase();
 
   const getAvatarStyle = (index: number) => {
     const styles = [
@@ -117,6 +117,7 @@ export default function ForumScreen() {
       </View>
 
       <FlatList
+        {...listPerf}
         data={threads ?? []}
         keyExtractor={(thread) => thread.id}
         contentContainerStyle={styles.content}
@@ -163,7 +164,13 @@ export default function ForumScreen() {
         }}
         ListEmptyComponent={isLoadingThreads
           ? <ActivityIndicator size="large" color={ClayTheme.colors.primary} style={{ marginTop: 40 }} />
-          : <Text style={styles.emptyText}>No hay hilos en este subforo todavía.</Text>}
+          : <EmptyState 
+              iconName="message-text-outline" 
+              title="Este subforo está vacío" 
+              description="Animate a iniciar la primera conversación." 
+              actionLabel="Abrir un tema" 
+              onAction={() => router.push({ pathname: '/(app)/create-thread', params: { subforumSlug: selectedSubforum || '' }})}
+            />}
       />
 
       {/* FAB Button */}
@@ -241,7 +248,7 @@ const styles = StyleSheet.create({
     color: ClayTheme.colors.textInput,
   },
   content: {
-    paddingBottom: 24,
+    paddingBottom: 120, // space for tab bar
     paddingHorizontal: 22,
     paddingTop: 10,
   },
@@ -309,7 +316,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 24,
-    bottom: 24,
+    bottom: 110, // space for tab bar
     width: 62,
     height: 62,
     borderRadius: 31,

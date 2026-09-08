@@ -16,7 +16,6 @@ interface Review {
   createdAt: string;
   user: {
     id: string;
-    name: string;
     nickname: string | null;
     avatarUrl: string | null;
   };
@@ -42,7 +41,6 @@ interface BusinessDetail {
   createdAt: string;
   owner: {
     id: string;
-    name: string;
     nickname: string | null;
     avatarUrl: string | null;
   };
@@ -69,7 +67,7 @@ export default function BusinessDetailScreen() {
     enabled: !!slug && !!user,
   });
 
-  const getInitials = (name: string) => name.substring(0, 2).toUpperCase();
+  const getInitials = (name?: string | null) => (name?.trim()?.slice(0, 2) || '?').toUpperCase();
   
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('es-AR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -180,7 +178,7 @@ export default function BusinessDetailScreen() {
               <Image source={{ uri: business.owner.avatarUrl }} style={styles.ownerAvatar} />
             ) : (
               <View style={styles.ownerAvatarFallback}>
-                <Text style={styles.ownerAvatarText}>{getInitials(business.owner.name)}</Text>
+                <Text style={styles.ownerAvatarText}>{getInitials(business.owner.nickname)}</Text>
               </View>
             )}
           </View>
@@ -213,7 +211,7 @@ export default function BusinessDetailScreen() {
             <Text style={styles.addressText}>{business.address}</Text>
           </View>
 
-          <Text style={styles.ownerText}>Atendido por {business.owner.nickname || business.owner.name}</Text>
+          <Text style={styles.ownerText}>Atendido por {business.owner.nickname || 'un vecino'}</Text>
 
           {business.description && (
             <Text style={styles.description}>{business.description}</Text>
@@ -278,12 +276,12 @@ export default function BusinessDetailScreen() {
                     ) : (
                       <View style={[styles.reviewerAvatar, { backgroundColor: '#EAE7F2', justifyContent: 'center', alignItems: 'center' }]}>
                         <Text style={{ fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 14, color: '#57508A' }}>
-                          {getInitials(review.user.name)}
+                          {getInitials(review.user.nickname)}
                         </Text>
                       </View>
                     )}
                     <View>
-                      <Text style={styles.reviewerName}>{review.user.nickname || review.user.name}</Text>
+                      <Text style={styles.reviewerName}>{review.user.nickname || 'Vecino'}</Text>
                       <Text style={styles.reviewDate}>{formatDate(review.createdAt)}</Text>
                     </View>
                   </View>

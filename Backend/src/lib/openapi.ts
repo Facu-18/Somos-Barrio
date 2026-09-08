@@ -151,8 +151,38 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
       excerpt: nullableString(), content: { type: "string" },
       category: { type: "string", enum: ["SEGURIDAD", "OBRAS", "EVENTOS", "MUNICIPIO", "COMUNIDAD"] },
       status: { type: "string", enum: ["DRAFT", "PENDING_REVIEW", "PUBLISHED", "ARCHIVED"] },
+      editorObservation: nullableString(),
+      confirmVotes: { type: "integer", minimum: 0 }, disputeVotes: { type: "integer", minimum: 0 }, unsureVotes: { type: "integer", minimum: 0 },
+      aiSummary: { ...ref("NewsAiSummary"), nullable: true },
       publishedAt: dateTime(true), createdAt: dateTime(), updatedAt: dateTime(),
       author: ref("UserSummary"), barrio: ref("BarrioSummary")
+    }
+  },
+  NewsAiSummary: {
+    type: "object",
+    required: ["summary", "provider", "model", "generatedAt"],
+    properties: {
+      summary: { type: "string", minLength: 1, maxLength: 2000 },
+      provider: { type: "string" }, model: { type: "string" }, generatedAt: dateTime()
+    }
+  },
+  NewsEditorialDraft: {
+    type: "object",
+    required: ["excerpt", "content", "summary", "provider", "model", "generatedAt"],
+    properties: {
+      excerpt: { type: "string", maxLength: 500 }, content: { type: "string", minLength: 10 },
+      summary: { type: "string", minLength: 1, maxLength: 2000 },
+      provider: { type: "string" }, model: { type: "string" }, generatedAt: dateTime()
+    }
+  },
+  NewsVote: {
+    type: "object",
+    required: ["id", "userId", "newsId", "value", "reason", "sourceUrl", "createdAt", "updatedAt"],
+    properties: {
+      id: cuid(), userId: cuid(), newsId: cuid(),
+      value: { type: "string", enum: ["CONFIRM", "DISPUTE", "UNSURE"] },
+      reason: { type: "string", minLength: 10, maxLength: 1000 }, sourceUrl: nullableString(),
+      createdAt: dateTime(), updatedAt: dateTime(), user: ref("UserSummary")
     }
   },
   NewsListItem: {
@@ -286,6 +316,10 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
     type: "object", required: ["items", "total", "page", "limit"],
     properties: { items: arrayOf(ref("News")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
   },
+  PaginatedNewsVotes: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("NewsVote")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
   PaginatedBusinesses: {
     type: "object", required: ["items", "total", "page", "limit"],
     properties: { items: arrayOf(ref("BusinessListItem")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
@@ -360,15 +394,41 @@ const createNewsBody: OpenAPIV3.SchemaObject = {
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 },
     slug: { type: "string", minLength: 3, maxLength: 255, pattern: "^[a-z0-9-]+$" },
-    excerpt: { type: "string", maxLength: 500 }, content: { type: "string", minLength: 10 }, category: newsCategory
+    excerpt: { type: "string", maxLength: 500 }, content: { type: "string", minLength: 10 }, category: newsCategory,
+    status: { type: "string", enum: ["DRAFT", "PENDING_REVIEW"], default: "DRAFT" }
   }
 };
 const updateNewsBody: OpenAPIV3.SchemaObject = {
   type: "object",
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 }, excerpt: { type: "string", maxLength: 500 },
-    content: { type: "string", minLength: 10 }, category: newsCategory, status: newsStatus
+    content: { type: "string", minLength: 10 }, category: newsCategory,
+    status: { type: "string", enum: ["DRAFT", "PENDING_REVIEW"] }
   }
+};
+const newsVoteBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["value", "reason"],
+  properties: {
+    value: { type: "string", enum: ["CONFIRM", "DISPUTE", "UNSURE"] },
+    reason: { type: "string", minLength: 10, maxLength: 1000 },
+    sourceUrl: { type: "string", format: "uri", maxLength: 500 }
+  }
+};
+const newsAssistBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["title", "content"],
+  properties: {
+    title: { type: "string", minLength: 3, maxLength: 255 },
+    excerpt: { type: "string", maxLength: 500 },
+    content: { type: "string", minLength: 10 }
+  }
+};
+const approveNewsBody: OpenAPIV3.SchemaObject = {
+  type: "object", properties: {
+    aiSummary: ref("NewsAiSummary"), excerpt: { type: "string", maxLength: 500 }, content: { type: "string", minLength: 10 }
+  }
+};
+const rejectNewsBody: OpenAPIV3.SchemaObject = {
+  type: "object", required: ["observation"], properties: { observation: { type: "string", minLength: 5, maxLength: 1000 } }
 };
 const createBusinessBody: OpenAPIV3.SchemaObject = {
   type: "object", required: ["name", "slug", "category", "address"],
@@ -640,6 +700,54 @@ export const openapiSpec: OpenAPIV3.Document = {
         responses: { 200: ok(ref("News")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       },
       delete: { tags: ["Noticias"], summary: "Eliminar noticia", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
+    },
+    "/barrios/{barrioSlug}/news/mine": {
+      parameters: [barrioSlugParam],
+      get: {
+        tags: ["Noticias"], summary: "Listar mis propuestas", security: bearerSecurity,
+        parameters: [pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedAdminNews")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound }
+      }
+    },
+    "/barrios/{barrioSlug}/news/assist": {
+      parameters: [barrioSlugParam],
+      post: { tags: ["Noticias"], summary: "Mejorar un borrador con IA antes de enviarlo", security: bearerSecurity, requestBody: jsonBody(newsAssistBody), responses: { 200: ok(ref("NewsEditorialDraft")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 429: errorResponse("Too Many Requests"), 503: serviceUnavailable } }
+    },
+    "/barrios/{barrioSlug}/news/manage/{newsSlug}": {
+      parameters: [barrioSlugParam, newsSlugParam],
+      get: { tags: ["Noticias"], summary: "Previsualizar una propuesta autorizada", security: bearerSecurity, responses: { 200: ok(ref("News")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound } }
+    },
+    "/barrios/{barrioSlug}/news/editorial/pending": {
+      parameters: [barrioSlugParam],
+      get: {
+        tags: ["Noticias"], summary: "Listar propuestas pendientes", security: bearerSecurity,
+        parameters: [pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedAdminNews")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound }
+      }
+    },
+    "/barrios/{barrioSlug}/news/{newsSlug}/approve": {
+      parameters: [barrioSlugParam, newsSlugParam],
+      post: { tags: ["Noticias"], summary: "Aprobar y publicar una propuesta", security: bearerSecurity, requestBody: jsonBody(approveNewsBody), responses: { 200: ok(ref("News")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict } }
+    },
+    "/barrios/{barrioSlug}/news/{newsSlug}/reject": {
+      parameters: [barrioSlugParam, newsSlugParam],
+      post: { tags: ["Noticias"], summary: "Devolver una propuesta al autor", security: bearerSecurity, requestBody: jsonBody(rejectNewsBody), responses: { 200: ok(ref("News")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict } }
+    },
+    "/barrios/{barrioSlug}/news/editorial/{newsSlug}/summarize": {
+      parameters: [barrioSlugParam, newsSlugParam],
+      post: { tags: ["Noticias"], summary: "Generar resumen editorial con IA", security: bearerSecurity, responses: { 200: ok(ref("NewsAiSummary")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
+    },
+    "/barrios/{barrioSlug}/news/editorial/{newsSlug}/improve": {
+      parameters: [barrioSlugParam, newsSlugParam],
+      post: { tags: ["Noticias"], summary: "Mejorar descripción, cuerpo y resumen con IA", security: bearerSecurity, responses: { 200: ok(ref("NewsEditorialDraft")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
+    },
+    "/barrios/{barrioSlug}/news/{newsSlug}/vote": {
+      parameters: [barrioSlugParam, newsSlugParam],
+      post: { tags: ["Noticias"], summary: "Crear o actualizar mi verificación", security: bearerSecurity, requestBody: jsonBody(newsVoteBody), responses: { 200: ok(ref("NewsVote")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound } }
+    },
+    "/barrios/{barrioSlug}/news/{newsSlug}/votes": {
+      parameters: [barrioSlugParam, newsSlugParam],
+      get: { tags: ["Noticias"], summary: "Listar verificaciones comunitarias", parameters: [pageParam, limit10Param], responses: { 200: ok(ref("PaginatedNewsVotes")), 400: badRequest, 404: notFound } }
     },
     "/barrios/{barrioSlug}/businesses": {
       parameters: [barrioSlugParam],

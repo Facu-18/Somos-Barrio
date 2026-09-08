@@ -21,7 +21,6 @@ interface EventDetail {
   myRsvp: 'GOING' | 'INTERESTED' | 'NOT_GOING' | null;
   user: {
     id: string;
-    name: string;
     nickname: string | null;
     avatarUrl: string | null;
   };
@@ -55,7 +54,7 @@ export default function EventDetailScreen() {
     onError: () => Alert.alert('No se pudo guardar', 'Tu respuesta no cambió. Intentá nuevamente.'),
   });
 
-  const getInitials = (name: string) => name.substring(0, 2).toUpperCase();
+  const getInitials = (name?: string | null) => (name?.trim()?.slice(0, 2) || '?').toUpperCase();
   
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -108,11 +107,11 @@ export default function EventDetailScreen() {
             ) : (
               <View style={[styles.organizerAvatar, { backgroundColor: '#EAE7F2', justifyContent: 'center', alignItems: 'center' }]}>
                 <Text style={{ fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 12, color: '#57508A' }}>
-                  {getInitials(event.user.name)}
+                  {getInitials(event.user.nickname)}
                 </Text>
               </View>
             )}
-            <Text style={styles.organizerName}>por {event.user.nickname || event.user.name}</Text>
+            <Text style={styles.organizerName}>por {event.user.nickname || 'un vecino'}</Text>
           </View>
         </View>
 
@@ -175,8 +174,8 @@ export default function EventDetailScreen() {
             accessibilityState={{ selected: isGoing, disabled: rsvpMutation.isPending }}
             style={[styles.rsvpBtn, isGoing && styles.rsvpBtnActiveGoing]}
           >
-            <MaterialCommunityIcons name="check-circle-outline" size={20} color={isGoing ? 'white' : ClayTheme.colors.textMuted} />
-            <Text style={[styles.rsvpBtnText, isGoing && { color: 'white' }]}>Asistiré</Text>
+            <MaterialCommunityIcons name="check-circle-outline" size={20} color={isGoing ? ClayTheme.colors.primaryText : ClayTheme.colors.textMuted} />
+            <Text style={[styles.rsvpBtnText, isGoing && styles.rsvpBtnTextGoing]}>Asistiré</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -187,8 +186,8 @@ export default function EventDetailScreen() {
             accessibilityState={{ selected: isInterested, disabled: rsvpMutation.isPending }}
             style={[styles.rsvpBtn, isInterested && styles.rsvpBtnActiveInterested]}
           >
-            <MaterialCommunityIcons name="star-outline" size={20} color={isInterested ? 'white' : ClayTheme.colors.textMuted} />
-            <Text style={[styles.rsvpBtnText, isInterested && { color: 'white' }]}>Me interesa</Text>
+            <MaterialCommunityIcons name="star-outline" size={20} color={isInterested ? '#6B3D12' : ClayTheme.colors.textMuted} />
+            <Text style={[styles.rsvpBtnText, isInterested && styles.rsvpBtnTextInterested]}>Me interesa</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -199,8 +198,8 @@ export default function EventDetailScreen() {
             accessibilityState={{ selected: isNotGoing, disabled: rsvpMutation.isPending }}
             style={[styles.rsvpBtn, isNotGoing && styles.rsvpBtnActiveNotGoing]}
           >
-            <MaterialCommunityIcons name="close-circle-outline" size={20} color={isNotGoing ? 'white' : ClayTheme.colors.textMuted} />
-            <Text style={[styles.rsvpBtnText, isNotGoing && { color: 'white' }]}>No iré</Text>
+            <MaterialCommunityIcons name="close-circle-outline" size={20} color={isNotGoing ? ClayTheme.colors.error : ClayTheme.colors.textMuted} />
+            <Text style={[styles.rsvpBtnText, isNotGoing && styles.rsvpBtnTextNotGoing]}>No iré</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -354,23 +353,29 @@ const styles = StyleSheet.create({
   rsvpBtn: {
     flex: 1,
     backgroundColor: ClayTheme.colors.inputBg,
-    paddingVertical: 14,
-    borderRadius: 16,
+    minHeight: 62,
+    justifyContent: 'center',
+    borderRadius: ClayTheme.borders.radiusTile,
     alignItems: 'center',
     gap: 6,
   },
   rsvpBtnActiveGoing: {
-    backgroundColor: '#5FA365', // Green
+    backgroundColor: ClayTheme.colors.primary,
+    ...ClayTheme.shadows.primary,
   },
   rsvpBtnActiveInterested: {
-    backgroundColor: '#E0A93F', // Yellow/Gold
+    backgroundColor: ClayTheme.colors.secondary,
+    ...ClayTheme.shadows.secondary,
   },
   rsvpBtnActiveNotGoing: {
-    backgroundColor: '#D9534F', // Red
+    backgroundColor: ClayTheme.colors.errorBg,
   },
   rsvpBtnText: {
     fontFamily: ClayTheme.typography.fontFamily.bold,
     fontSize: 12,
     color: ClayTheme.colors.textMuted,
-  }
+  },
+  rsvpBtnTextGoing: { color: ClayTheme.colors.primaryText, fontFamily: ClayTheme.typography.fontFamily.extraBold },
+  rsvpBtnTextInterested: { color: '#6B3D12', fontFamily: ClayTheme.typography.fontFamily.extraBold },
+  rsvpBtnTextNotGoing: { color: ClayTheme.colors.error, fontFamily: ClayTheme.typography.fontFamily.extraBold }
 });

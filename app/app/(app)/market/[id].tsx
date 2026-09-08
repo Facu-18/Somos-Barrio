@@ -264,8 +264,7 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 34,
     backgroundColor: ClayTheme.colors.background,
-    borderTopWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    marginTop: 4,
   },
   contactBtn: {
     backgroundColor: '#25D366', // WhatsApp color
@@ -275,11 +274,7 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     borderRadius: 24,
     gap: 10,
-    shadowColor: '#25D366',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    ...ClayTheme.shadows.whatsapp,
   },
   contactBtnText: {
     fontFamily: ClayTheme.typography.fontFamily.extraBold,

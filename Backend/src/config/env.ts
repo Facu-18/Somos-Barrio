@@ -12,7 +12,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().url().default("redis://localhost:6379"),
   AI_PROVIDER_URL: z.string().url().default("http://localhost:1234/v1"),
   AI_API_KEY: z.string().default("lm-studio"),
-  AI_MODEL: z.string().default("lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF"),
+  AI_MODEL: z.string().default("qwen2.5-7b-instruct-1m"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET debe tener al menos 32 caracteres"),
   JWT_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_DAYS: z.coerce.number().int().positive().default(30),

@@ -1,47 +1,32 @@
 import { Tabs } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
 
-  // Calculate dynamic bottom padding based on device insets
-  const bottomPadding = Math.max(20, insets.bottom + 10);
-  const barHeight = 60 + bottomPadding;
+  const bottomOffset = Math.max(24, insets.bottom + 8);
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        headerStyle: {
-          backgroundColor: ClayTheme.colors.background,
-          shadowOpacity: 0,
-          elevation: 0,
-        },
-        headerTintColor: ClayTheme.colors.text,
-        headerTitleStyle: {
-          fontFamily: ClayTheme.typography.fontFamily.extraBold,
-          fontSize: 20,
-        },
         tabBarStyle: {
+          position: 'absolute',
+          left: 16,
+          right: 16,
+          bottom: bottomOffset,
+          height: 70,
           backgroundColor: ClayTheme.colors.surface,
-          borderTopWidth: 0,
-          height: barHeight,
-          paddingBottom: bottomPadding,
-          paddingTop: 10,
-          borderTopLeftRadius: 30,
-          borderTopRightRadius: 30,
+          borderRadius: 28,
+          paddingHorizontal: 4,
+          paddingTop: 0,
+          paddingBottom: 0,
           ...ClayTheme.shadows.elevated,
         },
-        tabBarActiveTintColor: ClayTheme.colors.primary,
-        tabBarInactiveTintColor: ClayTheme.colors.textMuted,
-        tabBarLabelStyle: {
-          fontFamily: ClayTheme.typography.fontFamily.bold,
-          fontSize: 11,
-          marginTop: 2,
-        },
+        tabBarShowLabel: false, // We'll render custom labels in tabBarIcon for precise control
         sceneStyle: {
           backgroundColor: ClayTheme.colors.background,
         }
@@ -51,9 +36,16 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Inicio',
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.iconActiveBg : null}>
-              <MaterialCommunityIcons name="home" size={24} color={focused ? ClayTheme.colors.primaryText : color} />
+          tabBarIcon: ({ focused }) => (
+            <View style={styles.tabItem}>
+              <View style={focused ? styles.iconActiveBg : styles.iconInactiveBg}>
+                <MaterialCommunityIcons 
+                  name="home-outline" 
+                  size={21} 
+                  color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
+                />
+              </View>
+              <Text style={focused ? styles.labelActive : styles.labelInactive}>Inicio</Text>
             </View>
           ),
         }}
@@ -62,9 +54,16 @@ export default function TabsLayout() {
         name="market"
         options={{
           title: 'Mercado',
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.iconActiveBg : null}>
-              <MaterialCommunityIcons name="storefront" size={24} color={focused ? ClayTheme.colors.primaryText : color} />
+          tabBarIcon: ({ focused }) => (
+            <View style={styles.tabItem}>
+              <View style={focused ? styles.iconActiveBg : styles.iconInactiveBg}>
+                <MaterialCommunityIcons 
+                  name="storefront-outline" 
+                  size={21} 
+                  color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
+                />
+              </View>
+              <Text style={focused ? styles.labelActive : styles.labelInactive}>Mercado</Text>
             </View>
           ),
         }}
@@ -73,20 +72,34 @@ export default function TabsLayout() {
         name="businesses"
         options={{
           title: 'Comercios',
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.iconActiveBg : null}>
-              <MaterialCommunityIcons name="store" size={24} color={focused ? ClayTheme.colors.primaryText : color} />
+          tabBarIcon: ({ focused }) => (
+            <View style={styles.tabItem}>
+              <View style={focused ? styles.iconActiveBg : styles.iconInactiveBg}>
+                <MaterialCommunityIcons 
+                  name="store-outline" 
+                  size={21} 
+                  color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
+                />
+              </View>
+              <Text style={focused ? styles.labelActive : styles.labelInactive}>Comercios</Text>
             </View>
           ),
         }}
       />
       <Tabs.Screen
-        name="forum"
+        name="forum-outline"
         options={{
           title: 'Foro',
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.iconActiveBg : null}>
-              <MaterialCommunityIcons name="forum" size={24} color={focused ? ClayTheme.colors.primaryText : color} />
+          tabBarIcon: ({ focused }) => (
+            <View style={styles.tabItem}>
+              <View style={focused ? styles.iconActiveBg : styles.iconInactiveBg}>
+                <MaterialCommunityIcons 
+                  name="forum-outline" 
+                  size={21} 
+                  color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
+                />
+              </View>
+              <Text style={focused ? styles.labelActive : styles.labelInactive}>Foro</Text>
             </View>
           ),
         }}
@@ -95,9 +108,16 @@ export default function TabsLayout() {
         name="events"
         options={{
           title: 'Eventos',
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.iconActiveBg : null}>
-              <MaterialCommunityIcons name="calendar" size={24} color={focused ? ClayTheme.colors.primaryText : color} />
+          tabBarIcon: ({ focused }) => (
+            <View style={styles.tabItem}>
+              <View style={focused ? styles.iconActiveBg : styles.iconInactiveBg}>
+                <MaterialCommunityIcons 
+                  name="calendar-blank-outline" 
+                  size={21} 
+                  color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
+                />
+              </View>
+              <Text style={focused ? styles.labelActive : styles.labelInactive}>Eventos</Text>
             </View>
           ),
         }}
@@ -107,12 +127,39 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  iconActiveBg: {
-    backgroundColor: ClayTheme.colors.primary,
-    width: 46,
-    height: 34,
-    borderRadius: 14,
+  // Sin ancho fijo: react-navigation ya reparte el ancho entre las 5 pestañas.
+  // Fijarlo en 70 sumaba 358 px y desbordaba en pantallas de 360.
+  tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-  }
+    gap: 4,
+    height: 70,
+    paddingHorizontal: 2,
+  },
+  // Pill, no un rectangulo de radio 13: es el lenguaje del sistema para
+  // "chip activo", y es el mismo radio que los chips de categoria.
+  iconActiveBg: {
+    backgroundColor: ClayTheme.colors.primary,
+    width: 48,
+    height: 34,
+    borderRadius: ClayTheme.borders.radiusPill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconInactiveBg: {
+    width: 48,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  labelActive: {
+    fontFamily: ClayTheme.typography.fontFamily.extraBold,
+    fontSize: 11,
+    color: ClayTheme.colors.primaryDark,
+  },
+  labelInactive: {
+    fontFamily: ClayTheme.typography.fontFamily.semiBold,
+    fontSize: 11,
+    color: ClayTheme.colors.textFaint,
+  },
 });

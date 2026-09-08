@@ -12,6 +12,21 @@ export const newsController = {
     res.json({ success: true, data: news });
   },
 
+  async listMine(req: Request, res: Response): Promise<void> {
+    const result = await newsService.listMine(req.params.barrioSlug, req.user!.id, req.query as any);
+    res.json({ success: true, data: result });
+  },
+
+  async getManagedBySlug(req: Request, res: Response): Promise<void> {
+    const news = await newsService.getManagedBySlug(
+      req.params.barrioSlug,
+      req.params.newsSlug,
+      req.user!.id,
+      req.user!.role
+    );
+    res.json({ success: true, data: news });
+  },
+
   async create(req: Request, res: Response): Promise<void> {
     const news = await newsService.create(req.params.barrioSlug, req.user!.id, req.body);
     res.status(201).json({ success: true, data: news });
@@ -34,12 +49,17 @@ export const newsController = {
   },
 
   async listPending(req: Request, res: Response): Promise<void> {
-    const news = await newsService.listPending(req.params.barrioSlug);
+    const news = await newsService.listPending(req.params.barrioSlug, req.query as any);
     res.json({ success: true, data: news });
   },
 
   async approve(req: Request, res: Response): Promise<void> {
-    const news = await newsService.approve(req.params.barrioSlug, req.params.newsSlug, req.body.aiSummary);
+    const news = await newsService.approve(
+      req.params.barrioSlug,
+      req.params.newsSlug,
+      req.user!.id,
+      req.body
+    );
     res.json({ success: true, data: news });
   },
 
@@ -61,5 +81,15 @@ export const newsController = {
   async summarize(req: Request, res: Response): Promise<void> {
     const summary = await newsService.summarize(req.params.barrioSlug, req.params.newsSlug);
     res.json({ success: true, data: summary });
+  },
+
+  async improve(req: Request, res: Response): Promise<void> {
+    const draft = await newsService.improve(req.params.barrioSlug, req.params.newsSlug);
+    res.json({ success: true, data: draft });
+  },
+
+  async assist(req: Request, res: Response): Promise<void> {
+    const draft = await newsService.assist(req.params.barrioSlug, req.body);
+    res.json({ success: true, data: draft });
   }
 };

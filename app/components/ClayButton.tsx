@@ -1,84 +1,126 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ViewStyle, TextStyle, StyleProp } from 'react-native';
-import { ClayTheme } from '../constants/ClayTheme';
+import {
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ViewStyle,
+  TextStyle,
+  StyleProp,
+  View,
+  ActivityIndicator,
+} from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { ClayTheme } from '../constants/ClayTheme';
+
+type Variant = 'primary' | 'secondary' | 'destructive' | 'flat';
 
 interface ClayButtonProps {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'accent' | 'outline' | 'flat';
+  /**
+   * `primary` es la única acción elevada en color. `secondary` es superficie
+   * clara elevada. `destructive` va sobre superficie clara con texto de error,
+   * nunca como barra roja llena. `flat` no se eleva.
+   */
+  variant?: Variant;
+  icon?: keyof typeof MaterialCommunityIcons.glyphMap;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
   disabled?: boolean;
+  loading?: boolean;
 }
+
+const BACKGROUND: Record<Variant, string> = {
+  primary: ClayTheme.colors.primary,
+  secondary: ClayTheme.colors.surface,
+  destructive: ClayTheme.colors.surface,
+  flat: ClayTheme.colors.surfaceFlat,
+};
+
+const FOREGROUND: Record<Variant, string> = {
+  primary: ClayTheme.colors.primaryText,
+  secondary: ClayTheme.colors.textInput,
+  destructive: ClayTheme.colors.error,
+  flat: ClayTheme.colors.textInput,
+};
 
 export const ClayButton: React.FC<ClayButtonProps> = ({
   title,
   onPress,
   variant = 'primary',
+  icon,
   style,
   textStyle,
   disabled = false,
+  loading = false,
 }) => {
-  const getBackgroundColor = () => {
-    if (disabled) return ClayTheme.colors.inputBg;
-    switch (variant) {
-      case 'primary': return ClayTheme.colors.primary;
-      case 'secondary': return ClayTheme.colors.secondary;
-      case 'accent': return ClayTheme.colors.accent;
-      case 'outline': return 'transparent';
-      case 'flat': return ClayTheme.colors.surface;
-      default: return ClayTheme.colors.primary;
-    }
-  };
+  const inactive = disabled || loading;
+  const background = inactive ? ClayTheme.colors.inputBg : BACKGROUND[variant];
+  const foreground = inactive ? ClayTheme.colors.textFaint : FOREGROUND[variant];
 
-  const getTextColor = () => {
-    if (disabled) return ClayTheme.colors.textMuted;
-    if (variant === 'primary') return ClayTheme.colors.primaryText;
-    if (variant === 'outline') return ClayTheme.colors.text;
-    if (variant === 'flat') return ClayTheme.colors.textInput;
-    return '#FFFFFF'; // secondary/accent typically have white text in soft designs
-  };
+  const elevation = inactive
+    ? null
+    : variant === 'primary'
+      ? styles.shadowPrimary
+      : variant === 'flat'
+        ? null
+        : styles.shadowSurface;
 
-  const getElevationStyle = () => {
-    if (disabled || variant === 'outline' || variant === 'flat') return {};
-    return ClayTheme.shadows.elevated;
-  };
+  const composed = [styles.container, { backgroundColor: background }, elevation, style];
 
-  const handlePress = () => {
-    if (disabled) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress();
-  };
+  const content = (
+    <>
+      {loading ? (
+        <ActivityIndicator size="small" color={foreground} />
+      ) : icon ? (
+        <MaterialCommunityIcons name={icon} size={19} color={foreground} />
+      ) : null}
+      <Text style={[styles.text, { color: foreground }, textStyle]} numberOfLines={1}>
+        {title}
+      </Text>
+    </>
+  );
+
+  if (inactive) {
+    return (
+      <View style={composed} accessibilityRole="button" accessibilityState={{ disabled: true, busy: loading }}>
+        {content}
+      </View>
+    );
+  }
 
   return (
     <TouchableOpacity
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      activeOpacity={0.8}
-      onPress={handlePress}
-      disabled={disabled}
-      style={[
-        styles.container,
-        { backgroundColor: getBackgroundColor() },
-        getElevationStyle(),
-        style,
-      ]}
+      accessibilityLabel={title}
+      activeOpacity={0.85}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+      style={composed}
     >
-      <Text style={[styles.text, { color: getTextColor() }, textStyle]}>
-        {title}
-      </Text>
+      {content}
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    height: 56,
-    borderRadius: ClayTheme.borders.radiusPill,
+    minHeight: 56,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: ClayTheme.spacing.xl,
+    gap: 9,
+    borderRadius: ClayTheme.borders.radiusPill,
+    paddingHorizontal: ClayTheme.spacing.lg,
+  },
+  shadowPrimary: {
+    ...ClayTheme.shadows.primary,
+  },
+  shadowSurface: {
+    ...ClayTheme.shadows.elevated,
   },
   text: {
     fontFamily: ClayTheme.typography.fontFamily.extraBold,

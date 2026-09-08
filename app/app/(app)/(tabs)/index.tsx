@@ -1,10 +1,22 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, Image } from 'react-native';
+import { listPerf } from '../../../constants/ListPerf';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  ActivityIndicator,
+  RefreshControl,
+  TouchableOpacity,
+  Image,
+} from 'react-native';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ClayTheme } from '../../../constants/ClayTheme';
-import { ClayCard } from '../../../components/ClayCard';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
+import { ClayTheme, categoryLabel, categoryStyle } from '../../../constants/ClayTheme';
+import { ClayCard } from '../../../components/ClayCard';
+import { EmptyState } from '../../../components/EmptyState';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
 
@@ -18,9 +30,11 @@ interface NewsItem {
 }
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
   const { data: user, isLoading: isLoadingUser } = useAuth();
-  
-  const barrioSlug = user!.barrio!.slug; // Fallback if no barrio
+
+  const barrioSlug = user!.barrio!.slug;
+  const isEditor = user?.role === 'EDITOR' || user?.role === 'ADMIN';
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['news', barrioSlug],
@@ -28,24 +42,11 @@ export default function HomeScreen() {
       const response = await api.get(`/barrios/${barrioSlug}/news?limit=10`);
       return response.data.data.items as NewsItem[];
     },
-    enabled: !!user, // Only fetch when user is loaded
+    enabled: !!user,
   });
 
-  const getCategoryStyle = (category: string) => {
-    switch (category) {
-      case 'SEGURIDAD': return { bg: '#F7E0D2', text: '#9A5227' };
-      case 'OBRAS': return { bg: '#F6EBD2', text: '#856520' };
-      case 'EVENTOS': return { bg: '#E2ECF6', text: '#3E6288' };
-      case 'MUNICIPIO': return { bg: '#EAE7F2', text: '#57508A' };
-      case 'COMUNIDAD': return { bg: '#E1EFE2', text: '#35663A' };
-      default: return { bg: '#EAE7F2', text: '#57508A' };
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('es-AR', { month: 'short', day: 'numeric' });
-  };
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('es-AR', { month: 'short', day: 'numeric' });
 
   if (isLoadingUser || isLoading) {
     return (
@@ -55,69 +56,130 @@ export default function HomeScreen() {
     );
   }
 
-  return (
-    <FlatList
-      style={styles.container} 
-      data={data ?? []}
-      keyExtractor={(news) => news.id}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
-      ListHeaderComponent={(
-        <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <View>
-              <Text style={styles.sectionTitle}>Últimas novedades</Text>
-              <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
-            </View>
-            <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/(app)/profile')} style={styles.profileAvatar} accessibilityRole="button" accessibilityLabel="Abrir mi perfil">
-              {user?.avatarUrl ? <Image source={{ uri: user.avatarUrl }} style={styles.profileAvatarImage} /> : (
-                <Text style={styles.profileAvatarText}>{user?.name?.substring(0, 2).toUpperCase() || 'XX'}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.headerActions}>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => router.push('/(app)/create-news')}
-            >
-              <MaterialCommunityIcons name="pencil-plus" size={20} color={ClayTheme.colors.primary} />
-              <Text style={styles.actionButtonText}>Proponer noticia</Text>
-            </TouchableOpacity>
+  // El FAB se apoya sobre la tab bar flotante (alto 70 + su separación inferior).
+  const fabBottom = Math.max(24, insets.bottom + 8) + 70 + 14;
 
-            {(user?.role === 'EDITOR' || user?.role === 'ADMIN') && (
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.actionButtonSecondary]}
-                onPress={() => router.push('/(app)/news-inbox')}
+  return (
+    <View style={styles.container}>
+      <FlatList
+        {...listPerf}
+        data={data ?? []}
+        keyExtractor={(news) => news.id}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <View style={styles.headerTop}>
+              <View style={styles.headerTitles}>
+                <Text style={styles.title}>Últimas novedades</Text>
+                <Text style={styles.subtitle}>{user?.barrio?.name || 'Tu barrio'}</Text>
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => router.push('/(app)/profile')}
+                style={styles.avatar}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir mi perfil"
               >
-                <MaterialCommunityIcons name="inbox-outline" size={20} color={ClayTheme.colors.text} />
-                <Text style={[styles.actionButtonText, { color: ClayTheme.colors.text }]}>Revisión</Text>
+                {user?.avatarUrl ? (
+                  <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {user?.name?.substring(0, 2).toUpperCase() || 'XX'}
+                  </Text>
+                )}
               </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      )}
-      renderItem={({ item: news }) => {
-        const catStyle = getCategoryStyle(news.category);
-        return (
-          <TouchableOpacity activeOpacity={0.85} onPress={() => router.push({ pathname: '/(app)/news/[slug]', params: { slug: news.slug } })} accessibilityRole="button" accessibilityLabel={`Abrir noticia ${news.title}`}>
-          <ClayCard>
-            <View style={styles.cardHeader}>
-              <Text style={[styles.categoryBadge, { backgroundColor: catStyle.bg, color: catStyle.text }]}>
-                {news.category.charAt(0).toUpperCase() + news.category.slice(1).toLowerCase()}
-              </Text>
-              <Text style={styles.timeAgo}>{formatDate(news.publishedAt)}</Text>
             </View>
-            <Text style={styles.cardTitle}>{news.title}</Text>
-            <Text style={styles.cardBody} numberOfLines={3}>
-              {news.excerpt || 'Sin descripción'}
-            </Text>
-          </ClayCard>
-          </TouchableOpacity>
-        );
-      }}
-      ListEmptyComponent={<Text style={styles.emptyText}>Aún no hay noticias en este barrio.</Text>}
-    />
+
+            <View style={styles.chipRow}>
+              <TouchableOpacity
+                style={styles.chip}
+                activeOpacity={0.85}
+                onPress={() => router.push('/(app)/my-news')}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons
+                  name="file-document-multiple-outline"
+                  size={17}
+                  color={ClayTheme.colors.textInput}
+                />
+                <Text style={styles.chipText}>Mis propuestas</Text>
+              </TouchableOpacity>
+
+              {isEditor ? (
+                <TouchableOpacity
+                  style={styles.chip}
+                  activeOpacity={0.85}
+                  onPress={() => router.push('/(app)/news-inbox')}
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons
+                    name="inbox-outline"
+                    size={17}
+                    color={ClayTheme.colors.textInput}
+                  />
+                  <Text style={styles.chipText}>Revisión</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        }
+        renderItem={({ item: news }) => {
+          const cat = categoryStyle(news.category);
+          return (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() =>
+                router.push({ pathname: '/(app)/news/[slug]', params: { slug: news.slug } })
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`Abrir noticia ${news.title}`}
+            >
+              <ClayCard>
+                <View style={styles.cardHeader}>
+                  <Text style={[styles.badge, { backgroundColor: cat.bg, color: cat.text }]}>
+                    {categoryLabel(news.category)}
+                  </Text>
+                  <Text style={styles.timeAgo}>{formatDate(news.publishedAt)}</Text>
+                </View>
+                <Text style={styles.cardTitle}>{news.title}</Text>
+                {news.excerpt ? (
+                  <Text style={styles.cardBody} numberOfLines={3}>
+                    {news.excerpt}
+                  </Text>
+                ) : null}
+              </ClayCard>
+            </TouchableOpacity>
+          );
+        }}
+        ListEmptyComponent={
+          <EmptyState
+            iconName="newspaper-variant-outline"
+            title="Todavía no hay novedades"
+            description={`Sé la primera persona en contar algo que pasa en ${user?.barrio?.name || 'tu barrio'}.`}
+            actionLabel="Proponer una nota"
+            onAction={() => router.push('/(app)/create-news')}
+          />
+        }
+      />
+
+      {/*
+        El diseño saca la acción primaria del header: con el título largo y el
+        avatar al lado, el botón quedaba fuera de pantalla. Va como FAB extendido.
+      */}
+      <TouchableOpacity
+        style={[styles.fab, { bottom: fabBottom }]}
+        activeOpacity={0.85}
+        onPress={() => router.push('/(app)/create-news')}
+        accessibilityRole="button"
+        accessibilityLabel="Proponer una noticia"
+      >
+        <MaterialCommunityIcons name="pencil-outline" size={19} color={ClayTheme.colors.primaryText} />
+        <Text style={styles.fabText}>Proponer</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -126,116 +188,127 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: ClayTheme.colors.background,
   },
-  content: {
-    padding: ClayTheme.spacing.lg,
-    paddingTop: ClayTheme.spacing.xl,
-    paddingBottom: 24,
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: ClayTheme.colors.background,
   },
+  content: {
+    paddingHorizontal: 22,
+    paddingTop: ClayTheme.spacing.xl,
+    paddingBottom: 170,
+  },
   header: {
-    marginBottom: ClayTheme.spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontFamily: ClayTheme.typography.fontFamily.extraBold,
-    fontSize: 28,
-    color: ClayTheme.colors.text,
-  },
-  subtitle: {
-    fontFamily: ClayTheme.typography.fontFamily.bold,
-    fontSize: 14,
-    color: ClayTheme.colors.textMuted,
-    marginTop: 2,
-  },
-  profileAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: ClayTheme.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...ClayTheme.shadows.elevated,
-  },
-  profileAvatarImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 22,
-  },
-  profileAvatarText: {
-    fontFamily: ClayTheme.typography.fontFamily.extraBold,
-    fontSize: 14,
-    color: ClayTheme.colors.primaryText,
+    marginBottom: ClayTheme.spacing.lg,
+    gap: ClayTheme.spacing.md,
   },
   headerTop: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: 14,
+  },
+  headerTitles: {
+    flex: 1,
+    gap: 4,
+  },
+  title: {
+    fontFamily: ClayTheme.typography.fontFamily.extraBold,
+    fontSize: ClayTheme.typography.size.title,
+    lineHeight: 31,
+    color: ClayTheme.colors.text,
+  },
+  subtitle: {
+    fontFamily: ClayTheme.typography.fontFamily.semiBold,
+    fontSize: 13.5,
+    color: ClayTheme.colors.textMuted,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: ClayTheme.colors.primarySoft,
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'center',
+    ...ClayTheme.shadows.elevatedSm,
   },
-  headerActions: {
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 24,
+  },
+  avatarText: {
+    fontFamily: ClayTheme.typography.fontFamily.extraBold,
+    fontSize: 15,
+    color: '#2F5C34',
+  },
+  chipRow: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 10,
   },
-  actionButton: {
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#E1EFE2',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
+    gap: 7,
+    height: ClayTheme.hitSize,
+    paddingHorizontal: 17,
+    borderRadius: ClayTheme.borders.radiusPill,
+    backgroundColor: ClayTheme.colors.surfaceFlat,
   },
-  actionButtonSecondary: {
-    backgroundColor: ClayTheme.colors.inputBg,
-  },
-  actionButtonText: {
-    fontFamily: ClayTheme.typography.fontFamily.bold,
-    fontSize: 13,
-    color: ClayTheme.colors.primary,
+  chipText: {
+    fontFamily: ClayTheme.typography.fontFamily.semiBold,
+    fontSize: 14,
+    color: ClayTheme.colors.textInput,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: ClayTheme.spacing.sm,
+    marginBottom: 9,
   },
-  categoryBadge: {
+  badge: {
+    overflow: 'hidden',
     fontFamily: ClayTheme.typography.fontFamily.extraBold,
-    fontSize: 11,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 999,
+    fontSize: ClayTheme.typography.size.badge,
+    paddingHorizontal: 13,
+    paddingVertical: 6,
+    borderRadius: ClayTheme.borders.radiusPill,
   },
   timeAgo: {
     fontFamily: ClayTheme.typography.fontFamily.bold,
-    fontSize: 12,
+    fontSize: ClayTheme.typography.size.meta,
     color: ClayTheme.colors.textMuted,
   },
   cardTitle: {
     fontFamily: ClayTheme.typography.fontFamily.bold,
-    fontSize: 19,
+    fontSize: ClayTheme.typography.size.cardTitle,
     color: ClayTheme.colors.text,
     lineHeight: 24,
     marginBottom: 6,
   },
   cardBody: {
     fontFamily: ClayTheme.typography.fontFamily.regular,
-    fontSize: 14,
+    fontSize: ClayTheme.typography.size.bodySm,
     color: ClayTheme.colors.textInput,
     lineHeight: 21,
   },
-  emptyText: {
-    fontFamily: ClayTheme.typography.fontFamily.medium,
+  fab: {
+    position: 'absolute',
+    right: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    height: 54,
+    paddingHorizontal: 22,
+    borderRadius: ClayTheme.borders.radiusPill,
+    backgroundColor: ClayTheme.colors.primary,
+    ...ClayTheme.shadows.primary,
+  },
+  fabText: {
+    fontFamily: ClayTheme.typography.fontFamily.extraBold,
     fontSize: 15,
-    color: ClayTheme.colors.textMuted,
-    textAlign: 'center',
-    marginTop: 40,
-  }
+    color: ClayTheme.colors.primaryText,
+  },
 });
