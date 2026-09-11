@@ -5,10 +5,11 @@ export class ContentNormalizer {
    */
   static normalize(text: string): string {
     return text
-      .normalize('NFKC')
+      .normalize('NFD') // Decompose characters to base + diacritic
+      .replace(/[\u0300-\u036f]/g, '') // Remove combining diacritical marks
+      .normalize('NFKC') // Recompose and standardize widths/compatibility
       .toLowerCase()
-      .replace(/[\u0300-\u036f]/g, '') // Elimina diacríticos (ej. á -> a)
-      .replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u202E]/g, ''); // Elimina zero-width y marcas Bidi
+      .replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u202E]/g, ''); // Remove zero-width and Bidi marks
   }
 
   /**
