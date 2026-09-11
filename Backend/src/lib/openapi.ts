@@ -228,12 +228,13 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   },
   MarketplacePost: {
     type: "object",
-    required: ["id", "userId", "barrioId", "title", "description", "price", "currency", "category", "status", "whatsapp", "images", "location", "views", "createdAt", "updatedAt"],
+    required: ["id", "userId", "barrioId", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "whatsapp", "images", "location", "views", "createdAt", "updatedAt"],
     properties: {
       id: cuid(), userId: cuid(), barrioId: cuid(), title: { type: "string" }, description: { type: "string" },
       price: { type: "integer", nullable: true, minimum: 0 }, currency: { type: "string", minLength: 3, maxLength: 3 },
       category: { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] },
-      status: { type: "string", enum: ["ACTIVE", "SOLD", "PAUSED", "REPORTED"] },
+      availability: { type: "string", enum: ["AVAILABLE", "SOLD", "PAUSED"] },
+      moderationStatus: { type: "string", enum: ["PENDING_REVIEW", "APPROVED", "REJECTED", "REMOVED"] },
       whatsapp: { type: "string", nullable: true, pattern: "^\\+[1-9]\\d{7,14}$" },
       images: arrayOf({ type: "string", format: "uri" }), location: nullableString(), views: { type: "integer" },
       createdAt: dateTime(), updatedAt: dateTime(), user: ref("UserSummary")
@@ -241,11 +242,13 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   },
   MarketplaceListItem: {
     type: "object",
-    required: ["id", "title", "description", "price", "currency", "category", "status", "images", "location", "views", "createdAt", "user"],
+    required: ["id", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "images", "location", "views", "createdAt", "user"],
     properties: {
       id: cuid(), title: { type: "string" }, description: { type: "string" }, price: { type: "integer", nullable: true, minimum: 0 },
       currency: { type: "string" }, category: { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] },
-      status: { type: "string", enum: ["ACTIVE"] }, images: arrayOf({ type: "string", format: "uri" }),
+      availability: { type: "string", enum: ["AVAILABLE", "SOLD", "PAUSED"] },
+      moderationStatus: { type: "string", enum: ["PENDING_REVIEW", "APPROVED", "REJECTED", "REMOVED"] },
+      images: arrayOf({ type: "string", format: "uri" }),
       location: nullableString(), views: { type: "integer" }, createdAt: dateTime(), user: ref("UserSummary")
     }
   },
@@ -386,7 +389,8 @@ const newsCategory = { type: "string", enum: ["SEGURIDAD", "OBRAS", "EVENTOS", "
 const newsStatus = { type: "string", enum: ["DRAFT", "PENDING_REVIEW", "PUBLISHED", "ARCHIVED"] } satisfies OpenAPIV3.SchemaObject;
 const businessCategory = { type: "string", enum: ["GASTRONOMIA", "SALUD", "EDUCACION", "SERVICIOS", "HOGAR", "DEPORTES", "OTROS"] } satisfies OpenAPIV3.SchemaObject;
 const marketplaceCategory = { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] } satisfies OpenAPIV3.SchemaObject;
-const marketplaceStatus = { type: "string", enum: ["ACTIVE", "SOLD", "PAUSED", "REPORTED"] } satisfies OpenAPIV3.SchemaObject;
+const marketplaceAvailability = { type: "string", enum: ["AVAILABLE", "SOLD", "PAUSED"] } satisfies OpenAPIV3.SchemaObject;
+const moderationStatus = { type: "string", enum: ["PENDING_REVIEW", "APPROVED", "REJECTED", "REMOVED"] } satisfies OpenAPIV3.SchemaObject;
 const rsvpStatus = { type: "string", enum: ["GOING", "INTERESTED", "NOT_GOING"] } satisfies OpenAPIV3.SchemaObject;
 
 const createNewsBody: OpenAPIV3.SchemaObject = {
@@ -466,7 +470,7 @@ const updateMarketplaceBody: OpenAPIV3.SchemaObject = {
   type: "object",
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
-    price: { type: "integer", minimum: 0 }, category: marketplaceCategory, status: marketplaceStatus,
+    price: { type: "integer", minimum: 0 }, category: marketplaceCategory, availability: marketplaceAvailability,
     images: { type: "array", maxItems: 5, items: { type: "string", format: "uri" } }, location: { type: "string", maxLength: 120 },
     whatsapp: { type: "string", minLength: 8, maxLength: 30, description: "Se normaliza a E.164" }
   }

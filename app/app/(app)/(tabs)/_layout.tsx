@@ -87,7 +87,7 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="forum-outline"
+        name="forum"
         options={{
           title: 'Foro',
           tabBarIcon: ({ focused }) => (

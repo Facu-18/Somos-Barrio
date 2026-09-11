@@ -1,6 +1,7 @@
-import { MarketplaceStatus, UserRole } from "@prisma/client";
+import { MarketplaceAvailability, ModerationStatus, UserRole } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
+import { contentModerationService } from "../content-moderation/content-moderation.service";
 
 type CreatePostInput = {
   title: string;
@@ -18,7 +19,7 @@ type UpdatePostInput = Partial<{
   description: string;
   price: number;
   category: string;
-  status: MarketplaceStatus;
+  availability: MarketplaceAvailability;
   images: string[];
   location: string;
   whatsapp: string;
@@ -47,7 +48,8 @@ export const marketplaceService = {
 
     const where = {
       barrioId: barrio.id,
-      status: MarketplaceStatus.ACTIVE,
+      availability: MarketplaceAvailability.AVAILABLE,
+      moderationStatus: ModerationStatus.APPROVED,
       ...(opts.category ? { category: opts.category as any } : {})
     };
 
@@ -64,7 +66,8 @@ export const marketplaceService = {
           price: true,
           currency: true,
           category: true,
-          status: true,
+          availability: true,
+          moderationStatus: true,
           images: true,
           location: true,
           views: true,
@@ -101,15 +104,24 @@ export const marketplaceService = {
     return { items, total, page: opts.page, limit: opts.limit };
   },
 
-  async getById(barrioSlug: string, postId: string) {
+  async getById(barrioSlug: string, postId: string, requesterId: string, requesterRole: UserRole) {
     const barrio = await resolveBarrio(barrioSlug);
 
     const post = await prisma.marketplacePost.findFirst({
-      where: { id: postId, barrioId: barrio.id, status: MarketplaceStatus.ACTIVE },
+      where: { id: postId, barrioId: barrio.id },
       include: { user: { select: userSelect } }
     });
 
     if (!post) throw new ApiError(404, "Publicacion no encontrada");
+
+    const isOwnerOrAdmin = post.userId === requesterId || requesterRole === UserRole.ADMIN;
+    
+    // Si no es el dueño ni un admin, la publicación debe estar aprobada y disponible.
+    if (!isOwnerOrAdmin) {
+      if (post.availability !== MarketplaceAvailability.AVAILABLE || post.moderationStatus !== ModerationStatus.APPROVED) {
+        throw new ApiError(404, "Publicacion no encontrada");
+      }
+    }
 
     return prisma.marketplacePost.update({
       where: { id: post.id },
@@ -121,13 +133,33 @@ export const marketplaceService = {
   async create(barrioSlug: string, userId: string, input: CreatePostInput) {
     const barrio = await resolveBarrio(barrioSlug);
 
+    // Evaluar contenido para moderación
+    const contentToEvaluate = `${input.title} ${input.description} ${input.location || ""}`;
+    const moderationResult = contentModerationService.evaluate(contentToEvaluate, 'MARKETPLACE');
+    
+    const statusMap: Record<string, ModerationStatus> = {
+      ALLOW: ModerationStatus.APPROVED,
+      REVIEW: ModerationStatus.PENDING_REVIEW,
+      BLOCK: ModerationStatus.REJECTED
+    };
+    
+    const modStatus = statusMap[moderationResult.decision];
+
     return prisma.marketplacePost.create({
       data: {
         ...input,
         category: input.category as any,
         whatsapp: normalizeWhatsapp(input.whatsapp),
         userId,
-        barrioId: barrio.id
+        barrioId: barrio.id,
+        moderationStatus: modStatus,
+        decisions: {
+          create: {
+            status: modStatus,
+            ruleId: moderationResult.ruleId,
+            policyVersion: moderationResult.policyVersion
+          }
+        }
       },
       include: { user: { select: userSelect } }
     });
@@ -149,12 +181,45 @@ export const marketplaceService = {
       throw new ApiError(403, "No tienes permisos para editar esta publicacion");
     }
 
+    let modStatus = post.moderationStatus;
+    let decisionCreate: any = undefined;
+
+    const titleChanged = input.title && input.title !== post.title;
+    const descChanged = input.description && input.description !== post.description;
+    const locChanged = input.location !== undefined && input.location !== post.location;
+
+    // Reevaluación obligatoria en caso de cambio de contenido textual.
+    if (titleChanged || descChanged || locChanged) {
+       const newTitle = input.title ?? post.title;
+       const newDesc = input.description ?? post.description;
+       const newLoc = input.location !== undefined ? input.location : post.location;
+
+       const contentToEvaluate = `${newTitle} ${newDesc} ${newLoc || ""}`;
+       const modResult = contentModerationService.evaluate(contentToEvaluate, 'MARKETPLACE');
+       
+       const statusMap: Record<string, ModerationStatus> = {
+         ALLOW: ModerationStatus.APPROVED,
+         REVIEW: ModerationStatus.PENDING_REVIEW,
+         BLOCK: ModerationStatus.REJECTED
+       };
+       modStatus = statusMap[modResult.decision];
+
+       decisionCreate = {
+         status: modStatus,
+         reason: "Automated re-evaluation after update",
+         ruleId: modResult.ruleId,
+         policyVersion: modResult.policyVersion
+       };
+    }
+
     return prisma.marketplacePost.update({
       where: { id: post.id },
       data: { 
         ...input, 
         category: input.category as any,
-        ...(input.whatsapp !== undefined ? { whatsapp: normalizeWhatsapp(input.whatsapp) } : {})
+        ...(input.whatsapp !== undefined ? { whatsapp: normalizeWhatsapp(input.whatsapp) } : {}),
+        moderationStatus: modStatus,
+        ...(decisionCreate ? { decisions: { create: decisionCreate } } : {})
       },
       include: { user: { select: userSelect } }
     });

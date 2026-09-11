@@ -42,7 +42,20 @@ export default function MyPostsScreen() {
           {item.price ? `$ ${item.price.toLocaleString('es-AR')}` : 'Gratis'}
         </Text>
         <View style={styles.metaRow}>
-          <Text style={styles.status}>{item.status === 'ACTIVE' ? 'Activo' : 'Vendido/Inactivo'}</Text>
+          <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
+            <Text style={[
+              styles.status, 
+              item.availability !== 'AVAILABLE' && {color: ClayTheme.colors.textMuted}
+            ]}>
+              {item.availability === 'AVAILABLE' ? 'Activo' : (item.availability === 'PAUSED' ? 'Pausado' : 'Vendido')}
+            </Text>
+            {item.moderationStatus === 'PENDING_REVIEW' && (
+              <Text style={{fontSize: 10, color: '#f59e0b', fontFamily: ClayTheme.typography.fontFamily.bold}}>(En revisión)</Text>
+            )}
+            {item.moderationStatus === 'REJECTED' && (
+              <Text style={{fontSize: 10, color: ClayTheme.colors.error, fontFamily: ClayTheme.typography.fontFamily.bold}}>(Rechazado)</Text>
+            )}
+          </View>
           <Text style={styles.date}>
             {new Intl.DateTimeFormat('es-AR', { dateStyle: 'medium' }).format(new Date(item.createdAt))}
           </Text>

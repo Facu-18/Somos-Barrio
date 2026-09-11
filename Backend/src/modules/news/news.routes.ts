@@ -3,7 +3,6 @@ import { UserRole } from "@prisma/client";
 import { asyncHandler } from "../../utils/async-handler";
 import { validate } from "../../middlewares/validate";
 import { requireAuth, requireRole, requireBarrioMember } from "../../middlewares/auth";
-import { aiRateLimiter } from "../../middlewares/rate-limit";
 import {
   approveNewsSchema,
   createNewsSchema,
@@ -67,7 +66,6 @@ newsRouter.post(
   "/assist",
   requireAuth,
   requireBarrioMember,
-  aiRateLimiter,
   validate({ body: newsAssistSchema }),
   asyncHandler(newsController.assist)
 );
@@ -126,7 +124,6 @@ newsRouter.post(
   requireAuth,
   requireRole(UserRole.EDITOR, UserRole.ADMIN),
   requireBarrioMember,
-  aiRateLimiter,
   validate({ params: newsSlugParamSchema }),
   asyncHandler(newsController.summarize)
 );
@@ -136,7 +133,6 @@ newsRouter.post(
   requireAuth,
   requireRole(UserRole.EDITOR, UserRole.ADMIN),
   requireBarrioMember,
-  aiRateLimiter,
   validate({ params: newsSlugParamSchema }),
   asyncHandler(newsController.improve)
 );

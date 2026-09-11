@@ -1,4 +1,4 @@
-import { NewsStatus, MarketplaceStatus } from "@prisma/client";
+import { NewsStatus, MarketplaceAvailability, ModerationStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 
@@ -89,7 +89,8 @@ export const searchService = {
         prisma.marketplacePost
           .findMany({
             where: {
-              status: MarketplaceStatus.ACTIVE,
+              availability: MarketplaceAvailability.AVAILABLE,
+              moderationStatus: ModerationStatus.APPROVED,
               ...(barrioId ? { barrioId } : {}),
               OR: [
                 { title: { contains: q, mode } },

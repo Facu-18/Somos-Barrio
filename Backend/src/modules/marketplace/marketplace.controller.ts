@@ -13,7 +13,12 @@ export const marketplaceController = {
   },
 
   async getById(req: Request, res: Response): Promise<void> {
-    const post = await marketplaceService.getById(req.params.barrioSlug, req.params.postId);
+    const post = await marketplaceService.getById(
+      req.params.barrioSlug,
+      req.params.postId,
+      req.user!.id,
+      req.user!.role
+    );
     res.json({ success: true, data: post });
   },
 

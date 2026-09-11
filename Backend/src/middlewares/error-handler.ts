@@ -56,7 +56,29 @@ export const errorHandler = (error: unknown, _req: Request, res: Response, _next
     return;
   }
 
-  logger.error({ err: error }, "Error no controlado");
+  let sanitizedError: unknown = error;
+  // axios may not be available as a global, but we can check properties if we don't want to import it,
+  // or just import axios. I'll import axios at the top if needed, but it's simpler to duck type:
+  if (error && typeof error === 'object' && 'isAxiosError' in error && error.isAxiosError) {
+    const axiosErr = error as any;
+    sanitizedError = {
+      message: axiosErr.message,
+      code: axiosErr.code,
+      status: axiosErr.response?.status,
+      name: axiosErr.name,
+      stack: axiosErr.stack
+    };
+  } else if (error instanceof Error) {
+    sanitizedError = {
+      message: error.message,
+      name: error.name,
+      stack: error.stack
+    };
+  } else {
+    sanitizedError = error;
+  }
+
+  logger.error({ err: sanitizedError }, "Error no controlado");
 
   const details =
     env.NODE_ENV === "development" && error instanceof Error

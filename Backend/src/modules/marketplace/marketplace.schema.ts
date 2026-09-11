@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MarketplaceCategory, MarketplaceStatus } from "@prisma/client";
+import { MarketplaceCategory, MarketplaceAvailability } from "@prisma/client";
 
 export const marketplaceIdParamSchema = z.object({
   barrioSlug: z.string().min(1),
@@ -28,7 +28,7 @@ export const updateMarketplacePostSchema = z.object({
   description: z.string().min(5).max(2000).optional(),
   price: z.number().int().nonnegative().optional(),
   category: z.nativeEnum(MarketplaceCategory).optional(),
-  status: z.nativeEnum(MarketplaceStatus).optional(),
+  availability: z.nativeEnum(MarketplaceAvailability).optional(),
   images: z.array(z.string().url()).max(5).optional(),
   location: z.string().max(120).optional(),
   whatsapp: z.string().min(8).max(30).optional()

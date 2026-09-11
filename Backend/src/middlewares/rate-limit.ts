@@ -70,16 +70,3 @@ export const deviceCleanupRateLimiter = rateLimit({
   store: new RedisStore({ sendCommand, prefix: "rl:device-cleanup:" })
 });
 
-export const aiRateLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  limit: env.NODE_ENV === "production" ? 10 : 100,
-  keyGenerator: (req) => req.user?.id ?? req.ip ?? "anonymous",
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-  skip: () => isTest,
-  message: {
-    success: false,
-    message: "Alcanzaste el limite de mejoras con IA por hora."
-  },
-  store: new RedisStore({ sendCommand, prefix: "rl:ai:" })
-});

@@ -61,11 +61,17 @@ enum MarketplaceCategory {
   OTROS
 }
 
-enum MarketplaceStatus {
-  ACTIVE
+enum MarketplaceAvailability {
+  AVAILABLE
   SOLD
   PAUSED
-  REPORTED
+}
+
+enum ModerationStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  REMOVED
 }
 
 enum EventRsvpStatus {
@@ -122,6 +128,7 @@ model User {
   newsVotes             NewsVote[]
   pushDevices           PushDevice[]
   notificationOutbox    NotificationOutbox[]
+  marketplaceDecisions  MarketplaceModerationDecision[]
 
   @@index([barrioId])
   @@index([role])
@@ -210,8 +217,9 @@ model MarketplacePost {
   description String
   price       Int?
   currency    String              @default("ARS")
-  category    MarketplaceCategory
-  status      MarketplaceStatus   @default(ACTIVE)
+  category         MarketplaceCategory
+  availability     MarketplaceAvailability @default(AVAILABLE)
+  moderationStatus ModerationStatus      @default(PENDING_REVIEW)
   whatsapp    String?
   images      String[]
   location    String?
@@ -221,9 +229,26 @@ model MarketplacePost {
   user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   barrio      Barrio              @relation(fields: [barrioId], references: [id], onDelete: Cascade)
   messages    Message[]
+  decisions   MarketplaceModerationDecision[]
 
   @@index([userId])
-  @@index([barrioId, status, createdAt])
+  @@index([barrioId, availability, moderationStatus, createdAt])
+}
+
+model MarketplaceModerationDecision {
+  id            String           @id @default(cuid())
+  postId        String
+  moderatorId   String?
+  status        ModerationStatus
+  reason        String?
+  ruleId        String?
+  policyVersion String?
+  createdAt     DateTime         @default(now())
+
+  post          MarketplacePost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  moderator     User?            @relation(fields: [moderatorId], references: [id], onDelete: SetNull)
+
+  @@index([postId])
 }
 
 model ForumSubforum {

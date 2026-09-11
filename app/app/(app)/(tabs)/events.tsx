@@ -151,10 +151,20 @@ export default function EventsScreen() {
             title={`No hay eventos ${upcoming ? 'próximos' : 'pasados'}`} 
             description="Sé la primera persona en organizar algo." 
             actionLabel="Organizá el primero" 
-            onAction={() => console.log('TODO: Create event')} 
+            onAction={() => router.push('/(app)/event/create')} 
           />
         }
       />
+
+      <TouchableOpacity
+        style={[styles.fab, { bottom: 100 }]} // Above the tab bar
+        activeOpacity={0.8}
+        onPress={() => router.push('/(app)/event/create')}
+        accessibilityRole="button"
+        accessibilityLabel="Crear nuevo evento"
+      >
+        <MaterialCommunityIcons name="calendar-plus" size={28} color={ClayTheme.colors.surface} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -311,5 +321,17 @@ const styles = StyleSheet.create({
     color: ClayTheme.colors.textMuted,
     textAlign: 'center',
     marginTop: 40,
+  },
+  fab: {
+    position: 'absolute',
+    right: 20,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: ClayTheme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...ClayTheme.shadows.primary,
+    elevation: 8,
   }
 });

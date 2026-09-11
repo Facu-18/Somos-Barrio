@@ -73,23 +73,24 @@ export const newsController = {
     res.json({ success: true, data: vote });
   },
 
+
   async getVotes(req: Request, res: Response): Promise<void> {
     const votes = await newsService.getVotes(req.params.barrioSlug, req.params.newsSlug, req.query as any);
     res.json({ success: true, data: votes });
   },
 
   async summarize(req: Request, res: Response): Promise<void> {
-    const summary = await newsService.summarize(req.params.barrioSlug, req.params.newsSlug);
+    const summary = await newsService.summarize(req.params.barrioSlug, req.params.newsSlug, req.user!.id);
     res.json({ success: true, data: summary });
   },
 
   async improve(req: Request, res: Response): Promise<void> {
-    const draft = await newsService.improve(req.params.barrioSlug, req.params.newsSlug);
+    const draft = await newsService.improve(req.params.barrioSlug, req.params.newsSlug, req.user!.id);
     res.json({ success: true, data: draft });
   },
 
   async assist(req: Request, res: Response): Promise<void> {
-    const draft = await newsService.assist(req.params.barrioSlug, req.body);
+    const draft = await newsService.assist(req.params.barrioSlug, req.user!.id, req.body);
     res.json({ success: true, data: draft });
   }
 };

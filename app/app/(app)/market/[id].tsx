@@ -89,6 +89,17 @@ export default function MarketDetailScreen() {
         </View>
 
         <View style={styles.detailsContainer}>
+          {item.moderationStatus === 'PENDING_REVIEW' && (
+             <View style={{backgroundColor: '#fef3c7', padding: 12, borderRadius: 12, marginBottom: 16}}>
+               <Text style={{color: '#d97706', fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13}}>Esta publicación está pendiente de revisión por un moderador y no es visible al público.</Text>
+             </View>
+          )}
+          {item.moderationStatus === 'REJECTED' && (
+             <View style={{backgroundColor: '#fee2e2', padding: 12, borderRadius: 12, marginBottom: 16}}>
+               <Text style={{color: '#dc2626', fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13}}>Esta publicación fue rechazada y no es visible al público.</Text>
+             </View>
+          )}
+
           <Text style={styles.title}>{item.title}</Text>
           <Text style={[styles.price, isFree && { color: ClayTheme.colors.primaryText }]}>
             {isFree ? 'Gratis' : `$ ${item.price?.toLocaleString('es-AR')}`}

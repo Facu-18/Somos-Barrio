@@ -2,7 +2,7 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
-import pinoHttp from "pino-http";
+import pinoHttp, { stdSerializers } from "pino-http";
 import cookieParser from "cookie-parser";
 import swaggerUi from "swagger-ui-express";
 import { env } from "./config/env";
@@ -31,7 +31,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(
   pinoHttp({
-    logger
+    logger,
+    serializers: {
+      req: (req) => {
+        const sanitizedReq = stdSerializers.req(req) as any;
+        delete sanitizedReq.body;
+        return sanitizedReq;
+      },
+      res: stdSerializers.res,
+      err: stdSerializers.err,
+    }
   })
 );
 app.use(globalRateLimiter);

@@ -402,28 +402,28 @@ export const newsService = {
     return { items, total, page, limit };
   },
 
-  async summarize(barrioSlug: string, newsSlug: string) {
+  async summarize(barrioSlug: string, newsSlug: string, userId: string) {
     const barrio = await resolveBarrio(barrioSlug);
     const news = await prisma.news.findFirst({
       where: { barrioId: barrio.id, slug: newsSlug, status: NewsStatus.PENDING_REVIEW }
     });
     if (!news) throw new ApiError(404, "Noticia no encontrada o no está en revisión");
 
-    return newsSummaryProvider.summarizeNews(news.title, news.content);
+    return newsSummaryProvider.summarizeNews(userId, news.title, news.content);
   },
 
-  async improve(barrioSlug: string, newsSlug: string) {
+  async improve(barrioSlug: string, newsSlug: string, userId: string) {
     const barrio = await resolveBarrio(barrioSlug);
     const news = await prisma.news.findFirst({
       where: { barrioId: barrio.id, slug: newsSlug, status: NewsStatus.PENDING_REVIEW }
     });
     if (!news) throw new ApiError(404, "Noticia no encontrada o no está en revisión");
 
-    return newsSummaryProvider.improveNews(news.title, news.excerpt, news.content);
+    return newsSummaryProvider.improveNews(userId, news.title, news.excerpt, news.content);
   },
 
-  async assist(barrioSlug: string, input: { title: string; excerpt?: string; content: string }) {
+  async assist(barrioSlug: string, userId: string, input: { title: string; excerpt?: string; content: string }) {
     await resolveBarrio(barrioSlug);
-    return newsSummaryProvider.improveNews(input.title, input.excerpt || null, input.content);
+    return newsSummaryProvider.improveNews(userId, input.title, input.excerpt || null, input.content);
   }
 };
