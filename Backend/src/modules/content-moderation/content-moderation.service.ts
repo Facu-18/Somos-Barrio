@@ -17,7 +17,7 @@ class ContentModerationService {
   public evaluate(text: string, domain: 'MARKETPLACE' | 'FORUM'): ModerationResult {
     // Por ahora usamos la misma política para todos los dominios
     // En un futuro se podría filtrar reglas por dominio si hiciera falta.
-    return this.defaultPolicy.evaluate(text);
+    return this.defaultPolicy.evaluate(text, domain);
   }
 }
 

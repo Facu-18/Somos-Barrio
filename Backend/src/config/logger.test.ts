@@ -21,6 +21,8 @@ describe("Logger Redaction", () => {
           "res.headers['set-cookie']",
           "err.config.headers.Authorization",
           "err.config.headers.authorization",
+          "password",
+          "AI_API_KEY",
           "*.password",
           "*.passwordConfirm",
           "*.token",

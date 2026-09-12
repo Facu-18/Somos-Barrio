@@ -41,5 +41,10 @@ export const marketplaceController = {
   async remove(req: Request, res: Response): Promise<void> {
     await marketplaceService.remove(req.params.barrioSlug, req.params.postId, req.user!.id, req.user!.role);
     res.status(204).send();
+  },
+
+  async report(req: Request, res: Response): Promise<void> {
+    await marketplaceService.report(req.params.barrioSlug, req.params.postId, req.user!.id, req.body);
+    res.status(201).json({ success: true, message: "Reporte recibido" });
   }
 };

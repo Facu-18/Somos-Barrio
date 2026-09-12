@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../../middlewares/auth";
-import { uploadSingle, uploadToCloudinary, verifyImageContent } from "../../middlewares/upload";
+import { uploadSingle, uploadToCloudinary, verifyImageContent, moderateImageContent } from "../../middlewares/upload";
 import { uploadRateLimiter } from "../../middlewares/rate-limit";
 import { uploadController } from "./upload.controller";
 
@@ -18,6 +18,7 @@ uploadRouter.post(
   uploadRateLimiter,
   uploadSingle,
   verifyImageContent,
+  moderateImageContent,
   uploadToCloudinary("somos-barrio"),
   uploadController.uploadImage
 );
@@ -28,6 +29,7 @@ uploadRouter.post(
   uploadRateLimiter,
   uploadSingle,
   verifyImageContent,
+  moderateImageContent,
   uploadToCloudinary((req) => `somos-barrio/avatars/${req.user!.id}`),
   uploadController.uploadImage
 );

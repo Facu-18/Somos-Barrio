@@ -2,8 +2,12 @@ import { PolicyRule } from '../content-policy';
 
 export const allowlistEsAR = [
   'madrugada', // para evitar falso positivo con 'droga' si usáramos EXACT_COMPACT
-  'analisis',  
-  'documento'
+  'analisis',
+  'documento',
+  'armario',
+  'repuesto',
+  'cocina',
+  'medicamento'
 ];
 
 export const rulesEsAR: PolicyRule[] = [
@@ -47,7 +51,7 @@ export const rulesEsAR: PolicyRule[] = [
   },
   {
     id: 'AR-DRG-3',
-    decision: 'BLOCK',
+    decision: 'REVIEW',
     type: 'FUZZY', // Por si escriben mariguana, marhuana, etc.
     value: 'marihuana',
     maxDistance: 2,
@@ -55,7 +59,7 @@ export const rulesEsAR: PolicyRule[] = [
   },
   {
     id: 'AR-DRG-4',
-    decision: 'BLOCK',
+    decision: 'REVIEW',
     type: 'FUZZY',
     value: 'cocaina',
     maxDistance: 2,

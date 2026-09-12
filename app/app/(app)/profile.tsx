@@ -71,6 +71,13 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.actions}>
+          {(user?.role === 'ADMIN' || user?.role === 'EDITOR') && (
+            <ClayButton
+              title="Panel de Moderación (Market)"
+              onPress={() => router.push('/(app)/admin-market-queue' as any)}
+              style={styles.modButton}
+            />
+          )}
           <ClayButton 
             title="Editar perfil" 
             onPress={() => router.push('/(app)/edit-profile')} 
@@ -187,5 +194,8 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     backgroundColor: ClayTheme.colors.error,
+  },
+  modButton: {
+    backgroundColor: ClayTheme.colors.secondary,
   }
 });

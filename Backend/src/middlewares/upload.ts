@@ -3,6 +3,9 @@ import { Request, Response, NextFunction } from "express";
 import { UploadApiResponse } from "cloudinary";
 import { cloudinary } from "../lib/cloudinary";
 import { ApiError } from "../utils/api-error";
+import axios from "axios";
+import { env } from "../config/env";
+import { logger } from "../config/logger";
 
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -35,6 +38,49 @@ export const verifyImageContent = (req: Request, _res: Response, next: NextFunct
     return next(new ApiError(422, "El contenido del archivo no es una imagen valida"));
   }
   next();
+};
+
+export const moderateImageContent = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  if (!req.file) return next(new ApiError(400, "No se encontro ningun archivo"));
+
+  if (!env.SIGHTENGINE_API_USER || !env.SIGHTENGINE_API_SECRET) {
+    logger.warn("Moderación de imágenes omitida: falta configuración de Sightengine (SIGHTENGINE_API_USER o SIGHTENGINE_API_SECRET).");
+    return next();
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('media', new Blob([req.file.buffer], { type: req.file.mimetype }), req.file.originalname);
+    formData.append('models', 'nudity-2.0,wad,offensive,gore');
+    formData.append('api_user', env.SIGHTENGINE_API_USER);
+    formData.append('api_secret', env.SIGHTENGINE_API_SECRET);
+
+    const response = await axios.post('https://api.sightengine.com/1.0/check.json', formData, {
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
+    const data = response.data;
+    if (data.status === 'success') {
+      let isRejected = false;
+
+      if (data.nudity && (data.nudity.sexual_activity > 0.5 || data.nudity.sexual_display > 0.5 || data.nudity.erotica > 0.5)) isRejected = true;
+      if (data.weapon > 0.5 || data.drugs > 0.5) isRejected = true;
+      if (data.offensive && data.offensive.prob > 0.5) isRejected = true;
+      if (data.gore && data.gore.prob > 0.5) isRejected = true;
+
+      if (isRejected) {
+        logger.warn({ moderationData: data }, "Imagen rechazada por moderación automatizada");
+        return next(new ApiError(422, "La imagen fue rechazada por nuestro sistema de moderación automatizado."));
+      }
+    }
+
+    next();
+  } catch (error: any) {
+    logger.error({ err: error }, "Error al comunicarse con la API de Sightengine");
+    next();
+  }
 };
 
 export const uploadToCloudinary = (folder: string | ((req: Request) => string) = "somos-barrio") =>

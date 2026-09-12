@@ -1,7 +1,6 @@
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
-import morgan from "morgan";
 import pinoHttp, { stdSerializers } from "pino-http";
 import cookieParser from "cookie-parser";
 import swaggerUi from "swagger-ui-express";
@@ -50,10 +49,6 @@ app.use(
   swaggerUi.serve,
   swaggerUi.setup(openapiSpec, { customSiteTitle: "Somos Barrio API Docs" })
 );
-
-if (env.NODE_ENV === "development") {
-  app.use(morgan("dev"));
-}
 
 app.get("/", (_req, res) => {
   res.json({

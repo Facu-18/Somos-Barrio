@@ -228,13 +228,14 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   },
   MarketplacePost: {
     type: "object",
-    required: ["id", "userId", "barrioId", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "whatsapp", "images", "location", "views", "createdAt", "updatedAt"],
+    required: ["id", "userId", "barrioId", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "moderationReasonCode", "whatsapp", "images", "location", "views", "createdAt", "updatedAt"],
     properties: {
       id: cuid(), userId: cuid(), barrioId: cuid(), title: { type: "string" }, description: { type: "string" },
       price: { type: "integer", nullable: true, minimum: 0 }, currency: { type: "string", minLength: 3, maxLength: 3 },
       category: { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] },
       availability: { type: "string", enum: ["AVAILABLE", "SOLD", "PAUSED"] },
       moderationStatus: { type: "string", enum: ["PENDING_REVIEW", "APPROVED", "REJECTED", "REMOVED"] },
+      moderationReasonCode: { type: "string", nullable: true, description: "Categoría genérica; no expone la regla exacta" },
       whatsapp: { type: "string", nullable: true, pattern: "^\\+[1-9]\\d{7,14}$" },
       images: arrayOf({ type: "string", format: "uri" }), location: nullableString(), views: { type: "integer" },
       createdAt: dateTime(), updatedAt: dateTime(), user: ref("UserSummary")
@@ -242,14 +243,23 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   },
   MarketplaceListItem: {
     type: "object",
-    required: ["id", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "images", "location", "views", "createdAt", "user"],
+    required: ["id", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "moderationReasonCode", "images", "location", "views", "createdAt", "user"],
     properties: {
       id: cuid(), title: { type: "string" }, description: { type: "string" }, price: { type: "integer", nullable: true, minimum: 0 },
       currency: { type: "string" }, category: { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] },
       availability: { type: "string", enum: ["AVAILABLE", "SOLD", "PAUSED"] },
       moderationStatus: { type: "string", enum: ["PENDING_REVIEW", "APPROVED", "REJECTED", "REMOVED"] },
+      moderationReasonCode: { type: "string", nullable: true, description: "Categoría genérica; no expone la regla exacta" },
       images: arrayOf({ type: "string", format: "uri" }),
       location: nullableString(), views: { type: "integer" }, createdAt: dateTime(), user: ref("UserSummary")
+    }
+  },
+  MarketplaceReport: {
+    type: "object",
+    required: ["id", "postId", "reporterId", "category", "createdAt"],
+    properties: {
+      id: cuid(), postId: cuid(), reporterId: cuid(), category: { type: "string", enum: ["FRAUD", "SPAM", "INAPPROPRIATE", "WEAPONS", "DRUGS", "OTHER"] },
+      comment: nullableString(), createdAt: dateTime()
     }
   },
   ForumSubforum: {
@@ -458,7 +468,7 @@ const updateBusinessBody: OpenAPIV3.SchemaObject = {
   }
 };
 const createMarketplaceBody: OpenAPIV3.SchemaObject = {
-  type: "object", required: ["title", "description", "category", "whatsapp"],
+  type: "object", additionalProperties: false, required: ["title", "description", "category", "whatsapp"],
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
     price: { type: "integer", minimum: 0 }, currency: { type: "string", minLength: 3, maxLength: 3, default: "ARS" },
@@ -467,7 +477,7 @@ const createMarketplaceBody: OpenAPIV3.SchemaObject = {
   }
 };
 const updateMarketplaceBody: OpenAPIV3.SchemaObject = {
-  type: "object",
+  type: "object", additionalProperties: false,
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
     price: { type: "integer", minimum: 0 }, category: marketplaceCategory, availability: marketplaceAvailability,
@@ -797,23 +807,45 @@ export const openapiSpec: OpenAPIV3.Document = {
     "/barrios/{barrioSlug}/marketplace": {
       parameters: [barrioSlugParam],
       get: {
-        tags: ["Marketplace"], summary: "Listar publicaciones activas",
+        tags: ["Marketplace"], summary: "Listar publicaciones aprobadas y disponibles",
         parameters: [queryParam("category", marketplaceCategory), pageParam, limit10Param],
         responses: { 200: ok(ref("PaginatedMarketplace")), 400: badRequest, 404: notFound }
       },
       post: {
-        tags: ["Marketplace"], summary: "Crear publicación", security: bearerSecurity, requestBody: jsonBody(createMarketplaceBody),
+        tags: ["Marketplace"], summary: "Crear y moderar una publicación", description: "La respuesta informa availability y moderationStatus. Solo APPROVED + AVAILABLE se publica.", security: bearerSecurity, requestBody: jsonBody(createMarketplaceBody),
         responses: { 201: created(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
+    },
+    "/barrios/{barrioSlug}/marketplace/me": {
+      parameters: [barrioSlugParam],
+      get: {
+        tags: ["Marketplace"],
+        summary: "Listar publicaciones propias con cualquier estado",
+        description: "Permite al autor recuperar publicaciones pendientes, rechazadas o retiradas.",
+        security: bearerSecurity,
+        parameters: [pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedMarketplace")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       }
     },
     "/barrios/{barrioSlug}/marketplace/{postId}": {
       parameters: [barrioSlugParam, pathParam("postId", cuid())],
-      get: { tags: ["Marketplace"], summary: "Obtener publicación activa e incrementar vistas", description: "Requiere pertenecer al barrio porque la respuesta incluye el contacto de WhatsApp.", security: bearerSecurity, responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } },
+      get: { tags: ["Marketplace"], summary: "Obtener publicación o preview privado", description: "El público solo accede a APPROVED + AVAILABLE. El propietario y moderadores conservan acceso privado a contenido pendiente o rechazado.", security: bearerSecurity, responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } },
       patch: {
-        tags: ["Marketplace"], summary: "Actualizar publicación", security: bearerSecurity, requestBody: jsonBody(updateMarketplaceBody),
+        tags: ["Marketplace"], summary: "Actualizar publicación", description: "Cambiar texto, precio, categoría, ubicación o imágenes invalida la aprobación previa y crea una decisión append-only.", security: bearerSecurity, requestBody: jsonBody(updateMarketplaceBody),
         responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       },
       delete: { tags: ["Marketplace"], summary: "Eliminar publicación", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
+    },
+    "/barrios/{barrioSlug}/marketplace/{postId}/reports": {
+      parameters: [barrioSlugParam, pathParam("postId", cuid())],
+      post: {
+        tags: ["Marketplace"], summary: "Reportar publicación", security: bearerSecurity,
+        requestBody: jsonBody({
+          type: "object", required: ["category"],
+          properties: { category: { type: "string", enum: ["FRAUD", "SPAM", "INAPPROPRIATE", "WEAPONS", "DRUGS", "OTHER"] }, comment: { type: "string", maxLength: 1000 } }
+        }),
+        responses: { 201: created({ type: "object", properties: { message: { type: "string" } } }), 400: badRequest, 401: unauthorized, 404: notFound, 409: conflict, 503: serviceUnavailable }
+      }
     },
     "/barrios/{barrioSlug}/forum": {
       parameters: [barrioSlugParam],
@@ -1003,6 +1035,24 @@ export const openapiSpec: OpenAPIV3.Document = {
         tags: ["Admin"], summary: "Verificar o desverificar comercio", security: bearerSecurity,
         requestBody: jsonBody({ type: "object", required: ["verified"], properties: { verified: { type: "boolean" } } }),
         responses: { 200: ok(ref("Business")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
+    },
+    "/moderation/marketplace": {
+      get: {
+        tags: ["Admin"], summary: "Listar publicaciones del marketplace para moderación", security: bearerSecurity,
+        parameters: [queryParam("status", moderationStatus), queryParam("barrioSlug", { type: "string" }), pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedMarketplace")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
+    },
+    "/moderation/marketplace/{postId}/decision": {
+      parameters: [pathParam("postId", cuid())],
+      post: {
+        tags: ["Admin"], summary: "Moderar publicación del marketplace", security: bearerSecurity,
+        requestBody: jsonBody({
+          type: "object", required: ["decision", "reason"],
+          properties: { decision: { type: "string", enum: ["APPROVE", "REJECT", "REMOVE", "RESTORE"] }, reason: { type: "string", minLength: 1 }, privateNote: { type: "string" } }
+        }),
+        responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       }
     }
   }

@@ -21,7 +21,7 @@ export const createMarketplacePostSchema = z.object({
   images: z.array(z.string().url()).max(5).default([]),
   location: z.string().max(120).optional(),
   whatsapp: z.string().min(8).max(30)
-});
+}).strict();
 
 export const updateMarketplacePostSchema = z.object({
   title: z.string().min(3).max(255).optional(),
@@ -32,4 +32,10 @@ export const updateMarketplacePostSchema = z.object({
   images: z.array(z.string().url()).max(5).optional(),
   location: z.string().max(120).optional(),
   whatsapp: z.string().min(8).max(30).optional()
+}).strict();
+
+import { MarketplaceReportCategory } from "@prisma/client";
+export const createMarketplaceReportSchema = z.object({
+  category: z.nativeEnum(MarketplaceReportCategory),
+  comment: z.string().max(1000).optional()
 });

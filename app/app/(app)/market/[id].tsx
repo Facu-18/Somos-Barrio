@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TouchableOpacity, Linking, Alert, useWindowDimensions } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TouchableOpacity, Linking, Alert, useWindowDimensions, Modal, TextInput } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
@@ -9,12 +9,27 @@ import { ClayButton } from '../../../components/ClayButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+const moderationReasonLabels: Record<string, string> = {
+  DRUGS: 'producto prohibido',
+  WEAPONS: 'producto regulado',
+  INSULT: 'lenguaje inapropiado',
+  CONTENT_CHANGED: 'cambios por revisar',
+  IMAGE_REVIEW: 'imagen por revisar',
+  REPORT_THRESHOLD: 'reportes vecinales',
+  MANUAL_REVIEW: 'decisión editorial'
+};
+
 export default function MarketDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportCategory, setReportCategory] = useState<string>('');
+  const [reportComment, setReportComment] = useState('');
+  const [isReporting, setIsReporting] = useState(false);
 
   const { data: item, isLoading, isError, refetch } = useQuery({
     queryKey: ['market-detail', barrioSlug, id],
@@ -60,12 +75,40 @@ export default function MarketDetailScreen() {
     }
   };
 
+  const submitReport = async () => {
+    if (!reportCategory) {
+      Alert.alert('Error', 'Por favor selecciona un motivo.');
+      return;
+    }
+    setIsReporting(true);
+    try {
+      await api.post(`/barrios/${barrioSlug}/marketplace/${id}/reports`, {
+        category: reportCategory,
+        comment: reportComment,
+      });
+      Alert.alert('Gracias', 'Tu reporte ha sido enviado y será revisado por los moderadores.');
+      setReportModalVisible(false);
+      setReportCategory('');
+      setReportComment('');
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.message || 'No se pudo enviar el reporte.');
+    } finally {
+      setIsReporting(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { top: insets.top + 8 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Volver">
+      <View style={[styles.headerContainer, { top: insets.top + 8 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Volver">
           <MaterialCommunityIcons name="arrow-left" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
+
+        {user?.id !== item.user?.id && item.moderationStatus === 'APPROVED' && item.availability === 'AVAILABLE' && (
+          <TouchableOpacity onPress={() => setReportModalVisible(true)} style={styles.headerButton} accessibilityRole="button" accessibilityLabel="Reportar publicación">
+            <MaterialCommunityIcons name="flag-outline" size={24} color={ClayTheme.colors.error} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -96,7 +139,12 @@ export default function MarketDetailScreen() {
           )}
           {item.moderationStatus === 'REJECTED' && (
              <View style={{backgroundColor: '#fee2e2', padding: 12, borderRadius: 12, marginBottom: 16}}>
-               <Text style={{color: '#dc2626', fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13}}>Esta publicación fue rechazada y no es visible al público.</Text>
+               <Text style={{color: '#dc2626', fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13}}>Esta publicación fue rechazada por {moderationReasonLabels[item.moderationReasonCode] ?? 'contenido no permitido'} y no es visible al público.</Text>
+             </View>
+          )}
+          {item.moderationStatus === 'REMOVED' && (
+             <View style={{backgroundColor: '#fee2e2', padding: 12, borderRadius: 12, marginBottom: 16}}>
+               <Text style={{color: '#dc2626', fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13}}>Esta publicación fue retirada por moderación y no es visible al público.</Text>
              </View>
           )}
 
@@ -127,18 +175,63 @@ export default function MarketDetailScreen() {
         </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-        <TouchableOpacity 
-          style={styles.contactBtn}
-          activeOpacity={0.8} 
-          onPress={handleContact}
-          accessibilityRole="link"
-          accessibilityLabel="Contactar por WhatsApp"
-        >
-          <MaterialCommunityIcons name="whatsapp" size={24} color="white" />
-          <Text style={styles.contactBtnText}>Contactar por WhatsApp</Text>
-        </TouchableOpacity>
-      </View>
+      {item.moderationStatus === 'APPROVED' && item.availability === 'AVAILABLE' && (
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+          <TouchableOpacity
+            style={styles.contactBtn}
+            activeOpacity={0.8}
+            onPress={handleContact}
+            accessibilityRole="link"
+            accessibilityLabel="Contactar por WhatsApp"
+          >
+            <MaterialCommunityIcons name="whatsapp" size={24} color="white" />
+            <Text style={styles.contactBtnText}>Contactar por WhatsApp</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Report Modal */}
+      <Modal visible={reportModalVisible} transparent animationType="slide" onRequestClose={() => setReportModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Reportar Publicación</Text>
+            <Text style={styles.modalSubtitle}>¿Por qué quieres reportar esto?</Text>
+
+            <ScrollView style={{ maxHeight: 200, marginBottom: 15 }}>
+              {[
+                { id: 'FRAUD', label: 'Posible estafa o fraude' },
+                { id: 'SPAM', label: 'Spam o publicación repetida' },
+                { id: 'INAPPROPRIATE', label: 'Contenido inapropiado u ofensivo' },
+                { id: 'WEAPONS', label: 'Venta de armas' },
+                { id: 'DRUGS', label: 'Venta de drogas o medicamentos' },
+                { id: 'OTHER', label: 'Otro motivo' }
+              ].map(cat => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[styles.categoryOption, reportCategory === cat.id && styles.categoryOptionSelected]}
+                  onPress={() => setReportCategory(cat.id)}
+                >
+                  <Text style={[styles.categoryOptionText, reportCategory === cat.id && styles.categoryOptionTextSelected]}>{cat.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Detalles adicionales (opcional)..."
+              value={reportComment}
+              onChangeText={setReportComment}
+              multiline
+              maxLength={1000}
+            />
+
+            <View style={styles.modalButtons}>
+              <ClayButton title="Cancelar" onPress={() => setReportModalVisible(false)} variant="secondary" style={{ flex: 1, marginRight: 8 }} />
+              <ClayButton title="Enviar Reporte" onPress={submitReport} loading={isReporting} style={{ flex: 1, backgroundColor: ClayTheme.colors.error }} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -159,12 +252,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: ClayTheme.colors.error,
   },
-  header: {
+  headerContainer: {
     position: 'absolute',
     left: 20,
+    right: 20,
     zIndex: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  closeButton: {
+  headerButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -291,5 +388,64 @@ const styles = StyleSheet.create({
     fontFamily: ClayTheme.typography.fontFamily.extraBold,
     fontSize: 18,
     color: 'white',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: ClayTheme.colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalTitle: {
+    fontFamily: ClayTheme.typography.fontFamily.extraBold,
+    fontSize: 22,
+    color: ClayTheme.colors.text,
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontFamily: ClayTheme.typography.fontFamily.medium,
+    fontSize: 15,
+    color: ClayTheme.colors.textMuted,
+    marginBottom: 20,
+  },
+  categoryOption: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: ClayTheme.colors.surface,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  categoryOptionSelected: {
+    borderColor: ClayTheme.colors.error,
+    backgroundColor: '#fef2f2',
+  },
+  categoryOptionText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    color: ClayTheme.colors.text,
+    fontSize: 15,
+  },
+  categoryOptionTextSelected: {
+    color: ClayTheme.colors.error,
+  },
+  modalInput: {
+    backgroundColor: ClayTheme.colors.surface,
+    borderRadius: 16,
+    padding: 16,
+    height: 100,
+    textAlignVertical: 'top',
+    fontFamily: ClayTheme.typography.fontFamily.medium,
+    fontSize: 15,
+    color: ClayTheme.colors.text,
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   }
 });

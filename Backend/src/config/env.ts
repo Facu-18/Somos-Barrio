@@ -24,6 +24,8 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY:    z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
+  SIGHTENGINE_API_USER: z.string().optional(),
+  SIGHTENGINE_API_SECRET: z.string().optional(),
   EXPO_ACCESS_TOKEN: z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional()),
   NOTIFICATION_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).default(5000),
   NOTIFICATION_BATCH_SIZE: z.coerce.number().int().positive().max(100).default(25),

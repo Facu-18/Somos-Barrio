@@ -13,6 +13,7 @@ import { adminRouter }       from "../modules/admin/admin.routes";
 import { searchRouter }      from "../modules/search/search.routes";
 import { uploadRouter }      from "../modules/upload/upload.routes";
 import { notificationsRouter } from "../modules/notifications/notifications.routes";
+import { moderationRouter }    from "../modules/moderation/moderation.routes";
 
 const apiRouter = Router();
 
@@ -21,6 +22,7 @@ apiRouter.use("/health",   healthRouter);
 apiRouter.use("/auth",     authRouter);
 apiRouter.use("/search",   searchRouter);
 apiRouter.use("/admin",    adminRouter);
+apiRouter.use("/moderation", moderationRouter);
 apiRouter.use("/barrios",  barriosRouter);
 
 // Recursos anidados bajo barrio

@@ -143,10 +143,12 @@ export default function CreateMarketScreen() {
 
   const createMutation = useMutation({
     mutationFn: async (data: MarketForm) => {
+      const existingUrls = selectedImages.filter((uri) => /^https?:\/\//.test(uri));
+      const localImages = selectedImages.filter((uri) => !/^https?:\/\//.test(uri));
       let uploadedUrls: string[] = [];
-      if (selectedImages.length > 0) {
+      if (localImages.length > 0) {
         setIsUploading(true);
-        uploadedUrls = await uploadImages(selectedImages);
+        uploadedUrls = await uploadImages(localImages);
         setIsUploading(false);
       }
 
@@ -158,22 +160,27 @@ export default function CreateMarketScreen() {
         price: parsedPrice,
         category: data.category,
         whatsapp: normalizeWhatsApp(data.whatsapp),
-        images: uploadedUrls.length > 0 ? uploadedUrls : selectedImages, // If not uploading new, keep existing
+        images: [...existingUrls, ...uploadedUrls],
       };
 
       const response = postId
         ? await api.patch(`/barrios/${barrioSlug}/marketplace/${postId}`, payload)
         : await api.post(`/barrios/${barrioSlug}/marketplace`, payload);
       
-      return response.data;
+      return response.data.data;
     },
-    onSuccess: () => {
+    onSuccess: (post) => {
       queryClient.invalidateQueries({ queryKey: ['market', barrioSlug] });
       queryClient.invalidateQueries({ queryKey: ['market', barrioSlug, 'me'] });
       if (postId) {
         queryClient.invalidateQueries({ queryKey: ['market', barrioSlug, postId] });
       }
-      router.back();
+      const message = post.moderationStatus === 'APPROVED'
+        ? 'La publicación ya está visible en el marketplace.'
+        : post.moderationStatus === 'REJECTED'
+          ? 'La publicación no puede mostrarse por una categoría de contenido no permitida. Podés editarla y reenviarla.'
+          : 'La publicación quedó en revisión y solo vos podés verla por ahora.';
+      Alert.alert('Estado de la publicación', message, [{ text: 'Entendido', onPress: () => router.back() }]);
     },
     onError: (error: any) => {
       setIsUploading(false);

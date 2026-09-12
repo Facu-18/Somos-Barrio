@@ -2,12 +2,14 @@ import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import { app } from "../../app";
 import { API, registerAndLogin } from "../../test/helpers";
+import { prisma } from "../../lib/prisma";
 
 describe("Mensajes — integration", () => {
   let senderToken: string;
   let receiverId: string;
   let messageId: string;
   let receiverToken: string;
+  let hiddenPostId: string;
 
   beforeAll(async () => {
     const sender = await registerAndLogin({ name: "Sender Test" });
@@ -16,6 +18,23 @@ describe("Mensajes — integration", () => {
     const receiver = await registerAndLogin({ name: "Receiver Test" });
     receiverToken = receiver.token;
     receiverId = receiver.user.id;
+
+    const barrio = await prisma.barrio.create({
+      data: { name: "Mensajes", slug: `messages-${Date.now()}`, city: "Cordoba", province: "Cordoba" }
+    });
+    const post = await prisma.marketplacePost.create({
+      data: {
+        userId: receiver.user.id,
+        barrioId: barrio.id,
+        title: "Publicacion pendiente",
+        description: "Todavia no es publica",
+        category: "OTROS",
+        moderationStatus: "PENDING_REVIEW",
+        whatsapp: "+5493515550101",
+        images: []
+      }
+    });
+    hiddenPostId = post.id;
   });
 
   it("GET /messages?type=inbox — lista vacía al inicio", async () => {
@@ -60,6 +79,15 @@ describe("Mensajes — integration", () => {
       .post(`${API}/messages`)
       .set("Authorization", `Bearer ${senderToken}`)
       .send({ receiverId: "cl00000000000000000000000", content: "Hola" });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /messages — no permite referenciar publicaciones no aprobadas", async () => {
+    const res = await request(app)
+      .post(`${API}/messages`)
+      .set("Authorization", `Bearer ${senderToken}`)
+      .send({ receiverId, content: "Consulta privada", postId: hiddenPostId });
 
     expect(res.status).toBe(404);
   });

@@ -6,7 +6,8 @@ import {
   marketplaceIdParamSchema,
   marketplaceListQuerySchema,
   createMarketplacePostSchema,
-  updateMarketplacePostSchema
+  updateMarketplacePostSchema,
+  createMarketplaceReportSchema
 } from "./marketplace.schema";
 import { marketplaceController } from "./marketplace.controller";
 
@@ -56,6 +57,14 @@ marketplaceRouter.delete(
   requireBarrioMember,
   validate({ params: marketplaceIdParamSchema }),
   asyncHandler(marketplaceController.remove)
+);
+
+marketplaceRouter.post(
+  "/:postId/reports",
+  requireAuth,
+  requireBarrioMember,
+  validate({ params: marketplaceIdParamSchema, body: createMarketplaceReportSchema }),
+  asyncHandler(marketplaceController.report)
 );
 
 export { marketplaceRouter };

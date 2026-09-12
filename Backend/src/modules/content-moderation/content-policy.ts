@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { ContentNormalizer } from './content-normalizer';
 
 export type Decision = 'ALLOW' | 'REVIEW' | 'BLOCK';
@@ -5,16 +6,22 @@ export type Decision = 'ALLOW' | 'REVIEW' | 'BLOCK';
 export interface PolicyRule {
   id: string;
   decision: Decision;
-  type: 'EXACT_TOKEN' | 'EXACT_COMPACT' | 'REGEX' | 'FUZZY';
+  type: 'EXACT_TOKEN' | 'EXACT_PHRASE' | 'EXACT_COMPACT' | 'REGEX' | 'FUZZY';
   value: string | RegExp;
   categories: string[];
   maxDistance?: number; // Sólo usado si type es FUZZY
+  version?: string;
+  domains?: Array<'MARKETPLACE' | 'FORUM'>;
 }
 
 export interface ModerationResult {
   decision: Decision;
-  ruleId?: string;
+  ruleId: string;
+  ruleVersion: string;
   policyVersion: string;
+  domain: 'MARKETPLACE' | 'FORUM' | 'SHARED';
+  severity: 'NONE' | 'MEDIUM' | 'HIGH';
+  contentHash: string;
   categories: string[];
 }
 
@@ -29,20 +36,24 @@ export class ContentPolicy {
     this.allowlist = new Set(allowlist.map(w => ContentNormalizer.compact(w)));
   }
 
-  public evaluate(text: string): ModerationResult {
-    const compactText = ContentNormalizer.compact(text);
-    const tokens = ContentNormalizer.tokenize(text);
+  public evaluate(text: string, domain: ModerationResult['domain'] = 'SHARED'): ModerationResult {
+    const views = ContentNormalizer.buildViews(text);
+    const compactText = views.compact;
+    const tokens = views.tokens;
+    const contentHash = createHash('sha256').update(views.normalized).digest('hex');
 
     let finalDecision: Decision = 'ALLOW';
-    let matchedRuleId: string | undefined;
+    let matchedRule: PolicyRule | undefined;
     let matchedCategories: string[] = [];
 
     // Si todo el texto compacto está en la allowlist
     if (this.allowlist.has(compactText)) {
-      return { decision: 'ALLOW', policyVersion: this.version, categories: [] };
+      return this.result('ALLOW', undefined, domain, contentHash, []);
     }
 
     for (const rule of this.rules) {
+      if (domain !== 'SHARED' && rule.domains && !rule.domains.includes(domain)) continue;
+
       let isMatch = false;
 
       if (rule.type === 'EXACT_TOKEN') {
@@ -51,6 +62,9 @@ export class ContentPolicy {
         if (tokens.includes(val) && !this.allowlist.has(val)) {
           isMatch = true;
         }
+      } else if (rule.type === 'EXACT_PHRASE') {
+        const val = ContentNormalizer.normalize(rule.value as string);
+        isMatch = ` ${views.normalized} `.includes(` ${val} `);
       } else if (rule.type === 'EXACT_COMPACT') {
         const val = rule.value as string;
         // Buscamos coincidencia en el texto compacto. 
@@ -64,12 +78,16 @@ export class ContentPolicy {
         }
       } else if (rule.type === 'REGEX') {
         const regex = rule.value as RegExp;
+        regex.lastIndex = 0;
         if (regex.test(compactText)) {
           isMatch = true;
         }
+        regex.lastIndex = 0;
       } else if (rule.type === 'FUZZY') {
         const val = rule.value as string;
         const maxD = rule.maxDistance || 1;
+
+        if (val.length < 6) continue;
         
         // El fuzzy debe buscar coincidencias en cada token, no en todo el string compacto
         for (const token of tokens) {
@@ -84,25 +102,34 @@ export class ContentPolicy {
 
       if (isMatch) {
         if (rule.decision === 'BLOCK') {
-          return {
-            decision: 'BLOCK',
-            ruleId: rule.id,
-            policyVersion: this.version,
-            categories: rule.categories
-          };
+          return this.result('BLOCK', rule, domain, contentHash, rule.categories);
         } else if (rule.decision === 'REVIEW') {
           finalDecision = 'REVIEW';
-          matchedRuleId = rule.id;
+          matchedRule = rule;
           matchedCategories = rule.categories;
         }
       }
     }
 
+    return this.result(finalDecision, matchedRule, domain, contentHash, matchedCategories);
+  }
+
+  private result(
+    decision: Decision,
+    rule: PolicyRule | undefined,
+    domain: ModerationResult['domain'],
+    contentHash: string,
+    categories: string[]
+  ): ModerationResult {
     return {
-      decision: finalDecision,
-      ruleId: matchedRuleId,
+      decision,
+      ruleId: rule?.id ?? 'ALLOW_DEFAULT',
+      ruleVersion: rule?.version ?? this.version,
       policyVersion: this.version,
-      categories: matchedCategories
+      domain,
+      severity: decision === 'BLOCK' ? 'HIGH' : decision === 'REVIEW' ? 'MEDIUM' : 'NONE',
+      contentHash,
+      categories
     };
   }
 

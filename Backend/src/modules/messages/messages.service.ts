@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
+import { MarketplaceAvailability, ModerationStatus } from "@prisma/client";
 
 const userSelect = { id: true, name: true, nickname: true, avatarUrl: true };
 
@@ -39,6 +40,12 @@ export const messagesService = {
     if (input.postId) {
       const post = await prisma.marketplacePost.findUnique({ where: { id: input.postId } });
       if (!post) throw new ApiError(404, "Publicacion no encontrada");
+      if (
+        post.availability !== MarketplaceAvailability.AVAILABLE ||
+        post.moderationStatus !== ModerationStatus.APPROVED
+      ) {
+        throw new ApiError(404, "Publicacion no encontrada");
+      }
     }
 
     return prisma.message.create({

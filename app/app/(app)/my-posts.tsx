@@ -9,6 +9,16 @@ import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+const moderationReasonLabels: Record<string, string> = {
+  DRUGS: 'producto prohibido',
+  WEAPONS: 'producto regulado',
+  INSULT: 'lenguaje inapropiado',
+  CONTENT_CHANGED: 'cambios por revisar',
+  IMAGE_REVIEW: 'imagen por revisar',
+  REPORT_THRESHOLD: 'reportes vecinales',
+  MANUAL_REVIEW: 'decisión editorial'
+};
+
 export default function MyPostsScreen() {
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
@@ -53,7 +63,12 @@ export default function MyPostsScreen() {
               <Text style={{fontSize: 10, color: '#f59e0b', fontFamily: ClayTheme.typography.fontFamily.bold}}>(En revisión)</Text>
             )}
             {item.moderationStatus === 'REJECTED' && (
-              <Text style={{fontSize: 10, color: ClayTheme.colors.error, fontFamily: ClayTheme.typography.fontFamily.bold}}>(Rechazado)</Text>
+              <Text style={{fontSize: 10, color: ClayTheme.colors.error, fontFamily: ClayTheme.typography.fontFamily.bold}}>
+                (Rechazado{item.moderationReasonCode ? `: ${moderationReasonLabels[item.moderationReasonCode] ?? 'contenido no permitido'}` : ''})
+              </Text>
+            )}
+            {item.moderationStatus === 'REMOVED' && (
+              <Text style={{fontSize: 10, color: ClayTheme.colors.error, fontFamily: ClayTheme.typography.fontFamily.bold}}>(Retirado)</Text>
             )}
           </View>
           <Text style={styles.date}>

@@ -1,60 +1,65 @@
+const CONFUSABLES: Record<string, string> = {
+  // Cyrillic and Greek glyphs that are visually indistinguishable from Latin.
+  а: 'a', е: 'e', о: 'o', р: 'p', с: 'c', у: 'y', х: 'x', і: 'i', ј: 'j', к: 'k', м: 'm', т: 't', в: 'b', н: 'h',
+  α: 'a', ε: 'e', ο: 'o', ρ: 'p', κ: 'k', τ: 't', υ: 'y', χ: 'x', ι: 'i'
+};
+
+export interface NormalizedContent {
+  original: string;
+  normalized: string;
+  compact: string;
+  tokens: string[];
+}
+
 export class ContentNormalizer {
-  /**
-   * Normaliza el texto usando NFKC, quita marcas de puntuación invisibles,
-   * caracteres zero-width, diacríticos (tildes), y pasa a minúsculas.
-   */
   static normalize(text: string): string {
-    return text
-      .normalize('NFD') // Decompose characters to base + diacritic
-      .replace(/[\u0300-\u036f]/g, '') // Remove combining diacritical marks
-      .normalize('NFKC') // Recompose and standardize widths/compatibility
-      .toLowerCase()
-      .replace(/[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u202E]/g, ''); // Remove zero-width and Bidi marks
+    return Array.from(
+      text
+        .normalize('NFKC')
+        .toLocaleLowerCase('es-AR')
+        .replace(/[\u00AD\u034F\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '')
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '')
+        .normalize('NFC')
+    )
+      .map((character) => CONFUSABLES[character] ?? character)
+      .join('')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
-  /**
-   * Traduce leetspeak básico a letras.
-   */
   static convertLeetspeak(text: string): string {
-    const map: Record<string, string> = {
-      '0': 'o',
-      '1': 'i',
-      '3': 'e',
-      '4': 'a',
-      '5': 's',
-      '7': 't',
-      '@': 'a',
-      '$': 's'
+    const substitutions: Record<string, string> = {
+      '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's'
     };
-    return text.replace(/[013457@$]/g, (char) => map[char] || char);
+
+    if (!/[a-z]/i.test(text) || !/[013457@$]/.test(text)) return text;
+    return text.replace(/[013457@$]/g, (character) => substitutions[character] ?? character);
   }
 
-  /**
-   * Elimina letras repetidas consecutivas (ej. "maarihuuuana" -> "marihuana").
-   */
   static collapseRepetitions(text: string): string {
-    return text.replace(/(.)\1+/g, '$1');
+    return text
+      .replace(/([aeiou])\1+/g, '$1')
+      .replace(/([^aeiou\W])\1{2,}/g, '$1');
   }
 
-  /**
-   * Devuelve una versión ultra-compacta para buscar palabras escondidas con separadores.
-   * (ej. "m.a.r.i.h.u.a.n.a" -> "marihuana")
-   */
   static compact(text: string): string {
-    let t = this.normalize(text);
-    t = this.convertLeetspeak(t);
-    t = t.replace(/[^a-z0-9]/g, '');
-    return this.collapseRepetitions(t);
+    const detectionView = this.collapseRepetitions(this.convertLeetspeak(this.normalize(text)));
+    return detectionView.replace(/[^a-z0-9]/g, '');
   }
 
-  /**
-   * Devuelve un arreglo de tokens (palabras) normalizados, sin compactar del todo,
-   * manteniendo la separación entre palabras, útil para reglas de matcheo exacto.
-   */
   static tokenize(text: string): string[] {
-    let t = this.normalize(text);
-    t = this.convertLeetspeak(t);
-    // Dividir por cualquier caracter que no sea letra o número
-    return t.split(/[^a-z0-9]+/).filter(w => w.length > 0).map(w => this.collapseRepetitions(w));
+    return this.collapseRepetitions(this.convertLeetspeak(this.normalize(text)))
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean);
+  }
+
+  static buildViews(text: string): NormalizedContent {
+    return {
+      original: text,
+      normalized: this.normalize(text),
+      compact: this.compact(text),
+      tokens: this.tokenize(text)
+    };
   }
 }

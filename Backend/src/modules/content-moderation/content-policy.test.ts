@@ -11,8 +11,12 @@ describe('ContentPolicy', () => {
   ], ['madrugada', 'documento']);
 
   it('should allow normal text', () => {
-    const res = policy.evaluate('Vendo bicicleta usada en buen estado');
+    const res = policy.evaluate('Vendo bicicleta usada en buen estado', 'MARKETPLACE');
     expect(res.decision).toBe('ALLOW');
+    expect(res.ruleId).toBe('ALLOW_DEFAULT');
+    expect(res.ruleVersion).toBe('test-1.0');
+    expect(res.domain).toBe('MARKETPLACE');
+    expect(res.contentHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('should block EXACT_COMPACT match even with separators', () => {
@@ -49,5 +53,23 @@ describe('ContentPolicy', () => {
     const res2 = policy.evaluate('Vendo cocana pura');
     expect(res2.decision).toBe('BLOCK');
     expect(res2.ruleId).toBe('4');
+  });
+
+  it('does not apply fuzzy matching to short terms', () => {
+    const shortPolicy = new ContentPolicy('test-1.0', [
+      { id: 'short', decision: 'BLOCK', type: 'FUZZY', value: 'arma', maxDistance: 1, categories: ['WEAPONS'] }
+    ]);
+    expect(shortPolicy.evaluate('armar un mueble').decision).toBe('ALLOW');
+  });
+
+  it('returns the same versioned decision on repeated evaluation', () => {
+    expect(policy.evaluate('Vendo mаri\u200Bhuana')).toEqual(policy.evaluate('Vendo mаri\u200Bhuana'));
+  });
+
+  it('does not retain state from global regular expressions', () => {
+    const regexPolicy = new ContentPolicy('test-1.0', [
+      { id: 'regex', decision: 'REVIEW', type: 'REGEX', value: /sospechoso/g, categories: ['TEST'] }
+    ]);
+    expect(regexPolicy.evaluate('sospechoso')).toEqual(regexPolicy.evaluate('sospechoso'));
   });
 });
