@@ -69,6 +69,25 @@ export class SightengineProvider {
 
   async scan(buffer: Buffer, mimeType: string, filename: string): Promise<SightengineScan> {
     if (!env.SIGHTENGINE_ENABLED || !env.SIGHTENGINE_API_USER || !env.SIGHTENGINE_API_SECRET) {
+      if (!env.SIGHTENGINE_ENABLED) {
+        logger.info("Sightengine está desactivado. Devolviendo escaneo de prueba (seguro).");
+        return {
+          provider: "sightengine",
+          requestId: "mock-request-id",
+          scores: {
+            nudity: 0,
+            sexual: 0,
+            violence: 0,
+            gore: 0,
+            weapons: 0,
+            drugs: 0,
+            alcohol: 0,
+            tobacco: 0,
+            offensiveSymbols: 0
+          },
+          ocrText: ""
+        };
+      }
       throw new SightengineProviderError(503, "PROVIDER_NOT_CONFIGURED");
     }
 
