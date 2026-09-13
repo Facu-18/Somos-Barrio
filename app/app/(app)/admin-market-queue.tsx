@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
-import * as Crypto from 'expo-crypto';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../../lib/api';
+import { uuidV4 } from '../../lib/uuid';
 import { useAuth } from '../../hooks/useAuth';
 import { ClayTheme } from '../../constants/ClayTheme';
 import { ClayButton } from '../../components/ClayButton';
@@ -92,7 +92,7 @@ export default function AdminMarketQueueScreen() {
     setDecision(nextDecision);
     setReasonCode(reasonByDecision[nextDecision]);
     setPrivateNote('');
-    setIdempotencyKey(Crypto.randomUUID());
+    setIdempotencyKey(uuidV4());
   };
 
   const submitDecision = () => {

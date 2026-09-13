@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TouchableOpacity, Linking, Alert, useWindowDimensions, Modal, TextInput } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as Crypto from 'expo-crypto';
 import { api } from '../../../lib/api';
+import { uuidV4 } from '../../../lib/uuid';
 import { useAuth } from '../../../hooks/useAuth';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { ClayButton } from '../../../components/ClayButton';
@@ -117,7 +117,7 @@ export default function MarketDetailScreen() {
       await api.post(`/barrios/${barrioSlug}/marketplace/${id}/appeals`, {
         statement: appealStatement,
         expectedVersion: item.moderationVersion,
-        idempotencyKey: Crypto.randomUUID()
+        idempotencyKey: uuidV4()
       });
       Alert.alert('Apelación enviada', 'Tu apelación será revisada por el equipo de moderación.');
       setAppealModalVisible(false);
