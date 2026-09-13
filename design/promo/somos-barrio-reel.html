@@ -1,0 +1,1110 @@
+<title>Somos Barrio Reel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Nunito:wght@400;500;600;700;800&display=swap">
+<style>
+  :root {
+    --ground: #26221E;
+    --ground-lift: #332E28;
+    --cream: #F2F0EB;
+    --cream-dim: #B8AFA3;
+    --green: #7BC47F;
+    --terra: #F0A868;
+    --sky: #8FB8DE;
+    --display: 'Bricolage Grotesque', 'Trebuchet MS', system-ui, sans-serif;
+    --body: 'Nunito', 'Avenir Next Rounded', 'Trebuchet MS', system-ui, sans-serif;
+  }
+
+  /* Escenario deliberadamente oscuro y único: no sigue el tema del visor.
+     Por eso pinta su propio fondo y todos sus colores de forma explícita. */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--cream);
+    font-family: var(--body);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .fit { position: fixed; inset: 0; overflow: hidden; background: var(--ground); }
+
+  /* Lienzo fijo de 1080x1920 escalado por transform: la composición queda
+     idéntica en cualquier pantalla, que es lo que hace que se grabe limpio.
+     Va posicionado en absoluto: un elemento más grande que la ventana se
+     desborda hacia arriba-izquierda si lo centra el layout. */
+  .stage {
+    width: 1080px; height: 1920px;
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
+    display: flex; flex-direction: column;
+    padding: 104px 84px 76px;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 70% at 50% 8%, #322C26 0%, rgba(50,44,38,0) 62%),
+      var(--ground);
+  }
+
+  /* Halo detrás del teléfono; cambia de tono por sección. */
+  .glow {
+    position: absolute; left: 50%; top: 56%;
+    width: 1180px; height: 1180px; margin: -590px 0 0 -590px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--tint, #7BC47F) 0%, rgba(0,0,0,0) 62%);
+    opacity: .17;
+    filter: blur(14px);
+    transition: background 900ms ease, opacity 900ms ease;
+    pointer-events: none;
+  }
+
+  .head { position: relative; min-height: 430px; }
+
+  .kicker {
+    font-family: var(--body);
+    font-size: 26px; font-weight: 800;
+    letter-spacing: .22em; text-transform: uppercase;
+    color: var(--tint, #7BC47F);
+    margin-bottom: 26px;
+    min-height: 34px;
+    transition: color 900ms ease;
+  }
+
+  .headline {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 92px; line-height: 1.02;
+    letter-spacing: -.022em;
+    margin: 0;
+    text-wrap: balance;
+    max-width: 15ch;
+  }
+  .headline .w { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: .08em; }
+  .headline .w > span { display: inline-block; transform: translateY(112%); }
+  .play .headline .w > span { animation: rise 760ms cubic-bezier(.16,1,.3,1) forwards; }
+  @keyframes rise { to { transform: translateY(0); } }
+
+  .sub {
+    font-size: 30px; font-weight: 500; line-height: 1.45;
+    color: var(--cream-dim);
+    margin: 30px 0 0;
+    max-width: 26ch;
+    opacity: 0;
+  }
+  .play .sub { animation: fade 700ms 420ms ease forwards; }
+  @keyframes fade { to { opacity: 1; } }
+
+  .finale .headline { font-size: 128px; max-width: 12ch; }
+  .finale .sub { font-size: 36px; color: var(--cream); }
+
+  /* --- Teléfono --- */
+  .phone-row { flex: 1; display: flex; justify-content: center; align-items: flex-start; }
+  .phone {
+    position: relative;
+    transform: scale(1.22);
+    transform-origin: top center;
+  }
+  .bezel {
+    position: relative;
+    width: 416px; height: 870px;
+    padding: 13px;
+    border-radius: 62px;
+    background: linear-gradient(150deg, #4A443C 0%, #1D1A17 42%, #3B352E 100%);
+    box-shadow:
+      0 2px 0 rgba(255,255,255,.10) inset,
+      0 44px 90px rgba(0,0,0,.55),
+      0 12px 28px rgba(0,0,0,.45);
+  }
+  .viewport {
+    position: relative;
+    width: 390px; height: 844px;
+    border-radius: 50px;
+    overflow: hidden;
+    background: #F2F0EB;
+  }
+  /* Recorte físico de cámara del equipo. No se dibuja barra de estado falsa:
+     en un teléfono real la pinta el sistema encima. */
+  .cutout {
+    position: absolute; left: 50%; top: 26px; transform: translateX(-50%);
+    width: 104px; height: 30px; border-radius: 999px;
+    background: #17150F; z-index: 6;
+  }
+
+  /* Sistema clay, tomado del canvas de diseño. */
+  .viewport .clay      { box-shadow: inset 2px 2px 4px rgba(255,255,255,.95), inset -3px -4px 7px rgba(186,176,161,.32), 9px 13px 26px rgba(176,165,150,.26); }
+  .viewport .clay-sm   { box-shadow: inset 1px 1px 2px rgba(255,255,255,.95), inset -2px -2px 4px rgba(186,176,161,.30), 4px 6px 13px rgba(176,165,150,.22); }
+  .viewport .clay-sunk { box-shadow: inset 4px 5px 9px rgba(181,171,156,.45), inset -3px -3px 7px rgba(255,255,255,.95); }
+  .viewport .clay-green{ box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(74,131,78,.42), 8px 12px 24px rgba(123,196,127,.34); }
+  .viewport .clay-terra{ box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(178,110,50,.38), 8px 12px 24px rgba(240,168,104,.32); }
+  .viewport .clay-sky  { box-shadow: inset 2px 2px 4px rgba(255,255,255,.50), inset -3px -4px 8px rgba(84,124,164,.35), 8px 12px 24px rgba(143,184,222,.32); }
+  .viewport .clay-err  { box-shadow: inset 4px 5px 9px rgba(196,150,140,.42), inset -3px -3px 7px rgba(255,255,255,.92); }
+  /* Los enlaces de la app son verdes; sin esto el navegador los pinta azules. */
+  .viewport a { color: #4E8F54; text-decoration: none; }
+
+  .screen { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+  .screen.on { opacity: 1; }
+  .screen .flow { position: absolute; inset: 0; will-change: transform; }
+  .screen .pin { position: absolute; inset: 0; }
+
+  .screen.enter .flow { animation: slideIn 620ms cubic-bezier(.16,1,.3,1); }
+  .screen.enter .pin { animation: fadeIn 520ms ease; }
+  @keyframes slideIn { from { transform: translateX(46px); opacity: 0; } }
+  @keyframes fadeIn { from { opacity: 0; } }
+
+  .ripple {
+    position: absolute; z-index: 7; pointer-events: none;
+    width: 22px; height: 22px; margin: -11px 0 0 -11px;
+    border-radius: 50%;
+    background: rgba(31,74,38,.30);
+    box-shadow: 0 0 0 2px rgba(31,74,38,.35);
+    opacity: 0;
+  }
+  .ripple.go { animation: ripple 620ms cubic-bezier(.22,1,.36,1); }
+  @keyframes ripple {
+    0%   { opacity: .9; transform: scale(.4); }
+    100% { opacity: 0;  transform: scale(4.6); }
+  }
+  [data-tap].press { transform: scale(.955); transition: transform 160ms ease; }
+
+  /* --- Pie --- */
+  .foot { display: flex; align-items: center; justify-content: space-between; gap: 30px; padding-top: 40px; }
+  .segs { display: flex; gap: 9px; flex: 1; }
+  .seg { height: 5px; flex: 1; border-radius: 999px; background: rgba(242,240,235,.16); overflow: hidden; }
+  .seg i { display: block; height: 100%; width: 0; background: var(--cream); border-radius: 999px; }
+  .seg.done i { width: 100%; }
+  .brand { font-family: var(--display); font-weight: 600; font-size: 27px; color: var(--cream-dim); white-space: nowrap; }
+
+  /* --- Controles --- */
+  /* Se desvanecen solos mientras corre para no ensuciar una grabación de
+     pantalla, y vuelven al mover el mouse o tocar. */
+  .controls {
+    position: fixed; right: 16px; top: 16px; z-index: 20;
+    display: flex; gap: 8px;
+    opacity: 0; transition: opacity 420ms ease;
+  }
+  .controls.show, .controls:hover, .controls:focus-within { opacity: 1; }
+  .controls button {
+    font-family: var(--body); font-size: 14px; font-weight: 700;
+    color: var(--cream); background: rgba(242,240,235,.11);
+    border: 0; border-radius: 999px; padding: 11px 18px; cursor: pointer;
+    min-height: 44px;
+  }
+  .controls button:hover { background: rgba(242,240,235,.2); }
+  .controls button:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .play .headline .w > span { animation: none; transform: none; }
+    .play .sub { animation: none; opacity: 1; }
+    .screen.enter .flow, .screen.enter .pin { animation: none; }
+    .ripple.go { animation: none; }
+    .glow { transition: none; }
+  }
+</style>
+
+<div class="fit">
+  <div class="stage" id="stage">
+    <div class="glow" id="glow"></div>
+
+    <header class="head" id="head">
+      <div class="kicker" id="kicker"></div>
+      <h1 class="headline" id="headline"></h1>
+      <p class="sub" id="sub"></p>
+    </header>
+
+    <div class="phone-row">
+      <div class="phone">
+        <div class="bezel">
+          <div class="viewport" id="viewport">
+<div class="screen" data-screen="login">
+<div style="width:390px;height:844px;background:#F2F0EB;position:relative;overflow:hidden">
+
+  <div style="padding:98px 30px 0;display:flex;flex-direction:column;align-items:center;gap:16px">
+    <div class="clay" style="width:70px;height:70px;border-radius:26px;background:#FAF8F5;display:flex;align-items:center;justify-content:center;color:#5FA365">
+      <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11 12 4.5l8.5 6.5"/><path d="M5.5 12.5V19a1.5 1.5 0 0 0 1.5 1.5h10a1.5 1.5 0 0 0 1.5-1.5v-6.5"/><circle cx="12" cy="14" r="2.2"/></svg>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
+      <div style="font-size:28px;font-weight:800;line-height:1.1;color:#3B3733">Somos Barrio</div>
+      <div style="font-size:15px;font-weight:500;color:#8A827A">Tu barrio, más cerca</div>
+    </div>
+  </div>
+
+  <div style="padding:44px 30px 0;display:flex;flex-direction:column;gap:18px">
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="font-size:13px;font-weight:700;color:#756C63;padding-left:4px">Correo</div>
+      <div class="clay-err" style="height:56px;background:#F4E7E2;border-radius:20px;display:flex;align-items:center;gap:11px;padding:0 18px">
+        <span style="display:flex;color:#B4553F;flex-shrink:0"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.8 7 7.3 5.3a1.5 1.5 0 0 0 1.8 0L20.2 7"/></svg></span>
+        <span style="font-size:15px;font-weight:500;color:#3B3733">mariela.ferran@correo</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:7px;padding-left:6px">
+        <span style="display:flex;color:#B4553F"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.4M12 15.6v.2"/></svg></span>
+        <span style="font-size:13px;font-weight:600;color:#B4553F">Ese correo no parece válido</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="font-size:13px;font-weight:700;color:#756C63;padding-left:4px">Contraseña</div>
+      <div class="clay-sunk" style="height:56px;background:#EDEAE3;border-radius:20px;display:flex;align-items:center;gap:11px;padding:0 18px">
+        <span style="display:flex;color:#8A827A;flex-shrink:0"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10" width="15" height="10.5" rx="3"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10"/></svg></span>
+        <span style="font-size:17px;font-weight:700;color:#3B3733;letter-spacing:.18em;flex-grow:1">••••••••</span>
+        <span style="display:flex;color:#8A827A;flex-shrink:0"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.75"/></svg></span>
+      </div>
+      <div style="display:flex;justify-content:flex-end;padding-right:4px">
+        <a href="#" style="font-size:13px;font-weight:700">¿Olvidaste tu contraseña?</a>
+      </div>
+    </div>
+
+    <div class="clay-green" style="height:58px;background:#7BC47F;border-radius:999px;display:flex;align-items:center;justify-content:center;margin-top:6px">
+      <span style="font-size:17px;font-weight:800;color:#1F4A26">Entrar</span>
+    </div>
+
+  </div>
+
+  <div style="position:absolute;left:0;right:0;bottom:46px;display:flex;align-items:center;justify-content:center;gap:6px">
+    <span style="font-size:14px;font-weight:500;color:#8A827A">¿Todavía no tenés cuenta?</span>
+    <a href="#" style="font-size:14px;font-weight:800">Registrate</a>
+  </div>
+
+</div>
+
+</div>
+<div class="screen" data-screen="inicio">
+<div style="width:390px;height:844px;background:#F2F0EB;position:relative;overflow:hidden">
+
+  <div style="padding:56px 22px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:14px">
+    <div style="display:flex;flex-direction:column;gap:4px;min-width:0;flex-grow:1">
+      <div style="font-size:26px;font-weight:800;line-height:1.14;color:#3B3733;text-wrap:balance">Últimas novedades</div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <span style="font-size:13.5px;font-weight:600;color:#8A827A">Parque Liceo</span>
+        <span style="display:flex;color:#9A9188"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9.5 6 6 6-6"/></svg></span>
+      </div>
+    </div>
+    <div class="clay-sm" style="width:48px;height:48px;border-radius:50%;background:#DFEEE0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#2F5C34;flex-shrink:0">JU</div>
+  </div>
+
+  <div style="display:flex;gap:10px;padding:20px 22px 0;align-items:center">
+    <div class="clay" style="height:44px;background:#FAF8F5;border-radius:999px;padding:0 20px;display:flex;align-items:center;font-size:14px;font-weight:700;color:#3B3733;flex-shrink:0">Todas</div>
+    <div style="height:44px;background:#EBE8E1;border-radius:999px;padding:0 17px;display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="width:7px;height:7px;border-radius:50%;background:#E08A5A"></span>
+      <span style="font-size:14px;font-weight:600;color:#756C63">Seguridad</span>
+    </div>
+    <div style="height:44px;background:#EBE8E1;border-radius:999px;padding:0 17px;display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="width:7px;height:7px;border-radius:50%;background:#D9B45C"></span>
+      <span style="font-size:14px;font-weight:600;color:#756C63">Obras</span>
+    </div>
+    <div style="height:44px;background:#EBE8E1;border-radius:999px;padding:0 17px;display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="width:7px;height:7px;border-radius:50%;background:#8FB8DE"></span>
+      <span style="font-size:14px;font-weight:600;color:#756C63">Eventos</span>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:16px;padding:20px 22px 0">
+
+    <div class="clay" style="background:#FAF8F5;border-radius:28px;padding:18px 20px 19px;display:flex;flex-direction:column;gap:9px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <span style="background:#F6EBD2;color:#856520;font-size:11px;font-weight:800;padding:6px 13px;border-radius:999px;letter-spacing:.02em">Obras</span>
+        <span style="font-size:12px;font-weight:700;color:#8A827A">hace 2 h</span>
+      </div>
+      <div style="font-size:19px;font-weight:700;line-height:1.28;color:#3B3733;text-wrap:pretty">Cortes por la obra del pluvial hasta el viernes</div>
+      <div style="font-size:14px;font-weight:400;line-height:1.5;color:#756C63;text-wrap:pretty">El desvío rige de 7 a 18. Las líneas que entran al barrio pasan por la avenida.</div>
+      <div style="display:flex;align-items:center;gap:9px;margin-top:3px">
+        <div style="width:26px;height:26px;border-radius:50%;background:#E1EFE2;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#35663A">RS</div>
+        <span style="font-size:12.5px;font-weight:600;color:#8A827A">Redacción Somos Barrio</span>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:28px;padding:18px 20px 19px;display:flex;flex-direction:column;gap:9px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <span style="background:#E2ECF6;color:#3E6288;font-size:11px;font-weight:800;padding:6px 13px;border-radius:999px;letter-spacing:.02em">Eventos</span>
+        <span style="font-size:12px;font-weight:700;color:#8A827A">ayer</span>
+      </div>
+      <div style="font-size:19px;font-weight:700;line-height:1.28;color:#3B3733;text-wrap:pretty">Vuelve la feria de artesanos a la plaza del barrio</div>
+      <div style="font-size:14px;font-weight:400;line-height:1.5;color:#756C63;text-wrap:pretty">Sábado y domingo de 11 a 19, con 40 puestos y patio gastronómico.</div>
+      <div style="display:flex;align-items:center;gap:9px;margin-top:3px">
+        <div style="width:26px;height:26px;border-radius:50%;background:#F7E0D2;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#9A5227">MF</div>
+        <span style="font-size:12.5px;font-weight:600;color:#8A827A">Mariela Ferrán</span>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:28px;padding:18px 20px 19px;display:flex;flex-direction:column;gap:9px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <span style="background:#F7E0D2;color:#9A5227;font-size:11px;font-weight:800;padding:6px 13px;border-radius:999px;letter-spacing:.02em">Seguridad</span>
+        <span style="font-size:12px;font-weight:700;color:#8A827A">mar 26</span>
+      </div>
+      <div style="font-size:19px;font-weight:700;line-height:1.28;color:#3B3733;text-wrap:pretty">Sumaron 40 luminarias LED en el pasaje del fondo</div>
+    </div>
+
+  </div>
+
+  <div data-tap="proponer" class="clay-green" style="position:absolute;right:22px;bottom:120px;height:54px;border-radius:999px;background:#7BC47F;display:flex;align-items:center;gap:9px;padding:0 22px;color:#1F4A26">
+    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.95" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 19.5h3.2L18.4 8.8a1.6 1.6 0 0 0 0-2.3l-1-1a1.6 1.6 0 0 0-2.3 0L4.5 16.3z"/></svg>
+    <span style="font-size:15px;font-weight:800">Proponer</span>
+  </div>
+
+  <div class="clay" style="position:absolute;left:16px;right:16px;bottom:24px;height:70px;background:#FAF8F5;border-radius:28px;display:flex;align-items:center;padding:0 4px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div class="clay-green" style="width:42px;height:32px;border-radius:13px;background:#7BC47F;display:flex;align-items:center;justify-content:center;color:#1F4A26">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.5 12 4l8.5 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-3.5v-6h-7v6H5A1.5 1.5 0 0 1 3.5 19z"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:800;color:#3B7A41">Inicio</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h16V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/><path d="M3 9.5 4.8 4.6A1 1 0 0 1 5.7 4h12.6a1 1 0 0 1 .9.6L21 9.5"/><path d="M9.5 20.5v-5h5v5"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Mercado</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7.5" width="18" height="13" rx="2.5"/><path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5"/><path d="M3 12.5h18"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Comercios</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Foro</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="17" height="15" rx="3"/><path d="M8 3.5v4M16 3.5v4M3.5 10.5h17"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Eventos</span>
+    </div>
+  </div>
+
+</div>
+
+</div>
+<div class="screen" data-screen="noticia">
+<div style="width:390px;height:844px;background:#F2F0EB;position:relative;overflow:hidden">
+
+  <div style="padding:58px 22px 0;display:flex;align-items:center;justify-content:space-between">
+    <div class="clay-sm" style="width:46px;height:46px;border-radius:50%;background:#FAF8F5;display:flex;align-items:center;justify-content:center;color:#3B3733">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 5-7 7 7 7"/></svg>
+    </div>
+    <div class="clay-sm" style="width:46px;height:46px;border-radius:50%;background:#FAF8F5;display:flex;align-items:center;justify-content:center;color:#8A827A">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="18" r="1.6"/></svg>
+    </div>
+  </div>
+
+  <div style="padding:20px 22px 0">
+    <div class="clay" style="height:184px;border-radius:30px;background:#E8E3D9;position:relative;overflow:hidden">
+      <div style="position:absolute;width:170px;height:170px;border-radius:50%;background:#8FB8DE;opacity:.5;left:-38px;top:46px"></div>
+      <div style="position:absolute;width:120px;height:120px;border-radius:40px;background:#F0A868;opacity:.48;right:36px;top:-30px;transform:rotate(20deg)"></div>
+      <div style="position:absolute;width:104px;height:104px;border-radius:50%;background:#7BC47F;opacity:.46;right:-22px;bottom:-26px"></div>
+    </div>
+  </div>
+
+  <div style="padding:20px 22px 0;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="background:#F6EBD2;color:#856520;font-size:11px;font-weight:800;padding:6px 13px;border-radius:999px;letter-spacing:.02em">Obras</span>
+      <span style="font-size:12px;font-weight:700;color:#8A827A">3 min de lectura</span>
+    </div>
+
+    <div style="font-size:25px;font-weight:800;line-height:1.22;color:#3B3733;text-wrap:pretty">Cortes por la obra del pluvial hasta el viernes</div>
+
+    <div style="display:flex;align-items:center;gap:11px;padding-top:2px">
+      <div class="clay-sm" style="width:38px;height:38px;border-radius:50%;background:#E1EFE2;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#35663A;flex-shrink:0">RS</div>
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <span style="font-size:13.5px;font-weight:700;color:#3B3733">Redacción Somos Barrio</span>
+        <span style="font-size:12px;font-weight:600;color:#8A827A">Hoy, 09:14</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:13px;padding-top:6px">
+      <div style="font-size:15px;font-weight:400;line-height:1.62;color:#4A443E;text-wrap:pretty">Aguas y Saneamiento empezó el recambio del conducto pluvial que corre por debajo de la avenida. El corte total se mantiene de 7 a 18 hasta el viernes.</div>
+      <div style="font-size:15px;font-weight:400;line-height:1.62;color:#4A443E;text-wrap:pretty">Las líneas que entran al barrio desvían por el boulevard y retoman su recorrido dos cuadras después. No hay cambios en las paradas de la avenida.</div>
+      <div style="font-size:15px;font-weight:400;line-height:1.62;color:#4A443E;text-wrap:pretty">Los vecinos de la cuadra pueden pedir el permiso de acceso vehicular en el centro vecinal.</div>
+    </div>
+  </div>
+
+  <div class="clay" style="position:absolute;left:22px;right:22px;bottom:28px;height:64px;background:#FAF8F5;border-radius:26px;display:flex;align-items:center;justify-content:space-around;padding:0 6px">
+    <div data-tap="guardar" style="display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;color:#756C63">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4.5h11a1 1 0 0 1 1 1v14l-6.5-4-6.5 4v-14a1 1 0 0 1 1-1Z"/></svg>
+      <span style="font-size:13.5px;font-weight:700">Guardar</span>
+    </div>
+    <div style="width:1px;height:26px;background:#E3DED4"></div>
+    <div style="display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;color:#756C63">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+      <span style="font-size:13.5px;font-weight:700">12</span>
+    </div>
+    <div style="width:1px;height:26px;background:#E3DED4"></div>
+    <div style="display:flex;align-items:center;gap:8px;height:48px;padding:0 12px;color:#756C63">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5V4m0 0L8 8m4-4 4 4"/><path d="M4.5 14v4.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V14"/></svg>
+      <span style="font-size:13.5px;font-weight:700">Compartir</span>
+    </div>
+  </div>
+
+</div>
+
+</div>
+<div class="screen" data-screen="mercado">
+<div style="width:390px;height:844px;background:#F2F0EB;position:relative;overflow:hidden">
+
+  <div style="padding:60px 22px 0;display:flex;flex-direction:column;gap:3px">
+    <div style="font-size:28px;font-weight:800;line-height:1.08;color:#3B3733">Mercado</div>
+    <div style="font-size:13px;font-weight:600;color:#8A827A">Parque Liceo · 128 publicaciones</div>
+  </div>
+
+  <div style="padding:20px 22px 0">
+    <div class="clay-sunk" style="height:54px;background:#EDEAE3;border-radius:20px;display:flex;align-items:center;gap:11px;padding:0 18px">
+      <span style="display:flex;color:#8A827A;flex-shrink:0"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></span>
+      <span style="font-size:15px;font-weight:500;color:#9A9188">Buscar en el mercado</span>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:14px;padding:20px 22px 0">
+
+    <div class="clay" style="background:#FAF8F5;border-radius:26px;padding:10px 10px 14px;display:flex;flex-direction:column;gap:10px">
+      <div style="height:112px;border-radius:19px;background:#E4EDF6;position:relative;overflow:hidden">
+        <div style="position:absolute;width:88px;height:88px;border-radius:50%;background:#8FB8DE;opacity:.62;left:-14px;bottom:-22px"></div>
+        <div style="position:absolute;width:56px;height:56px;border-radius:20px;background:#7BC47F;opacity:.5;right:8px;top:10px;transform:rotate(14deg)"></div>
+        <span style="position:absolute;left:9px;top:9px;background:#E1EFE2;color:#35663A;font-size:10px;font-weight:800;padding:5px 10px;border-radius:999px">Disponible</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;padding:0 4px">
+        <div style="font-size:14px;font-weight:700;line-height:1.32;color:#3B3733;text-wrap:pretty">Bici rodado 26 poco uso</div>
+        <div style="font-size:17px;font-weight:800;color:#3B3733">$ 135.000</div>
+        <div style="font-size:11.5px;font-weight:600;color:#8A827A">Parque Liceo · hace 3 h</div>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:26px;padding:10px 10px 14px;display:flex;flex-direction:column;gap:10px">
+      <div style="height:112px;border-radius:19px;background:#F4E9DC;position:relative;overflow:hidden">
+        <div style="position:absolute;width:96px;height:70px;border-radius:22px;background:#F0A868;opacity:.6;right:-16px;top:16px;transform:rotate(-10deg)"></div>
+        <div style="position:absolute;width:48px;height:48px;border-radius:50%;background:#D9B45C;opacity:.5;left:10px;bottom:8px"></div>
+        <span style="position:absolute;left:9px;top:9px;background:#F6EBD2;color:#856520;font-size:10px;font-weight:800;padding:5px 10px;border-radius:999px">Reservado</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;padding:0 4px">
+        <div style="font-size:14px;font-weight:700;line-height:1.32;color:#3B3733;text-wrap:pretty">Mesa de pino 1,40 m</div>
+        <div style="font-size:17px;font-weight:800;color:#3B3733">$ 85.000</div>
+        <div style="font-size:11.5px;font-weight:600;color:#8A827A">Parque Liceo · ayer</div>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:26px;padding:10px 10px 14px;display:flex;flex-direction:column;gap:10px">
+      <div style="height:112px;border-radius:19px;background:#EAE7F2;position:relative;overflow:hidden">
+        <div style="position:absolute;width:84px;height:60px;border-radius:16px;background:#A79FC6;opacity:.55;left:14px;top:18px"></div>
+        <div style="position:absolute;width:60px;height:60px;border-radius:50%;background:#8FB8DE;opacity:.45;right:-14px;bottom:-16px"></div>
+        <span style="position:absolute;left:9px;top:9px;background:#E1EFE2;color:#35663A;font-size:10px;font-weight:800;padding:5px 10px;border-radius:999px">Disponible</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;padding:0 4px">
+        <div style="font-size:14px;font-weight:700;line-height:1.32;color:#3B3733;text-wrap:pretty">Monitor LG 24 pulgadas</div>
+        <div style="font-size:17px;font-weight:800;color:#3B3733">$ 120.000</div>
+        <div style="font-size:11.5px;font-weight:600;color:#8A827A">Parque Liceo · hace 1 d</div>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:26px;padding:10px 10px 14px;display:flex;flex-direction:column;gap:10px">
+      <div style="height:112px;border-radius:19px;background:#E6EFE7;position:relative;overflow:hidden">
+        <div style="position:absolute;width:92px;height:92px;border-radius:30px;background:#7BC47F;opacity:.55;right:-18px;top:-14px;transform:rotate(16deg)"></div>
+        <div style="position:absolute;width:54px;height:54px;border-radius:50%;background:#F0A868;opacity:.42;left:12px;bottom:-12px"></div>
+        <span style="position:absolute;left:9px;top:9px;background:#E1EFE2;color:#35663A;font-size:10px;font-weight:800;padding:5px 10px;border-radius:999px">Se regala</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;padding:0 4px">
+        <div style="font-size:14px;font-weight:700;line-height:1.32;color:#3B3733;text-wrap:pretty">Cuna de madera con colchón</div>
+        <div style="font-size:17px;font-weight:800;color:#3B7A41">Gratis</div>
+        <div style="font-size:11.5px;font-weight:600;color:#8A827A">Parque Liceo · hace 2 d</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div data-tap="publicar" class="clay-green" style="position:absolute;right:24px;bottom:118px;width:62px;height:62px;border-radius:50%;background:#7BC47F;display:flex;align-items:center;justify-content:center;color:#1F4A26">
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.5v13M5.5 12h13"/></svg>
+  </div>
+
+  <div class="clay" style="position:absolute;left:16px;right:16px;bottom:24px;height:70px;background:#FAF8F5;border-radius:28px;display:flex;align-items:center;padding:0 4px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.5 12 4l8.5 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-3.5v-6h-7v6H5A1.5 1.5 0 0 1 3.5 19z"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Inicio</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div class="clay-green" style="width:42px;height:32px;border-radius:13px;background:#7BC47F;display:flex;align-items:center;justify-content:center;color:#1F4A26">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h16V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/><path d="M3 9.5 4.8 4.6A1 1 0 0 1 5.7 4h12.6a1 1 0 0 1 .9.6L21 9.5"/><path d="M9.5 20.5v-5h5v5"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:800;color:#3B7A41">Mercado</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7.5" width="18" height="13" rx="2.5"/><path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5"/><path d="M3 12.5h18"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Comercios</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Foro</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="17" height="15" rx="3"/><path d="M8 3.5v4M16 3.5v4M3.5 10.5h17"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Eventos</span>
+    </div>
+  </div>
+
+</div>
+
+</div>
+<div class="screen" data-screen="comercio">
+<div style="width:390px;height:844px;background:#F2F0EB;position:relative;overflow:hidden">
+
+  <div style="padding:58px 22px 0;display:flex;align-items:center">
+    <div class="clay-sm" style="width:46px;height:46px;border-radius:50%;background:#FAF8F5;display:flex;align-items:center;justify-content:center;color:#3B3733">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 5-7 7 7 7"/></svg>
+    </div>
+  </div>
+
+  <div style="padding:18px 22px 0">
+    <div class="clay" style="height:172px;border-radius:30px;background:#F4E9DC;position:relative;overflow:hidden">
+      <div style="position:absolute;width:150px;height:150px;border-radius:50%;background:#F0A868;opacity:.5;left:-30px;top:40px"></div>
+      <div style="position:absolute;width:112px;height:112px;border-radius:38px;background:#D9B45C;opacity:.45;right:44px;top:-32px;transform:rotate(18deg)"></div>
+      <div style="position:absolute;width:96px;height:96px;border-radius:50%;background:#7BC47F;opacity:.4;right:-24px;bottom:-24px"></div>
+    </div>
+  </div>
+
+  <div style="padding:18px 22px 0;display:flex;flex-direction:column;gap:11px">
+
+    <div style="display:flex;align-items:center;gap:8px">
+      <div style="font-size:25px;font-weight:800;line-height:1.15;color:#3B3733">Café de la Esquina</div>
+      <span style="display:flex;color:#5FA365;flex-shrink:0"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.5 2.2 1.7 2.8-.2.9 2.65 2.3 1.6-1 2.6 1 2.6-2.3 1.6-.9 2.65-2.8-.2L12 20.5l-2.2-1.7-2.8.2-.9-2.65-2.3-1.6 1-2.6-1-2.6 2.3-1.6.9-2.65 2.8.2z"/><path d="m9 12 2.1 2.1L15.2 10"/></svg></span>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="background:#F7E0D2;color:#9A5227;font-size:11px;font-weight:800;padding:6px 13px;border-radius:999px;letter-spacing:.02em">Gastronomía</span>
+      <div style="display:flex;align-items:center;gap:5px">
+        <span style="display:flex;color:#E0A93F"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg></span>
+        <span style="font-size:14px;font-weight:800;color:#3B3733">4,6</span>
+        <span style="font-size:12.5px;font-weight:600;color:#8A827A">(28 reseñas)</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:6px;padding-top:2px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="display:flex;color:#8A827A;flex-shrink:0"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-10.5A7 7 0 0 0 5 10.5C5 15.4 12 21 12 21Z"/><circle cx="12" cy="10.5" r="2.5"/></svg></span>
+        <span style="font-size:13.5px;font-weight:600;color:#756C63">Los Álamos 1247 · Parque Liceo</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="display:flex;color:#5FA365;flex-shrink:0"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 1.8"/></svg></span>
+        <span style="font-size:13.5px;font-weight:700;color:#3B7A41">Abierto ahora</span>
+        <span style="font-size:13.5px;font-weight:600;color:#8A827A">· cierra 20:00</span>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:11px;padding-top:6px">
+      <div data-tap="whatsapp" class="clay-green" style="flex-grow:1;height:66px;border-radius:22px;background:#7BC47F;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#1F4A26">
+        <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+        <span style="font-size:12px;font-weight:800">WhatsApp</span>
+      </div>
+      <div class="clay" style="flex-grow:1;height:66px;border-radius:22px;background:#FAF8F5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#756C63">
+        <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.6 20.5C9.2 20.5 3.5 14.8 3.5 8.4V6.6a2 2 0 0 1 2-2h2l1.8 4.2-2.1 1.4a11.6 11.6 0 0 0 5.1 5.1l1.4-2.1 4.2 1.8v2a2 2 0 0 1-2 2z"/></svg>
+        <span style="font-size:12px;font-weight:700">Llamar</span>
+      </div>
+      <div class="clay" style="flex-grow:1;height:66px;border-radius:22px;background:#FAF8F5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#756C63">
+        <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.2 4.6 3.5 6.8v12.6l5.7-2.2 5.6 2.2 5.7-2.2V4.6l-5.7 2.2z"/><path d="M9.2 4.6v12.6M14.8 6.8v12.6"/></svg>
+        <span style="font-size:12px;font-weight:700">Cómo llegar</span>
+      </div>
+    </div>
+
+    <div style="font-size:20px;font-weight:800;color:#3B3733;padding-top:14px">Reseñas de vecinos</div>
+
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="clay" style="background:#FAF8F5;border-radius:26px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:34px;height:34px;border-radius:50%;background:#E2ECF6;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#3E6288;flex-shrink:0">LP</div>
+          <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1">
+            <span style="font-size:13.5px;font-weight:700;color:#3B3733">Lucía Peralta</span>
+            <span style="font-size:11.5px;font-weight:600;color:#8A827A">hace 4 días</span>
+          </div>
+          <div style="display:flex;gap:2px;color:#E0A93F">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+          </div>
+        </div>
+        <div style="font-size:13.5px;font-weight:400;line-height:1.55;color:#4A443E;text-wrap:pretty">El mejor café de la zona y siempre hay lugar para trabajar un rato. Las medialunas salen calientes a las 9.</div>
+      </div>
+
+      <div class="clay" style="background:#FAF8F5;border-radius:26px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:34px;height:34px;border-radius:50%;background:#E1EFE2;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#35663A;flex-shrink:0">DG</div>
+          <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1">
+            <span style="font-size:13.5px;font-weight:700;color:#3B3733">Diego Sosa</span>
+            <span style="font-size:11.5px;font-weight:600;color:#8A827A">hace 2 semanas</span>
+          </div>
+          <div style="display:flex;gap:2px;color:#E0A93F">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.8 2.6 5.3 5.9.86-4.25 4.14 1 5.86L12 17.2l-5.25 2.76 1-5.86L3.5 9.96l5.9-.86z"/></svg>
+          </div>
+        </div>
+        <div style="font-size:13.5px;font-weight:400;line-height:1.55;color:#4A443E;text-wrap:pretty">Muy buena atención. Un punto menos porque a la tarde se llena y cuesta conseguir mesa.</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+</div>
+<div class="screen" data-screen="foro">
+<div style="width:390px;height:844px;background:#F2F0EB;position:relative;overflow:hidden">
+
+  <div style="padding:60px 22px 0;display:flex;flex-direction:column;gap:3px">
+    <div style="font-size:28px;font-weight:800;line-height:1.08;color:#3B3733">Foro</div>
+    <div style="font-size:13px;font-weight:600;color:#8A827A">Parque Liceo · 6 subforos</div>
+  </div>
+
+  <div style="display:flex;gap:10px;padding:20px 22px 0;align-items:center">
+    <div class="clay" style="height:44px;background:#FAF8F5;border-radius:999px;padding:0 20px;display:flex;align-items:center;font-size:14px;font-weight:700;color:#3B3733;flex-shrink:0">Consultas</div>
+    <div style="height:44px;background:#EBE8E1;border-radius:999px;padding:0 18px;display:flex;align-items:center;font-size:14px;font-weight:600;color:#756C63;flex-shrink:0">Recomendaciones</div>
+    <div style="height:44px;background:#EBE8E1;border-radius:999px;padding:0 18px;display:flex;align-items:center;font-size:14px;font-weight:600;color:#756C63;flex-shrink:0">Reclamos</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:13px;padding:20px 22px 0">
+
+    <div data-tap="hilo" class="clay" style="background:#FAF8F5;border-radius:26px;padding:16px 18px;display:flex;gap:13px">
+      <div class="clay-sm" style="width:42px;height:42px;border-radius:16px;background:#E1EFE2;display:flex;align-items:center;justify-content:center;color:#35663A;flex-shrink:0">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4h6l-.8 5 3 2.6V14H6.8v-2.4l3-2.6z"/><path d="M12 14v6"/></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;flex-grow:1">
+        <span style="font-size:10.5px;font-weight:800;color:#3B7A41;letter-spacing:.06em">FIJADO</span>
+        <div style="font-size:16px;font-weight:700;line-height:1.32;color:#3B3733;text-wrap:pretty">Cómo usar el foro: 5 reglas de convivencia</div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="display:flex;align-items:center;gap:5px;color:#8A827A">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-5.5 5.5M12 5l5.5 5.5"/></svg>
+            <span style="font-size:12px;font-weight:700">64</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;color:#8A827A">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+            <span style="font-size:12px;font-weight:700">9</span>
+          </div>
+          <span style="font-size:12px;font-weight:600;color:#9A9188">hace 1 mes</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:26px;padding:16px 18px;display:flex;gap:13px">
+      <div style="width:42px;height:42px;border-radius:50%;background:#F7E0D2;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#9A5227;flex-shrink:0">MF</div>
+      <div style="display:flex;flex-direction:column;gap:7px;flex-grow:1">
+        <div style="font-size:16px;font-weight:700;line-height:1.32;color:#3B3733;text-wrap:pretty">¿Alguien sabe los horarios de la feria este finde?</div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="display:flex;align-items:center;gap:5px;color:#8A827A">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-5.5 5.5M12 5l5.5 5.5"/></svg>
+            <span style="font-size:12px;font-weight:700">18</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;color:#8A827A">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+            <span style="font-size:12px;font-weight:700">7</span>
+          </div>
+          <span style="font-size:12px;font-weight:600;color:#9A9188">hace 20 min</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:26px;padding:16px 18px;display:flex;gap:13px">
+      <div style="width:42px;height:42px;border-radius:50%;background:#E2ECF6;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#3E6288;flex-shrink:0">DS</div>
+      <div style="display:flex;flex-direction:column;gap:7px;flex-grow:1">
+        <div style="font-size:16px;font-weight:700;line-height:1.32;color:#3B3733;text-wrap:pretty">Se cortó el agua en la zona norte, ¿a alguien más?</div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="display:flex;align-items:center;gap:5px;color:#8A827A">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-5.5 5.5M12 5l5.5 5.5"/></svg>
+            <span style="font-size:12px;font-weight:700">41</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;color:#8A827A">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+            <span style="font-size:12px;font-weight:700">23</span>
+          </div>
+          <span style="font-size:12px;font-weight:600;color:#9A9188">hace 2 h</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:26px;padding:16px 18px;display:flex;gap:13px">
+      <div style="width:42px;height:42px;border-radius:50%;background:#EAE7F2;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#57508A;flex-shrink:0">CA</div>
+      <div style="display:flex;flex-direction:column;gap:7px;flex-grow:1">
+        <div style="font-size:16px;font-weight:700;line-height:1.32;color:#3B3733;text-wrap:pretty">Busco plomero de confianza acá en el barrio</div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="display:flex;align-items:center;gap:5px;color:#8A827A">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-5.5 5.5M12 5l5.5 5.5"/></svg>
+            <span style="font-size:12px;font-weight:700">12</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;color:#8A827A">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+            <span style="font-size:12px;font-weight:700">15</span>
+          </div>
+          <span style="font-size:12px;font-weight:600;color:#9A9188">ayer</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="clay" style="position:absolute;left:16px;right:16px;bottom:24px;height:70px;background:#FAF8F5;border-radius:28px;display:flex;align-items:center;padding:0 4px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.5 12 4l8.5 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-3.5v-6h-7v6H5A1.5 1.5 0 0 1 3.5 19z"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Inicio</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h16V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/><path d="M3 9.5 4.8 4.6A1 1 0 0 1 5.7 4h12.6a1 1 0 0 1 .9.6L21 9.5"/><path d="M9.5 20.5v-5h5v5"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Mercado</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7.5" width="18" height="13" rx="2.5"/><path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5"/><path d="M3 12.5h18"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Comercios</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div class="clay-green" style="width:42px;height:32px;border-radius:13px;background:#7BC47F;display:flex;align-items:center;justify-content:center;color:#1F4A26">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:800;color:#3B7A41">Foro</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="17" height="15" rx="3"/><path d="M8 3.5v4M16 3.5v4M3.5 10.5h17"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Eventos</span>
+    </div>
+  </div>
+
+</div>
+
+</div>
+<div class="screen" data-screen="eventos">
+<div style="width:390px;height:844px;background:#F2F0EB;position:relative;overflow:hidden">
+
+  <div style="padding:56px 22px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:14px">
+    <div style="display:flex;flex-direction:column;gap:4px;min-width:0;flex-grow:1">
+      <div style="font-size:26px;font-weight:800;line-height:1.14;color:#3B3733">Eventos</div>
+      <div style="display:flex;align-items:center;gap:5px">
+        <span style="font-size:13.5px;font-weight:600;color:#8A827A">Parque Liceo</span>
+        <span style="display:flex;color:#9A9188"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9.5 6 6 6-6"/></svg></span>
+      </div>
+    </div>
+    <div class="clay-sm" style="width:48px;height:48px;border-radius:50%;background:#DFEEE0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#2F5C34;flex-shrink:0">JU</div>
+  </div>
+
+  <div style="padding:22px 22px 0">
+    <div class="clay-sunk" style="height:54px;background:#EDEAE3;border-radius:999px;display:flex;align-items:center;padding:5px">
+      <div class="clay" style="flex-grow:1;height:44px;border-radius:999px;background:#FAF8F5;display:flex;align-items:center;justify-content:center;font-size:14.5px;font-weight:800;color:#3B3733">Próximos</div>
+      <div style="flex-grow:1;height:44px;display:flex;align-items:center;justify-content:center;font-size:14.5px;font-weight:600;color:#8A827A">Pasados</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:14px;padding:20px 22px 0">
+
+    <div class="clay" style="background:#FAF8F5;border-radius:28px;padding:16px 18px;display:flex;gap:15px">
+      <div class="clay-sm" style="width:58px;height:64px;border-radius:20px;background:#E2ECF6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;flex-shrink:0">
+        <span style="font-size:21px;font-weight:800;line-height:1;color:#3E6288">14</span>
+        <span style="font-size:11px;font-weight:800;color:#3E6288;letter-spacing:.06em">SEP</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;flex-grow:1;min-width:0">
+        <div style="font-size:17px;font-weight:700;line-height:1.28;color:#3B3733;text-wrap:pretty">Feria de artesanos en la plaza</div>
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="display:flex;color:#9A9188;flex-shrink:0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 1.8"/></svg></span>
+          <span style="font-size:13px;font-weight:600;color:#8A827A">11:00 · Plaza del barrio</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px">
+          <div style="display:flex;align-items:center;gap:7px">
+            <div style="display:flex">
+              <div style="width:24px;height:24px;border-radius:50%;background:#F7E0D2;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#9A5227">MF</div>
+              <div style="width:24px;height:24px;border-radius:50%;background:#E2ECF6;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#3E6288;margin-left:-8px">DS</div>
+              <div style="width:24px;height:24px;border-radius:50%;background:#EAE7F2;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#57508A;margin-left:-8px">CA</div>
+            </div>
+            <span style="font-size:12.5px;font-weight:700;color:#8A827A">18 van</span>
+          </div>
+          <div data-tap="voy" class="clay-green" style="height:36px;border-radius:999px;background:#7BC47F;display:flex;align-items:center;padding:0 18px;font-size:13px;font-weight:800;color:#1F4A26;flex-shrink:0">Voy</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:28px;padding:16px 18px;display:flex;gap:15px">
+      <div class="clay-sm" style="width:58px;height:64px;border-radius:20px;background:#E1EFE2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;flex-shrink:0">
+        <span style="font-size:21px;font-weight:800;line-height:1;color:#35663A">21</span>
+        <span style="font-size:11px;font-weight:800;color:#35663A;letter-spacing:.06em">SEP</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;flex-grow:1;min-width:0">
+        <div style="font-size:17px;font-weight:700;line-height:1.28;color:#3B3733;text-wrap:pretty">Asamblea vecinal por las luminarias</div>
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="display:flex;color:#9A9188;flex-shrink:0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 1.8"/></svg></span>
+          <span style="font-size:13px;font-weight:600;color:#8A827A">19:30 · Centro vecinal</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px">
+          <div style="display:flex;align-items:center;gap:7px">
+            <div style="display:flex">
+              <div style="width:24px;height:24px;border-radius:50%;background:#E1EFE2;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#35663A">RS</div>
+              <div style="width:24px;height:24px;border-radius:50%;background:#F6EBD2;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#856520;margin-left:-8px">LP</div>
+            </div>
+            <span style="font-size:12.5px;font-weight:700;color:#8A827A">7 van</span>
+          </div>
+          <div class="clay" style="height:36px;border-radius:999px;background:#FAF8F5;display:flex;align-items:center;padding:0 18px;font-size:13px;font-weight:700;color:#756C63;flex-shrink:0">Me interesa</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="clay" style="background:#FAF8F5;border-radius:28px;padding:16px 18px;display:flex;gap:15px">
+      <div class="clay-sm" style="width:58px;height:64px;border-radius:20px;background:#F7E0D2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;flex-shrink:0">
+        <span style="font-size:21px;font-weight:800;line-height:1;color:#9A5227">28</span>
+        <span style="font-size:11px;font-weight:800;color:#9A5227;letter-spacing:.06em">SEP</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;flex-grow:1;min-width:0">
+        <div style="font-size:17px;font-weight:700;line-height:1.28;color:#3B3733;text-wrap:pretty">Cine al aire libre para las infancias</div>
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="display:flex;color:#9A9188;flex-shrink:0"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 1.8"/></svg></span>
+          <span style="font-size:13px;font-weight:600;color:#8A827A">20:00 · Plaza del barrio</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="clay" style="position:absolute;left:16px;right:16px;bottom:24px;height:70px;background:#FAF8F5;border-radius:28px;display:flex;align-items:center;padding:0 4px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.5 12 4l8.5 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-3.5v-6h-7v6H5A1.5 1.5 0 0 1 3.5 19z"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Inicio</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h16V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/><path d="M3 9.5 4.8 4.6A1 1 0 0 1 5.7 4h12.6a1 1 0 0 1 .9.6L21 9.5"/><path d="M9.5 20.5v-5h5v5"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Mercado</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7.5" width="18" height="13" rx="2.5"/><path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5"/><path d="M3 12.5h18"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Comercios</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div style="width:42px;height:32px;display:flex;align-items:center;justify-content:center;color:#9A9188">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7-1 0-2-.15-2.9-.42L4 20.5l1.5-3.6C4.55 15.7 4 14.17 4 12.5c0-3.9 3.8-7 8.5-7s8 3.1 8 7Z"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:600;color:#9A9188">Foro</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;width:70px">
+      <div class="clay-green" style="width:42px;height:32px;border-radius:13px;background:#7BC47F;display:flex;align-items:center;justify-content:center;color:#1F4A26">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="17" height="15" rx="3"/><path d="M8 3.5v4M16 3.5v4M3.5 10.5h17"/></svg>
+      </div>
+      <span style="font-size:10px;font-weight:800;color:#3B7A41">Eventos</span>
+    </div>
+  </div>
+
+</div>
+
+</div>
+            <div class="cutout"></div>
+            <div class="ripple" id="ripple"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="foot">
+      <div class="segs" id="segs"></div>
+      <div class="brand">Somos Barrio</div>
+    </footer>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="toggle" type="button">Pausa</button>
+  <button id="restart" type="button">Volver a empezar</button>
+</div>
+
+<script>
+const SCENES = [{"screen":"login","tint":"green","dur":3900,"kicker":"Somos Barrio","headline":"Lo que pasa a la vuelta de tu casa","sub":"La app del barrio, hecha por los que viven en él.","beats":[]},{"screen":"inicio","tint":"green","dur":4800,"kicker":"Novedades","headline":"Enterate antes de que sea rumor","sub":"Obras, cortes, seguridad y eventos de tu barrio, ordenados por categoría.","beats":[{"at":1500,"type":"scroll","to":140},{"at":3400,"type":"tap","target":"proponer"}]},{"screen":"noticia","tint":"terra","dur":4300,"kicker":"Cada nota","headline":"Con fecha y con quién la escribió","sub":"Nada de cadenas reenviadas: cada noticia tiene autor y hora.","beats":[{"at":1400,"type":"scroll","to":190},{"at":3300,"type":"tap","target":"guardar"}]},{"screen":"mercado","tint":"sky","dur":4700,"kicker":"Mercado","headline":"Lo que no usás, al vecino le sirve","sub":"Vendé, regalá o buscá algo sin salir de tu barrio.","beats":[{"at":1500,"type":"scroll","to":120},{"at":3300,"type":"tap","target":"publicar"}]},{"screen":"comercio","tint":"terra","dur":4500,"kicker":"Comercios","headline":"La esquina, a un toque","sub":"Horarios, reseñas de vecinos y WhatsApp directo al local.","beats":[{"at":1300,"type":"scroll","to":210},{"at":3200,"type":"tap","target":"whatsapp"}]},{"screen":"foro","tint":"green","dur":4200,"kicker":"Foro","headline":"Siempre hay un vecino que sabe","sub":"Preguntá por un plomero, un horario o qué fue ese ruido.","beats":[{"at":1400,"type":"scroll","to":110},{"at":3100,"type":"tap","target":"hilo"}]},{"screen":"eventos","tint":"sky","dur":4400,"kicker":"Eventos","headline":"Enterate antes, no después","sub":"Ferias, asambleas y cine en la plaza. Avisá si vas.","beats":[{"at":1400,"type":"scroll","to":90},{"at":3100,"type":"tap","target":"voy"}]},{"screen":"inicio","tint":"green","dur":4600,"kicker":"","headline":"Somos Barrio","sub":"Sumate al tuyo.","finale":true,"beats":[]}];
+const TINTS = { green: '#7BC47F', terra: '#F0A868', sky: '#8FB8DE' };
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const stage = document.getElementById('stage');
+const glow = document.getElementById('glow');
+const head = document.getElementById('head');
+const kickerEl = document.getElementById('kicker');
+const headlineEl = document.getElementById('headline');
+const subEl = document.getElementById('sub');
+const ripple = document.getElementById('ripple');
+const segsEl = document.getElementById('segs');
+const toggleBtn = document.getElementById('toggle');
+
+/* El lienzo es fijo; se escala para entrar entero en la ventana. */
+function fitStage() {
+  const k = Math.min(innerWidth / 1080, innerHeight / 1920);
+  stage.style.transform = 'translate(-50%, -50%) scale(' + k + ')';
+}
+addEventListener('resize', fitStage);
+fitStage();
+
+/*
+ * Cada vista trae sus barras (tab bar, FAB) como hijos position:absolute.
+ * Se separan en dos capas para poder desplazar el contenido sin arrastrar
+ * las barras, igual que en la app real.
+ */
+const screens = {};
+for (const el of document.querySelectorAll('.screen')) {
+  const root = el.firstElementChild;
+  const flow = document.createElement('div');
+  const pin = document.createElement('div');
+  flow.className = 'flow';
+  pin.className = 'pin';
+  for (const child of [...root.children]) {
+    (child.style.position === 'absolute' ? pin : flow).appendChild(child);
+  }
+  root.remove();
+  el.append(flow, pin);
+  screens[el.dataset.screen] = { el, flow, pin, y: 0, target: 0, max: null };
+}
+
+SCENES.forEach(() => {
+  const seg = document.createElement('div');
+  seg.className = 'seg';
+  seg.innerHTML = '<i></i>';
+  segsEl.appendChild(seg);
+});
+const segs = [...segsEl.children];
+
+function setCopy(scene) {
+  kickerEl.textContent = scene.kicker || '';
+  subEl.textContent = scene.sub;
+  headlineEl.innerHTML = '';
+  scene.headline.split(' ').forEach((word, i) => {
+    const w = document.createElement('span');
+    w.className = 'w';
+    const inner = document.createElement('span');
+    inner.textContent = word;
+    inner.style.animationDelay = (i * 52) + 'ms';
+    w.appendChild(inner);
+    headlineEl.append(w, document.createTextNode(' '));
+  });
+}
+
+let idx = -1;
+let sceneT = 0;
+let playing = true;
+let fired = new Set();
+let current = null;
+
+function enterScene(i) {
+  const scene = SCENES[i];
+  idx = i;
+  sceneT = 0;
+  fired = new Set();
+
+  glow.style.setProperty('--tint', TINTS[scene.tint]);
+  stage.style.setProperty('--tint', TINTS[scene.tint]);
+  head.classList.toggle('finale', !!scene.finale);
+
+  if (current) current.el.classList.remove('on', 'enter');
+  current = screens[scene.screen];
+  current.y = 0;
+  current.target = 0;
+  current.flow.style.transform = 'translateY(0px)';
+  current.el.classList.add('on');
+  void current.el.offsetWidth;
+  current.el.classList.add('enter');
+
+  // Reinicia la animación de entrada del titular.
+  stage.classList.remove('play');
+  void stage.offsetWidth;
+  setCopy(scene);
+  stage.classList.add('play');
+
+  segs.forEach((s, n) => {
+    s.classList.toggle('done', n < i);
+    if (n !== i) s.firstElementChild.style.width = n < i ? '100%' : '0';
+  });
+}
+
+function tap(name) {
+  const el = current.el.querySelector('[data-tap="' + name + '"]');
+  if (!el) return;
+  const box = el.getBoundingClientRect();
+  const frame = current.el.getBoundingClientRect();
+  const scale = frame.width / 390;
+  ripple.style.left = ((box.left + box.width / 2 - frame.left) / scale) + 'px';
+  ripple.style.top = ((box.top + box.height / 2 - frame.top) / scale) + 'px';
+  ripple.classList.remove('go');
+  void ripple.offsetWidth;
+  ripple.classList.add('go');
+  el.classList.add('press');
+  setTimeout(() => el.classList.remove('press'), 220);
+}
+
+/** Cuánto se puede desplazar sin dejar la vista en blanco al pie. */
+function maxScroll(s) {
+  if (s.max === null) {
+    const content = [...s.flow.children].reduce((h, c) => Math.max(h, c.offsetTop + c.offsetHeight), 0);
+    s.max = Math.max(0, content - 844 + 130);
+  }
+  return s.max;
+}
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(now - last, 80);
+  last = now;
+
+  if (playing) {
+    sceneT += dt;
+    const scene = SCENES[idx];
+
+    for (const beat of scene.beats) {
+      if (sceneT >= beat.at && !fired.has(beat)) {
+        fired.add(beat);
+        if (beat.type === 'tap') tap(beat.target);
+        if (beat.type === 'scroll') current.target = Math.min(beat.to, maxScroll(current));
+      }
+    }
+
+    segs[idx].firstElementChild.style.width = Math.min(100, (sceneT / scene.dur) * 100) + '%';
+    if (sceneT >= scene.dur) enterScene((idx + 1) % SCENES.length);
+  }
+
+  if (current) {
+    const ease = reduced ? 1 : 1 - Math.pow(0.0016, dt / 1000);
+    current.y += (current.target - current.y) * ease;
+    current.flow.style.transform = 'translateY(' + -current.y.toFixed(2) + 'px)';
+  }
+
+  requestAnimationFrame(frame);
+}
+
+const controls = document.querySelector('.controls');
+let hideTimer;
+function wake() {
+  controls.classList.add('show');
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => controls.classList.remove('show'), 2600);
+}
+addEventListener('mousemove', wake);
+addEventListener('touchstart', wake, { passive: true });
+addEventListener('keydown', wake);
+wake();
+
+toggleBtn.addEventListener('click', () => {
+  playing = !playing;
+  toggleBtn.textContent = playing ? 'Pausa' : 'Reproducir';
+});
+document.getElementById('restart').addEventListener('click', () => {
+  playing = true;
+  toggleBtn.textContent = 'Pausa';
+  enterScene(0);
+});
+
+enterScene(0);
+requestAnimationFrame(frame);
+</script>
