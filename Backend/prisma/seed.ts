@@ -137,7 +137,7 @@ async function main(): Promise<void> {
       currency: "ARS",
       category: MarketplaceCategory.DEPORTES,
       availability: MarketplaceAvailability.AVAILABLE,
-      images: ["https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=400&q=80"],
+      images: [],
        whatsapp: "+5493510000000"
     },
     {
@@ -149,7 +149,7 @@ async function main(): Promise<void> {
       currency: "ARS",
       category: MarketplaceCategory.MUEBLES,
       availability: MarketplaceAvailability.AVAILABLE,
-      images: ["https://images.unsplash.com/photo-1505843490538-5133c6c7d0e1?auto=format&fit=crop&w=400&q=80"],
+      images: [],
       whatsapp: "+5493510002222"
     },
     {
@@ -161,7 +161,7 @@ async function main(): Promise<void> {
       currency: "ARS",
       category: MarketplaceCategory.ELECTRONICA,
       availability: MarketplaceAvailability.AVAILABLE,
-      images: ["https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=400&q=80"],
+      images: [],
       whatsapp: "+5493510001111"
     }
   ];

@@ -1,32 +1,32 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { createMarketplacePostSchema, updateMarketplacePostSchema } from "./marketplace.schema";
+import { presentMarketplacePost } from "./marketplace.service";
 
-const { get } = vi.hoisted(() => ({ get: vi.fn() }));
-
-vi.mock("axios", () => ({ default: { get } }));
-vi.mock("../../config/env", () => ({
-  env: { SIGHTENGINE_API_USER: "user", SIGHTENGINE_API_SECRET: "secret" }
-}));
-vi.mock("../../config/logger", () => ({ logger: { warn: vi.fn() } }));
-vi.mock("../../lib/prisma", () => ({ prisma: {} }));
-
-import { extractMarketplaceImageText } from "./marketplace.service";
-
-describe("marketplace image OCR", () => {
-  beforeEach(() => get.mockReset());
-
-  it("returns OCR text from every image", async () => {
-    get
-      .mockResolvedValueOnce({ data: { status: "success", text: { content: "texto uno" } } })
-      .mockResolvedValueOnce({ data: { status: "success", text: { content: "texto dos" } } });
-
-    await expect(extractMarketplaceImageText(["https://img/1", "https://img/2"]))
-      .resolves.toEqual({ text: "texto uno\ntexto dos", available: true });
+describe("marketplace asset contract", () => {
+  it("rejects the former external URL input on create and update", () => {
+    const base = { title: "Mesa usada", description: "En buen estado", category: "MUEBLES", whatsapp: "+5493515550101" };
+    expect(createMarketplacePostSchema.safeParse({ ...base, images: ["https://external.test/image.jpg"] }).success).toBe(false);
+    expect(updateMarketplacePostSchema.safeParse({ images: ["https://external.test/image.jpg"] }).success).toBe(false);
   });
 
-  it("fails closed when OCR cannot inspect an image", async () => {
-    get.mockRejectedValueOnce(new Error("provider unavailable"));
+  it("rejects duplicate asset IDs", () => {
+    const assetId = "cm1234567890123456789012";
+    expect(createMarketplacePostSchema.safeParse({
+      title: "Mesa usada", description: "En buen estado", category: "MUEBLES",
+      whatsapp: "+5493515550101", assetIds: [assetId, assetId]
+    }).success).toBe(false);
+  });
 
-    await expect(extractMarketplaceImageText(["https://img/1"]))
-      .resolves.toEqual({ text: "", available: false });
+  it("derives public images from managed assets and hides legacy references", () => {
+    const presented = presentMarketplacePost({
+      id: "post-1",
+      images: ["https://legacy.test/unsafe.jpg"],
+      legacyImages: ["https://legacy.test/preserved.jpg"],
+      assets: [{ id: "asset-1", url: "https://cdn.test/safe.jpg" }]
+    });
+    expect(presented).toEqual({
+      id: "post-1", images: ["https://cdn.test/safe.jpg"], assetIds: ["asset-1"]
+    });
+    expect(JSON.stringify(presented)).not.toContain("legacy.test");
   });
 });

@@ -12,6 +12,9 @@ describe("Marketplace — integration", () => {
   let outsiderToken: string;
   let sellerId: string;
   let editorToken: string;
+  let editorId: string;
+  let assetPostId: string;
+  let attachedAssetIds: string[];
 
   beforeAll(async () => {
     const barrio = await seedBarrio(`mkt-barrio-${Date.now()}`);
@@ -22,6 +25,7 @@ describe("Marketplace — integration", () => {
     sellerId = user.id;
     const editor = await registerAndLogin({ name: "Editor marketplace", barrioSlug });
     editorToken = editor.token;
+    editorId = editor.user.id;
     await prisma.user.update({ where: { id: editor.user.id }, data: { role: "EDITOR" } });
     const otherBarrio = await seedBarrio(`mkt-other-${Date.now()}`);
     outsiderToken = (await registerAndLogin({ name: "Foraneo", barrioSlug: otherBarrio.slug })).token;
@@ -72,6 +76,76 @@ describe("Marketplace — integration", () => {
     expect(typeof res.body.data.views).toBe("number");
   });
 
+  it("rechaza URLs externas y assets duplicados en el contrato", async () => {
+    const external = await request(app)
+      .post(`${API}/barrios/${barrioSlug}/marketplace`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({ title: "Mesa usada", description: "En buen estado", category: "MUEBLES", whatsapp: "+5493515550101", images: ["https://evil.test/a.jpg"] });
+    expect(external.status).toBe(400);
+
+    const duplicate = await request(app)
+      .post(`${API}/barrios/${barrioSlug}/marketplace`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({ title: "Mesa usada", description: "En buen estado", category: "MUEBLES", whatsapp: "+5493515550101", assetIds: ["cm1234567890123456789012", "cm1234567890123456789012"] });
+    expect(duplicate.status).toBe(400);
+  });
+
+  it("adjunta atómicamente solo assets aprobados del autor", async () => {
+    const approved = await prisma.marketplaceAsset.create({
+      data: { uploaderId: sellerId, status: "APPROVED", mimeType: "image/jpeg", byteSize: 4, contentHash: "approved", cloudinaryPublicId: `test/${Date.now()}`, cloudinaryType: "upload", url: "https://cdn.test/approved.jpg" }
+    });
+    const secondApproved = await prisma.marketplaceAsset.create({
+      data: { uploaderId: sellerId, status: "APPROVED", mimeType: "image/jpeg", byteSize: 4, contentHash: "approved-2", cloudinaryPublicId: `test/${Date.now()}-2`, cloudinaryType: "upload", url: "https://cdn.test/approved-2.jpg" }
+    });
+    const foreign = await prisma.marketplaceAsset.create({
+      data: { uploaderId: editorId, status: "APPROVED", mimeType: "image/jpeg", byteSize: 4, contentHash: "foreign", cloudinaryPublicId: `test/${Date.now()}-foreign`, cloudinaryType: "upload", url: "https://cdn.test/foreign.jpg" }
+    });
+    const pending = await prisma.marketplaceAsset.create({
+      data: { uploaderId: sellerId, status: "QUARANTINED", mimeType: "image/jpeg", byteSize: 4, contentHash: "pending" }
+    });
+    const claimed = await prisma.marketplaceAsset.create({
+      data: { uploaderId: sellerId, status: "DELETE_PENDING", mimeType: "image/jpeg", byteSize: 4, contentHash: "claimed", deletionRequestedAt: new Date() }
+    });
+
+    for (const assetId of [foreign.id, pending.id, claimed.id]) {
+      const rejected = await request(app)
+        .post(`${API}/barrios/${barrioSlug}/marketplace`)
+        .set("Authorization", `Bearer ${sellerToken}`)
+        .send({ title: "Silla usada", description: "En buen estado", category: "MUEBLES", whatsapp: "+5493515550101", assetIds: [assetId] });
+      expect(rejected.status).toBe(400);
+      expect(await prisma.marketplacePost.count({ where: { title: "Silla usada" } })).toBe(0);
+    }
+
+    const accepted = await request(app)
+      .post(`${API}/barrios/${barrioSlug}/marketplace`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({ title: "Silla aprobada", description: "En buen estado", category: "MUEBLES", whatsapp: "+5493515550101", assetIds: [approved.id, secondApproved.id] });
+    expect(accepted.status).toBe(201);
+    expect(accepted.body.data.assetIds).toHaveLength(2);
+    expect(accepted.body.data.images).toEqual(expect.arrayContaining(["https://cdn.test/approved.jpg", "https://cdn.test/approved-2.jpg"]));
+    expect((await prisma.marketplaceAsset.findUniqueOrThrow({ where: { id: approved.id } })).postId).toBe(accepted.body.data.id);
+    assetPostId = accepted.body.data.id;
+    attachedAssetIds = accepted.body.data.assetIds;
+  });
+
+  it("no invalida la aprobación cuando solo cambia el orden de assetIds", async () => {
+    const response = await request(app)
+      .patch(`${API}/barrios/${barrioSlug}/marketplace/${assetPostId}`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({ assetIds: [...attachedAssetIds].reverse() });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.moderationStatus).toBe("APPROVED");
+  });
+
+  it("POST /upload/marketplace rechaza GIF por firma antes del proveedor", async () => {
+    const response = await request(app)
+      .post(`${API}/upload/marketplace`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .attach("file", Buffer.from("GIF89a payload"), { filename: "fake.png", contentType: "image/png" });
+    expect(response.status).toBe(422);
+  });
+
   it("GET /barrios/:slug/marketplace — no expone WhatsApp en el listado", async () => {
     const res = await request(app).get(`${API}/barrios/${barrioSlug}/marketplace`);
     expect(res.status).toBe(200);
@@ -95,16 +169,24 @@ describe("Marketplace — integration", () => {
     const publicList = await request(app).get(`${API}/barrios/${barrioSlug}/marketplace`);
     expect(publicList.body.data.items.some((item: { id: string }) => item.id === res.body.data.id)).toBe(false);
 
+    await prisma.marketplacePost.update({
+      where: { id: res.body.data.id },
+      data: { legacyImages: ["https://legacy.test/restricted.jpg"] }
+    });
+
     const ownList = await request(app)
       .get(`${API}/barrios/${barrioSlug}/marketplace/me`)
       .set("Authorization", `Bearer ${sellerToken}`);
     expect(ownList.body.data.items.some((item: { id: string }) => item.id === res.body.data.id)).toBe(true);
+    expect(JSON.stringify(ownList.body)).not.toContain("legacy.test");
 
     const queue = await request(app)
       .get(`${API}/moderation/marketplace?status=PENDING_REVIEW`)
       .set("Authorization", `Bearer ${editorToken}`);
     expect(queue.status).toBe(200);
     expect(queue.body.data.items.some((item: { id: string }) => item.id === res.body.data.id)).toBe(true);
+    expect(queue.body.data.items.find((item: { id: string }) => item.id === res.body.data.id).legacyImages)
+      .toEqual(["https://legacy.test/restricted.jpg"]);
 
     const report = await request(app)
       .post(`${API}/barrios/${barrioSlug}/marketplace/${res.body.data.id}/reports`)

@@ -2,8 +2,9 @@ import { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { Prisma } from "@prisma/client";
 import multer from "multer";
+import axios from "axios";
 import { env } from "../config/env";
-import { logger } from "../config/logger";
+import { logger, sanitizeLogText, sanitizeLogValue } from "../config/logger";
 import { ApiError } from "../utils/api-error";
 
 export const errorHandler = (error: unknown, _req: Request, res: Response, _next: NextFunction): void => {
@@ -56,33 +57,20 @@ export const errorHandler = (error: unknown, _req: Request, res: Response, _next
     return;
   }
 
-  let sanitizedError: unknown = error;
-  // axios may not be available as a global, but we can check properties if we don't want to import it,
-  // or just import axios. I'll import axios at the top if needed, but it's simpler to duck type:
-  if (error && typeof error === 'object' && 'isAxiosError' in error && error.isAxiosError) {
-    const axiosErr = error as any;
-    sanitizedError = {
-      message: axiosErr.message,
-      code: axiosErr.code,
-      status: axiosErr.response?.status,
-      name: axiosErr.name,
-      stack: axiosErr.stack
-    };
-  } else if (error instanceof Error) {
-    sanitizedError = {
-      message: error.message,
-      name: error.name,
-      stack: error.stack
-    };
-  } else {
-    sanitizedError = error;
-  }
-
-  logger.error({ err: sanitizedError }, "Error no controlado");
+  const includeInternalDetails = env.NODE_ENV !== "production";
+  const errorForLog = axios.isAxiosError(error)
+    ? {
+        name: error.name,
+        code: error.code,
+        status: error.response?.status,
+        ...(includeInternalDetails ? { message: sanitizeLogText(error.message), stack: error.stack && sanitizeLogText(error.stack) } : {})
+      }
+    : sanitizeLogValue(error, includeInternalDetails);
+  logger.error({ err: errorForLog }, "Error no controlado");
 
   const details =
     env.NODE_ENV === "development" && error instanceof Error
-      ? { message: error.message, stack: error.stack?.split("\n").slice(0, 5) }
+      ? sanitizeLogValue({ message: error.message, stack: error.stack?.split("\n").slice(0, 5) })
       : null;
 
   res.status(500).json({

@@ -13,6 +13,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { MarketplaceAssetUpload } from '../../types/api';
 
 const marketSchema = z.object({
   title: z.string().min(3, 'El título es muy corto').max(255),
@@ -37,13 +38,22 @@ const categories = [
   { label: 'Otros', value: 'OTROS' },
 ];
 
+type SelectedImage = {
+  uri: string;
+  assetId?: string;
+  status?: MarketplaceAssetUpload['status'];
+  name?: string;
+  mimeType?: string;
+  file?: File;
+};
+
 export default function CreateMarketScreen() {
   const { postId } = useLocalSearchParams<{ postId?: string }>();
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
   const [globalError, setGlobalError] = useState('');
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -70,7 +80,11 @@ export default function CreateMarketScreen() {
         whatsapp: postToEdit.whatsapp,
         category: postToEdit.category,
       });
-      setSelectedImages(postToEdit.images || []);
+      setSelectedImages((postToEdit.images || []).map((uri: string, index: number) => ({
+        uri,
+        assetId: postToEdit.assetIds?.[index],
+        status: 'APPROVED'
+      })));
     }
   }, [postToEdit, reset]);
 
@@ -97,7 +111,8 @@ export default function CreateMarketScreen() {
               quality: 0.8,
             });
             if (!result.canceled) {
-              setSelectedImages((prev) => [...prev, result.assets[0].uri]);
+              const asset = result.assets[0];
+              setSelectedImages((prev) => [...prev, { uri: asset.uri, name: asset.fileName ?? undefined, mimeType: asset.mimeType, file: asset.file }]);
             }
           }
         },
@@ -111,7 +126,8 @@ export default function CreateMarketScreen() {
               quality: 0.8,
             });
             if (!result.canceled) {
-              setSelectedImages((prev) => [...prev, result.assets[0].uri]);
+              const asset = result.assets[0];
+              setSelectedImages((prev) => [...prev, { uri: asset.uri, name: asset.fileName ?? undefined, mimeType: asset.mimeType, file: asset.file }]);
             }
           }
         },
@@ -123,32 +139,58 @@ export default function CreateMarketScreen() {
     );
   };
 
-  const uploadImages = async (uris: string[]): Promise<string[]> => {
-    const urls: string[] = [];
-    for (const uri of uris) {
-      const filename = uri.split('/').pop() || 'photo.jpg';
+  const uploadImages = async (images: SelectedImage[]): Promise<string[]> => {
+    const assetIds: string[] = [];
+    for (const image of images) {
+      const filename = image.name || image.uri.split('/').pop() || 'photo.jpg';
       const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : `image`;
+      const extensionMime = match?.[1].toLowerCase() === 'jpg' ? 'image/jpeg' : match ? `image/${match[1].toLowerCase()}` : undefined;
+      const type = image.mimeType || extensionMime || 'image/jpeg';
       
       const formData = new FormData();
-      formData.append('file', { uri, name: filename, type } as any);
+      formData.append('file', image.file ?? ({ uri: image.uri, name: filename, type } as any));
       
-      const response = await api.post('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      urls.push(response.data.data.url);
+      let response;
+      try {
+        response = await api.post<{ data: MarketplaceAssetUpload }>('/upload/marketplace', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } catch (error: any) {
+        const details = error.response?.data?.details;
+        if (details?.assetId && ['QUARANTINED', 'REJECTED'].includes(details.status)) {
+          setSelectedImages((current) => current.map((candidate) =>
+            candidate === image ? { ...candidate, assetId: details.assetId, status: details.status } : candidate
+          ));
+        }
+        throw error;
+      }
+      const uploadedAsset = response.data.data;
+      setSelectedImages((current) => current.map((candidate) =>
+        candidate === image ? { ...candidate, assetId: uploadedAsset.id, status: uploadedAsset.status } : candidate
+      ));
+      if (uploadedAsset.status !== 'APPROVED') {
+        throw new Error('La imagen quedó en revisión. Quitala para publicar ahora o esperá la revisión.');
+      }
+      const assetId = uploadedAsset.id;
+      assetIds.push(assetId);
     }
-    return urls;
+    return assetIds;
   };
 
   const createMutation = useMutation({
     mutationFn: async (data: MarketForm) => {
-      const existingUrls = selectedImages.filter((uri) => /^https?:\/\//.test(uri));
-      const localImages = selectedImages.filter((uri) => !/^https?:\/\//.test(uri));
-      let uploadedUrls: string[] = [];
+      if (selectedImages.some((image) => image.status === 'REJECTED')) {
+        throw new Error('Hay una imagen rechazada. Quitala para continuar.');
+      }
+      if (selectedImages.some((image) => image.assetId && image.status === 'QUARANTINED')) {
+        throw new Error('Hay una imagen todavía en revisión. Quitala para continuar.');
+      }
+      const existingAssetIds = selectedImages.flatMap((image) => image.assetId && image.status === 'APPROVED' ? [image.assetId] : []);
+      const localImages = selectedImages.filter((image) => !image.assetId);
+      let uploadedAssetIds: string[] = [];
       if (localImages.length > 0) {
         setIsUploading(true);
-        uploadedUrls = await uploadImages(localImages);
+        uploadedAssetIds = await uploadImages(localImages);
         setIsUploading(false);
       }
 
@@ -160,7 +202,7 @@ export default function CreateMarketScreen() {
         price: parsedPrice,
         category: data.category,
         whatsapp: normalizeWhatsApp(data.whatsapp),
-        images: [...existingUrls, ...uploadedUrls],
+        assetIds: [...existingAssetIds, ...uploadedAssetIds],
       };
 
       const response = postId
@@ -184,7 +226,13 @@ export default function CreateMarketScreen() {
     },
     onError: (error: any) => {
       setIsUploading(false);
-      setGlobalError(error.response?.data?.message || 'Error al publicar el producto.');
+      const status = error.response?.status;
+      const fallback = status === 422
+        ? 'Una imagen fue rechazada por la política de contenido.'
+        : [502, 503, 504].includes(status)
+          ? 'El verificador de imágenes no está disponible. Intentá nuevamente más tarde.'
+          : error.message || 'Error al publicar el producto.';
+      setGlobalError(error.response?.data?.message || fallback);
     }
   });
 
@@ -214,9 +262,14 @@ export default function CreateMarketScreen() {
           <View style={styles.imagePickerContainer}>
             <Text style={styles.label}>Fotos (máx. 3)</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
-              {selectedImages.map((uri, index) => (
-                <View key={index} style={styles.imagePreview}>
-                  <Image source={{ uri }} style={styles.image} />
+              {selectedImages.map((image, index) => (
+                <View key={image.assetId ?? image.uri} style={styles.imagePreview}>
+                  <Image source={{ uri: image.uri }} style={styles.image} />
+                  {image.status === 'QUARANTINED' || image.status === 'REJECTED' ? (
+                    <View style={styles.imageReviewBadge}>
+                      <Text style={styles.imageReviewText}>{image.status === 'REJECTED' ? 'Rechazada' : 'En revisión'}</Text>
+                    </View>
+                  ) : null}
                   <TouchableOpacity
                     style={styles.removeImageBtn}
                     onPress={() => setSelectedImages(selectedImages.filter((_, i) => i !== index))}
@@ -427,6 +480,20 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  imageReviewBadge: {
+    position: 'absolute',
+    left: 4,
+    bottom: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  imageReviewText: {
+    color: 'white',
+    fontSize: 9,
+    fontFamily: ClayTheme.typography.fontFamily.bold,
   },
   removeImageBtn: {
     position: 'absolute',

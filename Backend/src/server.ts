@@ -5,6 +5,7 @@ import { connectDatabase, disconnectDatabase } from "./config/database";
 import { prisma } from "./lib/prisma";
 import { redis } from "./lib/redis";
 import { startNotificationProcessor, stopNotificationProcessor } from "./modules/notifications/notifications.processor";
+import { startMarketplaceAssetCleanup, stopMarketplaceAssetCleanup } from "./modules/upload/marketplace-asset.cleanup";
 
 let server: ReturnType<typeof app.listen> | undefined;
 let shuttingDown = false;
@@ -17,6 +18,7 @@ const startServer = async (): Promise<void> => {
     logger.info(`Servidor listo en http://localhost:${env.PORT}${env.API_PREFIX}`);
   });
   startNotificationProcessor();
+  startMarketplaceAssetCleanup();
 };
 
 const shutdown = async (signal: string): Promise<void> => {
@@ -35,7 +37,7 @@ const shutdown = async (signal: string): Promise<void> => {
   });
 
   clearTimeout(forceClose);
-  await stopNotificationProcessor();
+  await Promise.all([stopNotificationProcessor(), stopMarketplaceAssetCleanup()]);
   await Promise.allSettled([disconnectDatabase(), redis.quit()]);
   logger.info("Servicios cerrados correctamente");
 };

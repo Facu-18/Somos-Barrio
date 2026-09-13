@@ -3,6 +3,7 @@ import { env } from '../../config/env';
 import { ApiError } from '../../utils/api-error';
 import { PromptInjectionGuard } from './prompt-injection.guard';
 import { AiLimiter } from './ai.limiter';
+import { logger } from '../../config/logger';
 
 export interface NewsSummaryResult {
   summary: string;
@@ -24,6 +25,7 @@ export interface NewsSummaryProvider {
 export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
   private async complete(systemPrompt: string, userPayload: string, maxTokens: number): Promise<{ text: string, tokens: number }> {
     const baseUrl = env.AI_PROVIDER_URL.replace(/\/$/, '');
+    const startedAt = Date.now();
     let response;
     try {
       response = await axios.post(
@@ -50,28 +52,40 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
         const code = error.code;
-        
+        const requestId = error.response?.headers?.['x-request-id'];
+        logger.warn({
+          provider: 'lm-studio',
+          transportCode: code,
+          transportStatus: status,
+          durationMs: Date.now() - startedAt,
+          ...(typeof requestId === 'string' ? { requestId } : {})
+        }, "Fallo del proveedor de IA");
+
         if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') {
-           throw new ApiError(504, "Timeout: El proveedor de IA no respondió a tiempo.");
+           throw new ApiError(504, "El proveedor de IA no respondió a tiempo.");
         }
         if (status === 429) {
            throw new ApiError(429, "Límite de peticiones alcanzado con el proveedor de IA.");
         }
-        if (status && status >= 500) {
-           throw new ApiError(502, "El proveedor de IA experimentó un error interno.");
-        }
-        if (status && status >= 400) {
-           throw new ApiError(500, "El proveedor de IA rechazó la solicitud (error de cliente).");
-        }
-        throw new ApiError(500, "Error de conexión con el proveedor de IA.");
+        throw new ApiError(502, "El proveedor de IA no pudo completar la solicitud.");
       }
       throw error;
     }
 
-    const text = response.data.choices?.[0]?.message?.content?.trim();
-    const tokens = response.data.usage?.total_tokens || 0;
+    const requestId = response.headers?.['x-request-id'];
+    logger.info({
+      provider: 'lm-studio',
+      transportStatus: response.status,
+      durationMs: Date.now() - startedAt,
+      ...(typeof requestId === 'string' ? { requestId } : {})
+    }, "Respuesta del proveedor de IA");
 
-    if (!text) throw new ApiError(500, "El modelo de IA no devolvió contenido válido.");
+    const text = typeof response.data?.choices?.[0]?.message?.content === 'string'
+      ? response.data.choices[0].message.content.trim()
+      : '';
+    const tokens = typeof response.data?.usage?.total_tokens === 'number' ? response.data.usage.total_tokens : 0;
+
+    if (!text) throw new ApiError(502, "El proveedor de IA devolvió una respuesta inválida.");
     return { text, tokens };
   }
 
@@ -90,11 +104,11 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
       try {
         parsed = JSON.parse(text);
       } catch {
-        throw new Error("El modelo de IA no devolvió JSON válido.");
+        throw new ApiError(502, "El proveedor de IA devolvió una respuesta inválida.");
       }
       
       if (!parsed.summary) {
-        throw new Error("El JSON no contiene el resumen esperado.");
+        throw new ApiError(502, "El proveedor de IA devolvió una respuesta inválida.");
       }
 
       return {
@@ -130,7 +144,7 @@ Devuelve solamente JSON válido, sin Markdown, con esta forma exacta:
       try {
         parsed = JSON.parse(text);
       } catch {
-        throw new Error("El modelo de IA no devolvió el formato JSON esperado.");
+        throw new ApiError(502, "El proveedor de IA devolvió una respuesta inválida.");
       }
 
       if (
@@ -139,12 +153,12 @@ Devuelve solamente JSON válido, sin Markdown, con esta forma exacta:
         || typeof parsed.content !== 'string'
         || typeof parsed.summary !== 'string'
       ) {
-        throw new Error("El modelo de IA devolvió una respuesta editorial JSON incompleta o inválida.");
+        throw new ApiError(502, "El proveedor de IA devolvió una respuesta inválida.");
       }
 
       const result = parsed as { excerpt: string; content: string; summary: string };
       if (!result.excerpt.trim() || result.excerpt.length > 500 || result.content.trim().length < 10 || !result.summary.trim()) {
-        throw new Error("La propuesta editorial generada por IA no cumple los límites requeridos de longitud.");
+        throw new ApiError(502, "El proveedor de IA devolvió una respuesta inválida.");
       }
 
       return {

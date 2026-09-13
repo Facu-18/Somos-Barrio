@@ -3,10 +3,9 @@ import { Request, Response, NextFunction } from "express";
 import { errorHandler } from "./error-handler";
 import { logger } from "../config/logger";
 
-vi.mock("../config/logger", () => ({
-  logger: {
-    error: vi.fn()
-  }
+vi.mock("../config/logger", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../config/logger")>(),
+  logger: { error: vi.fn() }
 }));
 
 describe("Global Error Handler", () => {
@@ -62,5 +61,17 @@ describe("Global Error Handler", () => {
     expect(loggerArgs.err.code).toBe("ECONNREFUSED");
     expect(loggerArgs.err.status).toBe(502);
     expect(loggerArgs.err.config).toBeUndefined();
+  });
+
+  it("does not expose unexpected error details in non-development responses", () => {
+    const error = new Error("internal database detail");
+
+    errorHandler(error, mockReq as Request, mockRes as Response, mockNext);
+
+    expect(mockRes.json).toHaveBeenCalledWith({
+      success: false,
+      message: "Error interno del servidor",
+      details: null
+    });
   });
 });

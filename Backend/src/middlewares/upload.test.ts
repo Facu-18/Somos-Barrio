@@ -6,7 +6,7 @@ vi.mock("../lib/cloudinary", () => ({
 }));
 
 import type { NextFunction, Request, Response } from "express";
-import { uploadToCloudinary } from "./upload";
+import { uploadToCloudinary, verifyMarketplaceImageContent } from "./upload";
 
 describe("uploadToCloudinary", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -25,5 +25,21 @@ describe("uploadToCloudinary", () => {
       expect.any(Function)
     );
     expect(next).toHaveBeenCalledWith();
+  });
+});
+
+describe("verifyMarketplaceImageContent", () => {
+  it("rejects GIF bytes even when the declared MIME is allowed", () => {
+    const req = { file: { buffer: Buffer.from("GIF89a payload"), mimetype: "image/png" } } as unknown as Request;
+    const next = vi.fn() as NextFunction;
+    verifyMarketplaceImageContent(req, {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 422 }));
+  });
+
+  it("rejects a mismatched supported signature", () => {
+    const req = { file: { buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]), mimetype: "image/png" } } as unknown as Request;
+    const next = vi.fn() as NextFunction;
+    verifyMarketplaceImageContent(req, {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 422 }));
   });
 });

@@ -67,6 +67,13 @@ enum MarketplaceAvailability {
   PAUSED
 }
 
+enum MarketplaceAssetStatus {
+  QUARANTINED
+  APPROVED
+  REJECTED
+  DELETE_PENDING
+}
+
 enum MarketplaceReportCategory {
   FRAUD
   SPAM
@@ -139,6 +146,7 @@ model User {
   notificationOutbox    NotificationOutbox[]
   marketplaceDecisions  MarketplaceModerationDecision[]
   marketplaceReports    MarketplaceReport[]
+  marketplaceAssets     MarketplaceAsset[]
 
   @@index([barrioId])
   @@index([role])
@@ -233,6 +241,7 @@ model MarketplacePost {
   moderationReasonCode String?
   whatsapp             String?
   images               String[]
+  legacyImages         String[]                        @default([])
   location             String?
   views                Int                             @default(0)
   createdAt            DateTime                        @default(now())
@@ -242,9 +251,44 @@ model MarketplacePost {
   messages             Message[]
   decisions            MarketplaceModerationDecision[]
   reports              MarketplaceReport[]
+  assets               MarketplaceAsset[]
 
   @@index([userId])
   @@index([barrioId, availability, moderationStatus, createdAt])
+}
+
+model MarketplaceAsset {
+  id                  String                 @id @default(cuid())
+  uploaderId          String
+  postId              String?
+  status              MarketplaceAssetStatus @default(QUARANTINED)
+  provider            String                 @default("sightengine")
+  providerRequestId   String?
+  scores              Json?
+  mimeType            String
+  byteSize            Int
+  contentHash         String
+  cloudinaryPublicId  String?                @unique
+  cloudinaryType      String?
+  url                 String?
+  ocrDecision         String?
+  ocrCategories       String[]               @default([])
+  ocrRuleId           String?
+  ocrRuleVersion      String?
+  ocrPolicyVersion    String?
+  ocrContentHash      String?
+  scannedAt           DateTime?
+  deletionRequestedAt DateTime?
+  deletionAttempts    Int                    @default(0)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  uploader            User                   @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  post                MarketplacePost?       @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@index([uploaderId, createdAt])
+  @@index([postId])
+  @@index([postId, status])
+  @@index([deletionRequestedAt])
 }
 
 model MarketplaceModerationDecision {

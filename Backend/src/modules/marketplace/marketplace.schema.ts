@@ -18,7 +18,7 @@ export const createMarketplacePostSchema = z.object({
   price: z.number().int().nonnegative().optional(),
   currency: z.string().length(3).default("ARS"),
   category: z.nativeEnum(MarketplaceCategory),
-  images: z.array(z.string().url()).max(5).default([]),
+  assetIds: z.array(z.string().cuid()).max(5).refine((ids) => new Set(ids).size === ids.length, "No se permiten assets duplicados").default([]),
   location: z.string().max(120).optional(),
   whatsapp: z.string().min(8).max(30)
 }).strict();
@@ -29,7 +29,7 @@ export const updateMarketplacePostSchema = z.object({
   price: z.number().int().nonnegative().optional(),
   category: z.nativeEnum(MarketplaceCategory).optional(),
   availability: z.nativeEnum(MarketplaceAvailability).optional(),
-  images: z.array(z.string().url()).max(5).optional(),
+  assetIds: z.array(z.string().cuid()).max(5).refine((ids) => new Set(ids).size === ids.length, "No se permiten assets duplicados").optional(),
   location: z.string().max(120).optional(),
   whatsapp: z.string().min(8).max(30).optional()
 }).strict();

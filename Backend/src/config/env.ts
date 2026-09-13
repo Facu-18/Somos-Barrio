@@ -3,6 +3,32 @@ import { z } from "zod";
 
 dotenv.config();
 
+const booleanFromEnv = z.preprocess(
+  (value) => value === "true" ? true : value === "false" ? false : value,
+  z.boolean()
+);
+
+const thresholdPair = z.object({ review: z.number().min(0).max(1), block: z.number().min(0).max(1) })
+  .refine((value) => value.review < value.block, "review debe ser menor que block");
+const defaultSightengineThresholds = {
+  nudity: { review: 0.35, block: 0.7 }, sexual: { review: 0.35, block: 0.7 },
+  violence: { review: 0.35, block: 0.7 }, gore: { review: 0.35, block: 0.7 },
+  weapons: { review: 0.35, block: 0.7 }, drugs: { review: 0.35, block: 0.7 },
+  alcohol: { review: 0.35, block: 0.7 }, tobacco: { review: 0.35, block: 0.7 },
+  offensiveSymbols: { review: 0.35, block: 0.7 }
+};
+const sightengineThresholds = z.preprocess((value) => {
+  if (value === undefined || value === "") return defaultSightengineThresholds;
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}, z.object({
+  nudity: thresholdPair, sexual: thresholdPair, violence: thresholdPair, gore: thresholdPair,
+  weapons: thresholdPair, drugs: thresholdPair, alcohol: thresholdPair, tobacco: thresholdPair,
+  offensiveSymbols: thresholdPair
+}).strict());
+
+export const parseSightengineThresholds = (value?: unknown) => sightengineThresholds.parse(value);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -17,7 +43,7 @@ const envSchema = z.object({
   AI_GLOBAL_DAILY_TOKEN_BUDGET: z.coerce.number().int().nonnegative().default(0),
   AI_MAX_CONCURRENCY: z.coerce.number().int().nonnegative().default(10),
   AI_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
-  AI_ENABLED: z.coerce.boolean().default(true),
+  AI_ENABLED: booleanFromEnv.default(true),
   JWT_SECRET: z.string().min(32, "JWT_SECRET debe tener al menos 32 caracteres"),
   JWT_EXPIRES_IN: z.string().default("15m"),
   JWT_REFRESH_EXPIRES_DAYS: z.coerce.number().int().positive().default(30),
@@ -26,6 +52,11 @@ const envSchema = z.object({
   CLOUDINARY_API_SECRET: z.string().optional(),
   SIGHTENGINE_API_USER: z.string().optional(),
   SIGHTENGINE_API_SECRET: z.string().optional(),
+  SIGHTENGINE_ENABLED: booleanFromEnv.default(false),
+  SIGHTENGINE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(8000),
+  SIGHTENGINE_THRESHOLDS: sightengineThresholds,
+  MARKETPLACE_ASSET_CLEANUP_INTERVAL_MS: z.coerce.number().int().min(1000).default(3600000),
+  MARKETPLACE_ASSET_ORPHAN_TTL_MS: z.coerce.number().int().min(60000).default(86400000),
   EXPO_ACCESS_TOKEN: z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional()),
   NOTIFICATION_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).default(5000),
   NOTIFICATION_BATCH_SIZE: z.coerce.number().int().positive().max(100).default(25),

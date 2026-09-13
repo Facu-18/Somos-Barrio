@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middlewares/auth";
-import { uploadSingle, uploadToCloudinary, verifyImageContent, moderateImageContent } from "../../middlewares/upload";
+import { uploadMarketplaceSingle, uploadSingle, uploadToCloudinary, verifyImageContent, verifyMarketplaceImageContent, moderateImageContent } from "../../middlewares/upload";
+import { asyncHandler } from "../../utils/async-handler";
 import { uploadRateLimiter } from "../../middlewares/rate-limit";
 import { uploadController } from "./upload.controller";
 
@@ -12,6 +13,15 @@ const uploadRouter = Router();
  * Requiere autenticación.
  * Devuelve { success, data: { url, publicId } }
  */
+uploadRouter.post(
+  "/marketplace",
+  requireAuth,
+  uploadRateLimiter,
+  uploadMarketplaceSingle,
+  verifyMarketplaceImageContent,
+  asyncHandler(uploadController.uploadMarketplaceImage)
+);
+
 uploadRouter.post(
   "/",
   requireAuth,

@@ -35,6 +35,14 @@ export interface UploadResult {
   publicId: string;
 }
 
+export interface MarketplaceAssetUpload {
+  id: string;
+  status: 'QUARANTINED' | 'APPROVED' | 'REJECTED';
+  url: string | null;
+  createdAt: string;
+  scannedAt: string | null;
+}
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;

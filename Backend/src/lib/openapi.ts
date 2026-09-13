@@ -228,7 +228,7 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   },
   MarketplacePost: {
     type: "object",
-    required: ["id", "userId", "barrioId", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "moderationReasonCode", "whatsapp", "images", "location", "views", "createdAt", "updatedAt"],
+    required: ["id", "userId", "barrioId", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "moderationReasonCode", "whatsapp", "images", "assetIds", "location", "views", "createdAt", "updatedAt"],
     properties: {
       id: cuid(), userId: cuid(), barrioId: cuid(), title: { type: "string" }, description: { type: "string" },
       price: { type: "integer", nullable: true, minimum: 0 }, currency: { type: "string", minLength: 3, maxLength: 3 },
@@ -237,20 +237,20 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
       moderationStatus: { type: "string", enum: ["PENDING_REVIEW", "APPROVED", "REJECTED", "REMOVED"] },
       moderationReasonCode: { type: "string", nullable: true, description: "Categoría genérica; no expone la regla exacta" },
       whatsapp: { type: "string", nullable: true, pattern: "^\\+[1-9]\\d{7,14}$" },
-      images: arrayOf({ type: "string", format: "uri" }), location: nullableString(), views: { type: "integer" },
+      images: arrayOf({ type: "string", format: "uri" }), assetIds: arrayOf(cuid()), location: nullableString(), views: { type: "integer" },
       createdAt: dateTime(), updatedAt: dateTime(), user: ref("UserSummary")
     }
   },
   MarketplaceListItem: {
     type: "object",
-    required: ["id", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "moderationReasonCode", "images", "location", "views", "createdAt", "user"],
+    required: ["id", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "moderationReasonCode", "images", "assetIds", "location", "views", "createdAt", "user"],
     properties: {
       id: cuid(), title: { type: "string" }, description: { type: "string" }, price: { type: "integer", nullable: true, minimum: 0 },
       currency: { type: "string" }, category: { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] },
       availability: { type: "string", enum: ["AVAILABLE", "SOLD", "PAUSED"] },
       moderationStatus: { type: "string", enum: ["PENDING_REVIEW", "APPROVED", "REJECTED", "REMOVED"] },
       moderationReasonCode: { type: "string", nullable: true, description: "Categoría genérica; no expone la regla exacta" },
-      images: arrayOf({ type: "string", format: "uri" }),
+      images: arrayOf({ type: "string", format: "uri" }), assetIds: arrayOf(cuid()),
       location: nullableString(), views: { type: "integer" }, createdAt: dateTime(), user: ref("UserSummary")
     }
   },
@@ -260,6 +260,15 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
     properties: {
       id: cuid(), postId: cuid(), reporterId: cuid(), category: { type: "string", enum: ["FRAUD", "SPAM", "INAPPROPRIATE", "WEAPONS", "DRUGS", "OTHER"] },
       comment: nullableString(), createdAt: dateTime()
+    }
+  },
+  MarketplaceAsset: {
+    type: "object",
+    required: ["id", "status", "url", "createdAt", "scannedAt"],
+    properties: {
+      id: cuid(), status: { type: "string", enum: ["QUARANTINED", "APPROVED", "REJECTED"] },
+      url: { type: "string", format: "uri", nullable: true },
+      createdAt: dateTime(), scannedAt: dateTime(true)
     }
   },
   ForumSubforum: {
@@ -472,7 +481,7 @@ const createMarketplaceBody: OpenAPIV3.SchemaObject = {
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
     price: { type: "integer", minimum: 0 }, currency: { type: "string", minLength: 3, maxLength: 3, default: "ARS" },
-    category: marketplaceCategory, images: { type: "array", maxItems: 5, default: [], items: { type: "string", format: "uri" } },
+    category: marketplaceCategory, assetIds: { type: "array", maxItems: 5, uniqueItems: true, default: [], items: cuid() },
     location: { type: "string", maxLength: 120 }, whatsapp: { type: "string", minLength: 8, maxLength: 30, description: "Se normaliza a E.164" }
   }
 };
@@ -481,7 +490,7 @@ const updateMarketplaceBody: OpenAPIV3.SchemaObject = {
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
     price: { type: "integer", minimum: 0 }, category: marketplaceCategory, availability: marketplaceAvailability,
-    images: { type: "array", maxItems: 5, items: { type: "string", format: "uri" } }, location: { type: "string", maxLength: 120 },
+    assetIds: { type: "array", maxItems: 5, uniqueItems: true, items: cuid() }, location: { type: "string", maxLength: 120 },
     whatsapp: { type: "string", minLength: 8, maxLength: 30, description: "Se normaliza a E.164" }
   }
 };
@@ -670,7 +679,8 @@ export const openapiSpec: OpenAPIV3.Document = {
             type: "object", required: ["url", "publicId"],
             properties: { url: { type: "string", format: "uri" }, publicId: { type: "string" } }
           }),
-          400: badRequest, 401: unauthorized, 413: errorResponse("Payload Too Large"), 422: unprocessable, 502: errorResponse("Bad Gateway"), 503: serviceUnavailable
+          400: badRequest, 401: unauthorized, 413: errorResponse("Payload Too Large"), 422: unprocessable,
+          429: errorResponse("Too Many Requests"), 502: errorResponse("Bad Gateway"), 503: serviceUnavailable, 504: errorResponse("Gateway Timeout")
         }
       }
     },
@@ -683,7 +693,21 @@ export const openapiSpec: OpenAPIV3.Document = {
         },
         responses: {
           201: created({ type: "object", required: ["url", "publicId"], properties: { url: { type: "string", format: "uri" }, publicId: { type: "string", pattern: "^somos-barrio/avatars/[^/]+/.+$" } } }),
-          400: badRequest, 401: unauthorized, 413: errorResponse("Payload Too Large"), 422: unprocessable, 502: errorResponse("Bad Gateway"), 503: serviceUnavailable
+          400: badRequest, 401: unauthorized, 413: errorResponse("Payload Too Large"), 422: unprocessable,
+          429: errorResponse("Too Many Requests"), 502: errorResponse("Bad Gateway"), 503: serviceUnavailable, 504: errorResponse("Gateway Timeout")
+        }
+      }
+    },
+    "/upload/marketplace": {
+      post: {
+        tags: ["Upload"], summary: "Verificar y subir una imagen de marketplace", security: bearerSecurity,
+        description: "Escanea bytes y OCR antes de publicar. APPROVED usa entrega pública. QUARANTINED conserva bytes con entrega autenticada para revisión, pero nunca expone URL. REJECTED no conserva bytes.",
+        requestBody: { required: true, content: { "multipart/form-data": { schema: { type: "object", required: ["file"], properties: { file: { type: "string", format: "binary", description: "JPG, PNG o WebP; máximo 5 MB. GIF se rechaza por MIME y firma." } } } } } },
+        responses: {
+          201: created(ref("MarketplaceAsset")),
+          202: jsonResponse("Asset en cuarentena", { type: "object", required: ["success", "data"], properties: { success: { type: "boolean", enum: [true] }, data: ref("MarketplaceAsset") } }),
+          400: badRequest, 401: unauthorized, 413: errorResponse("Payload Too Large"), 422: unprocessable,
+          429: errorResponse("Too Many Requests"), 502: errorResponse("Bad Gateway"), 503: serviceUnavailable, 504: errorResponse("Gateway Timeout")
         }
       }
     },
@@ -725,7 +749,7 @@ export const openapiSpec: OpenAPIV3.Document = {
     },
     "/barrios/{barrioSlug}/news/assist": {
       parameters: [barrioSlugParam],
-      post: { tags: ["Noticias"], summary: "Mejorar un borrador con IA antes de enviarlo", security: bearerSecurity, requestBody: jsonBody(newsAssistBody), responses: { 200: ok(ref("NewsEditorialDraft")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 429: errorResponse("Too Many Requests"), 503: serviceUnavailable } }
+      post: { tags: ["Noticias"], summary: "Mejorar un borrador con IA antes de enviarlo", security: bearerSecurity, requestBody: jsonBody(newsAssistBody), responses: { 200: ok(ref("NewsEditorialDraft")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 429: errorResponse("Too Many Requests"), 502: errorResponse("Bad Gateway"), 503: serviceUnavailable, 504: errorResponse("Gateway Timeout") } }
     },
     "/barrios/{barrioSlug}/news/manage/{newsSlug}": {
       parameters: [barrioSlugParam, newsSlugParam],
@@ -749,11 +773,11 @@ export const openapiSpec: OpenAPIV3.Document = {
     },
     "/barrios/{barrioSlug}/news/editorial/{newsSlug}/summarize": {
       parameters: [barrioSlugParam, newsSlugParam],
-      post: { tags: ["Noticias"], summary: "Generar resumen editorial con IA", security: bearerSecurity, responses: { 200: ok(ref("NewsAiSummary")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
+      post: { tags: ["Noticias"], summary: "Generar resumen editorial con IA", security: bearerSecurity, responses: { 200: ok(ref("NewsAiSummary")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 429: errorResponse("Too Many Requests"), 502: errorResponse("Bad Gateway"), 503: serviceUnavailable, 504: errorResponse("Gateway Timeout") } }
     },
     "/barrios/{barrioSlug}/news/editorial/{newsSlug}/improve": {
       parameters: [barrioSlugParam, newsSlugParam],
-      post: { tags: ["Noticias"], summary: "Mejorar descripción, cuerpo y resumen con IA", security: bearerSecurity, responses: { 200: ok(ref("NewsEditorialDraft")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
+      post: { tags: ["Noticias"], summary: "Mejorar descripción, cuerpo y resumen con IA", security: bearerSecurity, responses: { 200: ok(ref("NewsEditorialDraft")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 429: errorResponse("Too Many Requests"), 502: errorResponse("Bad Gateway"), 503: serviceUnavailable, 504: errorResponse("Gateway Timeout") } }
     },
     "/barrios/{barrioSlug}/news/{newsSlug}/vote": {
       parameters: [barrioSlugParam, newsSlugParam],
@@ -812,8 +836,8 @@ export const openapiSpec: OpenAPIV3.Document = {
         responses: { 200: ok(ref("PaginatedMarketplace")), 400: badRequest, 404: notFound }
       },
       post: {
-        tags: ["Marketplace"], summary: "Crear y moderar una publicación", description: "La respuesta informa availability y moderationStatus. Solo APPROVED + AVAILABLE se publica.", security: bearerSecurity, requestBody: jsonBody(createMarketplaceBody),
-        responses: { 201: created(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+        tags: ["Marketplace"], summary: "Crear y moderar una publicación", description: "assetIds solo acepta assets APPROVED propios y libres. images es salida derivada por el servidor. Solo APPROVED + AVAILABLE se publica.", security: bearerSecurity, requestBody: jsonBody(createMarketplaceBody),
+        responses: { 201: created(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable }
       }
     },
     "/barrios/{barrioSlug}/marketplace/me": {
@@ -831,8 +855,8 @@ export const openapiSpec: OpenAPIV3.Document = {
       parameters: [barrioSlugParam, pathParam("postId", cuid())],
       get: { tags: ["Marketplace"], summary: "Obtener publicación o preview privado", description: "El público solo accede a APPROVED + AVAILABLE. El propietario y moderadores conservan acceso privado a contenido pendiente o rechazado.", security: bearerSecurity, responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } },
       patch: {
-        tags: ["Marketplace"], summary: "Actualizar publicación", description: "Cambiar texto, precio, categoría, ubicación o imágenes invalida la aprobación previa y crea una decisión append-only.", security: bearerSecurity, requestBody: jsonBody(updateMarketplaceBody),
-        responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+        tags: ["Marketplace"], summary: "Actualizar publicación", description: "Cambiar texto, precio, categoría, ubicación o assetIds invalida la aprobación previa y crea una decisión append-only. Los assets quitados se eliminan de Cloudinary.", security: bearerSecurity, requestBody: jsonBody(updateMarketplaceBody),
+        responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable }
       },
       delete: { tags: ["Marketplace"], summary: "Eliminar publicación", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
     },

@@ -2,6 +2,7 @@ import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 import { UserRole, ModerationStatus } from "@prisma/client";
 import { ModerateMarketplaceDecisionInput } from "./moderation.schema";
+import { presentMarketplacePost } from "../marketplace/marketplace.service";
 
 export const moderationService = {
   /**
@@ -58,13 +59,22 @@ export const moderationService = {
           user: { select: { id: true, name: true, email: true } },
           barrio: { select: { id: true, name: true, slug: true } },
           reports: { select: { id: true, category: true, comment: true, createdAt: true, reporter: { select: { name: true } } } },
-          decisions: { orderBy: { createdAt: "desc" }, select: { status: true, reason: true, privateNote: true, moderator: { select: { name: true } }, createdAt: true } }
+          decisions: { orderBy: { createdAt: "desc" }, select: { status: true, reason: true, privateNote: true, moderator: { select: { name: true } }, createdAt: true } },
+          assets: { select: { id: true, url: true }, orderBy: { createdAt: "asc" } }
         }
       }),
       prisma.marketplacePost.count({ where })
     ]);
 
-    return { items, total, page: opts.page, limit: opts.limit };
+    return {
+      items: items.map((post) => ({
+        ...presentMarketplacePost(post),
+        legacyImages: post.legacyImages
+      })),
+      total,
+      page: opts.page,
+      limit: opts.limit
+    };
   },
 
   /**
@@ -77,7 +87,10 @@ export const moderationService = {
       throw new ApiError(403, "No tenés permisos para moderar publicaciones");
     }
 
-    const post = await prisma.marketplacePost.findUnique({ where: { id: postId } });
+    const post = await prisma.marketplacePost.findUnique({
+      where: { id: postId },
+      include: { assets: { select: { id: true, url: true }, orderBy: { createdAt: "asc" } } }
+    });
     if (!post) throw new ApiError(404, "Publicación no encontrada");
 
     // Autorización
@@ -107,7 +120,7 @@ export const moderationService = {
 
     if (post.moderationStatus === newStatus) {
        // Operación idempotente: si ya está en ese estado, no repetimos la decisión.
-       return post;
+        return presentMarketplacePost(post);
     }
 
     // Append-only decision + Update post
@@ -133,10 +146,11 @@ export const moderationService = {
         data: {
           moderationStatus: newStatus,
           moderationReasonCode: newStatus === ModerationStatus.APPROVED ? null : "MANUAL_REVIEW"
-        }
+        },
+        include: { assets: { select: { id: true, url: true }, orderBy: { createdAt: "asc" } } }
       });
     });
 
-    return updatedPost;
+    return presentMarketplacePost(updatedPost);
   }
 };

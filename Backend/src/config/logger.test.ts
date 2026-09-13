@@ -1,62 +1,101 @@
-import { describe, it, expect } from "vitest";
-import pino from "pino";
 import { Writable } from "stream";
+import { describe, expect, it } from "vitest";
+import { AxiosError, AxiosHeaders } from "axios";
+import { createLogger } from "./logger";
 
-describe("Logger Redaction", () => {
-  it("should redact authorization headers and api keys", () => {
+const captureProductionLog = (payload: object): Record<string, unknown> => {
+  const logs: string[] = [];
+  const stream = new Writable({
+    write(chunk, _encoding, callback) {
+      logs.push(chunk.toString());
+      callback();
+    }
+  });
+
+  createLogger("production", stream).info(payload, "Test log");
+  return JSON.parse(logs[0]) as Record<string, unknown>;
+};
+
+describe("production logger", () => {
+  it("redacts sensitive fields recursively using the application factory", () => {
+    const output = captureProductionLog({
+      password: "top-level-password",
+      req: {
+        headers: { authorization: "Bearer secret-token", cookie: "session=123" },
+        body: { password: "request-password", content: "private prompt" }
+      },
+      response: { headers: { "set-cookie": "refreshToken=secret" } },
+      nested: {
+        deeper: {
+          passwordConfirm: "password",
+          refresh_token: "refresh",
+          customApiKey: "api-key",
+          providerSecret: "provider-secret",
+          SIGHTENGINE_API_USER: "provider-user",
+          CLOUDINARY_CLOUD_NAME: "cloud-name",
+          DATABASE_URL: "postgresql://user:password@host/db"
+        }
+      }
+    });
+
+    const serialized = JSON.stringify(output);
+    expect(serialized).not.toContain("secret-token");
+    expect(serialized).not.toContain("session=123");
+    expect(serialized).not.toContain("private prompt");
+    expect(serialized).not.toContain("provider-user");
+    expect(serialized).not.toContain("cloud-name");
+    expect(serialized).not.toContain("postgresql://");
+    expect(serialized.match(/\[Redacted\]/g)?.length).toBeGreaterThanOrEqual(10);
+    expect((output.req as Record<string, unknown>).body).toBeUndefined();
+    expect(output.msg).toBe("Test log");
+  });
+
+  it("redacts sensitive fields nested in arrays", () => {
+    const output = captureProductionLog({ values: [{ token: "one" }, { api_secret: "two" }] });
+
+    expect(JSON.stringify(output)).not.toMatch(/one|two/);
+  });
+
+  it("allowlists real AxiosError fields without serializing request configuration", () => {
+    const config = {
+      headers: new AxiosHeaders({ Authorization: "Bearer logger-secret" }),
+      data: { body: "private-body", api_secret: "provider-secret" },
+      url: "https://provider.test/check?api_secret=query-secret"
+    } as any;
+    const response = {
+      status: 429,
+      statusText: "Too Many Requests",
+      headers: new AxiosHeaders({ "set-cookie": "refresh=secret" }),
+      config,
+      data: { ocr: "private-ocr", secret: "response-secret" }
+    } as any;
+    const error = new AxiosError("Provider request failed", "ERR_BAD_RESPONSE", config, { body: "request-body" }, response);
+
+    const output = captureProductionLog({ err: error });
+    const serialized = JSON.stringify(output);
+    expect(output.err).toMatchObject({ name: "AxiosError", code: "ERR_BAD_RESPONSE", status: 429 });
+    expect(output.err).not.toHaveProperty("message");
+    expect(output.err).not.toHaveProperty("stack");
+    expect(serialized).not.toMatch(/logger-secret|private-body|provider-secret|query-secret|refresh=secret|private-ocr|response-secret|request-body/);
+    expect(serialized).not.toMatch(/"config"|"headers"|"request"|"response"|"data"|"body"/);
+  });
+
+  it("omits dynamic error details and sanitizes direct credential strings", () => {
     const logs: string[] = [];
     const stream = new Writable({
-      write(chunk, encoding, callback) {
+      write(chunk, _encoding, callback) {
         logs.push(chunk.toString());
         callback();
       }
     });
+    const productionLogger = createLogger("production", stream);
+    const error = new Error("Bearer leaked-token api_secret=leaked-secret");
+    error.stack = "Error: password=leaked-password";
 
-    const testLogger = pino({
-      level: "info",
-      redact: {
-        paths: [
-          "req.headers.authorization",
-          "req.headers.cookie",
-          "res.headers['set-cookie']",
-          "err.config.headers.Authorization",
-          "err.config.headers.authorization",
-          "password",
-          "AI_API_KEY",
-          "*.password",
-          "*.passwordConfirm",
-          "*.token",
-          "*.refreshToken",
-          "*.AI_API_KEY"
-        ],
-        censor: "[Redacted]"
-      }
-    }, stream);
+    productionLogger.error({ err: error }, "Cookie: session=leaked-cookie");
+    const serialized = logs[0];
 
-    testLogger.info({
-      req: {
-        headers: {
-          authorization: "Bearer secret-token",
-          cookie: "session=123"
-        }
-      },
-      err: {
-        config: {
-          headers: {
-            Authorization: "Bearer api-key"
-          }
-        }
-      },
-      password: "my-password",
-      AI_API_KEY: "sk-1234"
-    }, "Test log");
-
-    const logOutput = JSON.parse(logs[0]);
-    expect(logOutput.req.headers.authorization).toBe("[Redacted]");
-    expect(logOutput.req.headers.cookie).toBe("[Redacted]");
-    expect(logOutput.err.config.headers.Authorization).toBe("[Redacted]");
-    expect(logOutput.password).toBe("[Redacted]");
-    expect(logOutput.AI_API_KEY).toBe("[Redacted]");
-    expect(logOutput.msg).toBe("Test log");
+    expect(serialized).not.toMatch(/leaked-token|leaked-secret|leaked-password|leaked-cookie/);
+    expect(JSON.parse(serialized).msg).toBe("Cookie: [Redacted]");
   });
 });
