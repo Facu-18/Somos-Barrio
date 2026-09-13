@@ -1,11 +1,11 @@
 opencode.json
 
 # Claude
-# /.claude/
-# /CLAUDE.MD
+/.claude/
+/CLAUDE.MD
 
 # # Agents
-# /AGENTS.md
+/AGENTS.md
 
 # # Diseño
-# /design/
+/design/
