@@ -10,9 +10,11 @@ export async function processMarketplaceAssetCleanup(): Promise<void> {
   processing = true;
   try {
     const olderThan = new Date(Date.now() - env.MARKETPLACE_ASSET_ORPHAN_TTL_MS);
-    const result = await marketplaceAssetService.cleanupOrphanAssets(olderThan);
-    if (result.deleted || result.pending) {
-      logger.info(result, "Limpieza de assets huérfanos de marketplace completada");
+    const reviewOlderThan = new Date(Date.now() - env.MARKETPLACE_ASSET_REVIEW_TTL_MS);
+    const reconciliation = await marketplaceAssetService.reconcilePendingReviews();
+    const cleanup = await marketplaceAssetService.cleanupOrphanAssets(olderThan, reviewOlderThan);
+    if (reconciliation.completed || reconciliation.pending || cleanup.deleted || cleanup.pending) {
+      logger.info({ reconciliation, cleanup }, "Mantenimiento de assets de marketplace completado");
     }
   } finally {
     processing = false;

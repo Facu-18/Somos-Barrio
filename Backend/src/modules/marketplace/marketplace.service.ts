@@ -4,6 +4,7 @@ import { ApiError } from "../../utils/api-error";
 import { contentModerationService } from "../content-moderation/content-moderation.service";
 import { marketplaceAssetService } from "../upload/marketplace-asset.service";
 import { logger } from "../../config/logger";
+import { env } from "../../config/env";
 
 type CreatePostInput = {
   title: string;
@@ -25,13 +26,28 @@ type UpdatePostInput = Partial<{
   assetIds: string[];
   location: string;
   whatsapp: string;
-}>;
+}> & { expectedVersion: number };
 
 const userSelect = { id: true, nickname: true, avatarUrl: true };
-const assetSelect = { id: true, url: true };
+const assetSelect = { id: true, status: true, url: true };
 
-export function presentMarketplacePost<T extends { images: string[]; legacyImages?: string[]; assets: { id: string; url: string | null }[] }>(post: T) {
-  const { assets, images: _legacyImages, legacyImages: _restrictedLegacyImages, ...rest } = post;
+export function presentMarketplacePost<T extends {
+  images: string[];
+  legacyImages?: string[];
+  assets: { id: string; url: string | null }[];
+  appeals?: unknown;
+  moderationVersion?: number;
+  deletedAt?: Date | null;
+}>(post: T) {
+  const {
+    assets,
+    images: _legacyImages,
+    legacyImages: _restrictedLegacyImages,
+    appeals: _appeals,
+    moderationVersion: _moderationVersion,
+    deletedAt: _deletedAt,
+    ...rest
+  } = post;
   return {
     ...rest,
     images: assets.flatMap((asset) => asset.url ? [asset.url] : []),
@@ -39,30 +55,70 @@ export function presentMarketplacePost<T extends { images: string[]; legacyImage
   };
 }
 
+function presentMarketplaceOwnerPost<T extends {
+  images: string[];
+  legacyImages?: string[];
+  assets: { id: string; status: MarketplaceAssetStatus; url: string | null }[];
+  appeals?: { id: string; status: string; statement: string; createdAt: Date }[];
+  moderationVersion: number;
+}>(post: T) {
+  const { appeals, ...postWithoutAppeals } = post;
+  return {
+    ...presentMarketplacePost(postWithoutAppeals),
+    moderationVersion: post.moderationVersion,
+    currentAppeal: appeals?.[0] ?? null,
+    managedAssets: post.assets.map((asset) => ({ id: asset.id, status: asset.status, url: asset.url }))
+  };
+}
+
+async function loadAttachableAssets(
+  tx: Prisma.TransactionClient,
+  uploaderId: string,
+  barrioId: string,
+  postId: string | null,
+  assetIds: string[]
+) {
+  if (assetIds.length === 0) return [];
+  const assets = await tx.marketplaceAsset.findMany({ where: { id: { in: assetIds } } });
+  const valid = assets.length === assetIds.length && assets.every((asset) => {
+    const approved = asset.status === MarketplaceAssetStatus.APPROVED
+      && Boolean(asset.url && asset.cloudinaryPublicId && asset.cloudinaryType === "upload");
+    const quarantined = asset.status === MarketplaceAssetStatus.QUARANTINED
+      && Boolean(!asset.url && asset.cloudinaryPublicId && asset.cloudinaryType === "authenticated");
+    return asset.uploaderId === uploaderId
+      && (approved || quarantined)
+      && (asset.barrioId === null || asset.barrioId === barrioId)
+      && (asset.postId === null || asset.postId === postId);
+  });
+  if (!valid) {
+    throw new ApiError(400, "Los assets deben pertenecer al autor y estar aprobados o en cuarentena privada");
+  }
+  return assets;
+}
+
 async function attachAssets(
   tx: Prisma.TransactionClient,
   uploaderId: string,
+  barrioId: string,
   postId: string,
   assetIds: string[]
 ) {
-  if (assetIds.length === 0) return;
-  const assets = await tx.marketplaceAsset.findMany({ where: { id: { in: assetIds } } });
-  const valid = assets.length === assetIds.length && assets.every((asset) =>
-    asset.uploaderId === uploaderId &&
-    asset.status === MarketplaceAssetStatus.APPROVED &&
-    Boolean(asset.url && asset.cloudinaryPublicId) &&
-    (asset.postId === null || asset.postId === postId)
-  );
-  if (!valid) throw new ApiError(400, "Los assets deben estar aprobados, pertenecer al autor y no estar adjuntos a otra publicación");
+  const assets = await loadAttachableAssets(tx, uploaderId, barrioId, postId, assetIds);
+  if (assets.length === 0) return { hasQuarantined: false };
 
   const attached = await tx.marketplaceAsset.updateMany({
     where: {
-      id: { in: assetIds }, uploaderId, status: MarketplaceAssetStatus.APPROVED,
-      OR: [{ postId: null }, { postId }]
+      id: { in: assetIds }, uploaderId,
+      status: { in: [MarketplaceAssetStatus.APPROVED, MarketplaceAssetStatus.QUARANTINED] },
+      AND: [
+        { OR: [{ barrioId: null }, { barrioId }] },
+        { OR: [{ postId: null }, { postId }] }
+      ]
     },
-    data: { postId, deletionRequestedAt: null }
+    data: { postId, barrioId, deletionRequestedAt: null }
   });
   if (attached.count !== assetIds.length) throw new ApiError(409, "Alguno de los assets ya fue utilizado");
+  return { hasQuarantined: assets.some((a) => a.status === MarketplaceAssetStatus.QUARANTINED) };
 }
 
 function normalizeWhatsapp(value: string): string {
@@ -79,6 +135,18 @@ async function resolveBarrio(barrioSlug: string) {
   return barrio;
 }
 
+async function serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(operation, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034" && attempt < 2) continue;
+      throw error;
+    }
+  }
+  throw new ApiError(409, "MODERATION_VERSION_CONFLICT");
+}
+
 function contentForModeration(post: { title: string; description: string; category: string; location?: string | null }) {
   return [post.title, post.description, post.category, post.location].filter(Boolean).join("\n");
 }
@@ -89,6 +157,13 @@ function initialModerationStatus(decision: "ALLOW" | "REVIEW" | "BLOCK") {
   return ModerationStatus.APPROVED;
 }
 
+function marketplaceReasonCode(categories: string[], fallback: "CONTENT_CORRECTED" | "OTHER_POLICY") {
+  if (categories.includes("DRUGS")) return "PROHIBITED_ITEM";
+  if (categories.includes("WEAPONS")) return "REGULATED_ITEM";
+  if (categories.includes("INSULT")) return "INAPPROPRIATE_CONTENT";
+  return categories.length ? "OTHER_POLICY" : fallback;
+}
+
 export const marketplaceService = {
   async list(barrioSlug: string, opts: { category?: string; page: number; limit: number }) {
     const barrio = await resolveBarrio(barrioSlug);
@@ -96,6 +171,7 @@ export const marketplaceService = {
 
     const where = {
       barrioId: barrio.id,
+      deletedAt: null,
       availability: MarketplaceAvailability.AVAILABLE,
       moderationStatus: ModerationStatus.APPROVED,
       ...(opts.category ? { category: opts.category as any } : {})
@@ -137,6 +213,7 @@ export const marketplaceService = {
 
     const where = {
       barrioId: barrio.id,
+      deletedAt: null,
       userId
     };
 
@@ -146,20 +223,28 @@ export const marketplaceService = {
         skip,
         take: opts.limit,
         orderBy: { createdAt: "desc" },
-        include: { user: { select: userSelect }, assets: { select: assetSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] } }
+        include: {
+          user: { select: userSelect },
+          assets: { select: assetSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+          appeals: { where: { status: "PENDING" }, take: 1, orderBy: { createdAt: "desc" } }
+        }
       }),
       prisma.marketplacePost.count({ where })
     ]);
 
-    return { items: items.map(presentMarketplacePost), total, page: opts.page, limit: opts.limit };
+    return { items: items.map(presentMarketplaceOwnerPost), total, page: opts.page, limit: opts.limit };
   },
 
   async getById(barrioSlug: string, postId: string, requesterId: string, requesterRole: UserRole) {
     const barrio = await resolveBarrio(barrioSlug);
 
     const post = await prisma.marketplacePost.findFirst({
-      where: { id: postId, barrioId: barrio.id },
-      include: { user: { select: userSelect }, assets: { select: assetSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] } }
+      where: { id: postId, barrioId: barrio.id, deletedAt: null },
+      include: {
+        user: { select: userSelect },
+        assets: { select: assetSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+        appeals: { where: { status: "PENDING" }, take: 1, orderBy: { createdAt: "desc" } }
+      }
     });
 
     if (!post) throw new ApiError(404, "Publicacion no encontrada");
@@ -179,9 +264,13 @@ export const marketplaceService = {
     const updated = await prisma.marketplacePost.update({
       where: { id: post.id },
       data: { views: { increment: 1 } },
-      include: { user: { select: userSelect }, assets: { select: assetSelect, orderBy: { createdAt: "asc" } } }
+      include: {
+        user: { select: userSelect },
+        assets: { select: assetSelect, orderBy: { createdAt: "asc" } },
+        appeals: { where: { status: "PENDING" }, take: 1, orderBy: { createdAt: "desc" } }
+      }
     });
-    return presentMarketplacePost(updated);
+    return isOwnerOrModerator ? presentMarketplaceOwnerPost(updated) : presentMarketplacePost(updated);
   },
 
   async create(barrioSlug: string, userId: string, input: CreatePostInput) {
@@ -189,10 +278,20 @@ export const marketplaceService = {
 
     const { assetIds, ...postInput } = input;
     const moderationResult = contentModerationService.evaluate(contentForModeration(input), 'MARKETPLACE');
-    const modStatus = initialModerationStatus(moderationResult.decision);
-    const moderationReasonCode = moderationResult.categories[0] ?? null;
+    const automaticStatus = initialModerationStatus(moderationResult.decision);
+    const automaticReasonCode = moderationResult.decision === "ALLOW"
+      ? null
+      : marketplaceReasonCode(moderationResult.categories, "OTHER_POLICY");
 
-    const post = await prisma.$transaction(async (tx) => {
+    const post = await serializable(async (tx) => {
+      const requestedAssets = await loadAttachableAssets(tx, userId, barrio.id, null, assetIds);
+      const hasQuarantined = requestedAssets.some((asset) => asset.status === MarketplaceAssetStatus.QUARANTINED);
+      const moderationStatus = hasQuarantined && automaticStatus === ModerationStatus.APPROVED
+        ? ModerationStatus.PENDING_REVIEW
+        : automaticStatus;
+      const moderationReasonCode = hasQuarantined && automaticStatus === ModerationStatus.APPROVED
+        ? "IMAGE_POLICY"
+        : automaticReasonCode;
       const created = await tx.marketplacePost.create({
         data: {
           ...postInput,
@@ -201,11 +300,14 @@ export const marketplaceService = {
           whatsapp: normalizeWhatsapp(input.whatsapp),
           userId,
           barrioId: barrio.id,
-          moderationStatus: modStatus,
+          moderationStatus,
           moderationReasonCode,
           decisions: {
             create: {
-              status: modStatus,
+              action: "AUTO_REVIEW",
+              status: moderationStatus,
+              reasonCode: moderationReasonCode,
+              toVersion: 0,
               reason: moderationReasonCode ?? "Automated approval",
               ruleId: moderationResult.ruleId,
               ruleVersion: moderationResult.ruleVersion,
@@ -213,19 +315,25 @@ export const marketplaceService = {
               domain: moderationResult.domain,
               severity: moderationResult.severity,
               contentHash: moderationResult.contentHash,
-              categories: moderationResult.categories
+              categories: moderationReasonCode === "IMAGE_POLICY"
+                ? ["IMAGE_POLICY"]
+                : moderationResult.categories
             }
           }
         },
         include: { user: { select: userSelect } }
       });
-      await attachAssets(tx, userId, created.id, assetIds);
+      await attachAssets(tx, userId, barrio.id, created.id, assetIds);
       return tx.marketplacePost.findUniqueOrThrow({
         where: { id: created.id },
-        include: { user: { select: userSelect }, assets: { select: assetSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] } }
+        include: {
+          user: { select: userSelect },
+          assets: { select: assetSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+          appeals: { where: { status: "PENDING" }, take: 1, orderBy: { createdAt: "desc" } }
+        }
       });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    return presentMarketplacePost(post);
+    });
+    return presentMarketplaceOwnerPost(post);
   },
 
   async update(
@@ -238,10 +346,14 @@ export const marketplaceService = {
     const barrio = await resolveBarrio(barrioSlug);
 
     const post = await prisma.marketplacePost.findFirst({
-      where: { id: postId, barrioId: barrio.id },
+      where: { id: postId, barrioId: barrio.id, deletedAt: null },
       include: { assets: { select: { id: true, url: true, cloudinaryPublicId: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] } }
     });
     if (!post) throw new ApiError(404, "Publicacion no encontrada");
+
+    if (post.moderationVersion !== input.expectedVersion) {
+      throw new ApiError(409, "MODERATION_VERSION_CONFLICT");
+    }
 
     if (post.userId !== requesterId && requesterRole !== UserRole.ADMIN) {
       throw new ApiError(403, "No tienes permisos para editar esta publicacion");
@@ -260,7 +372,7 @@ export const marketplaceService = {
 
     let modStatus = post.moderationStatus;
     let moderationReasonCode = post.moderationReasonCode;
-    let decisionCreate: Prisma.MarketplaceModerationDecisionCreateWithoutPostInput | undefined;
+    let decisionCreate: Prisma.MarketplaceModerationDecisionUncheckedCreateWithoutPostInput | undefined;
 
     if (materialChanged) {
       const candidate = {
@@ -274,8 +386,9 @@ export const marketplaceService = {
 
       // Clean edits still require a human to restore public visibility.
       modStatus = result.decision === 'BLOCK' ? ModerationStatus.REJECTED : ModerationStatus.PENDING_REVIEW;
-      moderationReasonCode = result.categories[0] ?? 'CONTENT_CHANGED';
+      moderationReasonCode = marketplaceReasonCode(result.categories, 'CONTENT_CORRECTED');
       decisionCreate = {
+        action: 'OWNER_RESUBMIT',
         status: modStatus,
         reason: result.categories.length ? result.categories.join(", ") : "Material content changed",
         ruleId: cleanContentRequiresReview
@@ -287,46 +400,84 @@ export const marketplaceService = {
         policyVersion: result.policyVersion,
         domain: result.domain,
         severity: cleanContentRequiresReview ? 'MEDIUM' : result.severity,
+        reasonCode: moderationReasonCode,
         contentHash: result.contentHash,
         categories: cleanContentRequiresReview ? [moderationReasonCode] : result.categories
       };
     }
 
-    const { assetIds, ...postInput } = input;
+    const { assetIds, expectedVersion, ...postInput } = input;
     const selectedAssetIds = assetIds ?? post.assets.map((asset) => asset.id);
     const removedAssetIds = post.assets.filter((asset) => !selectedAssetIds.includes(asset.id)).map((asset) => asset.id);
-    const updated = await prisma.$transaction(async (tx) => {
-      await attachAssets(tx, post.userId, post.id, selectedAssetIds);
+    const updated = await serializable(async (tx) => {
+      const { hasQuarantined } = await attachAssets(tx, post.userId, post.barrioId, post.id, selectedAssetIds);
+
+      if (hasQuarantined && modStatus === ModerationStatus.APPROVED) {
+        modStatus = ModerationStatus.PENDING_REVIEW;
+        moderationReasonCode = 'IMAGE_POLICY';
+        if (decisionCreate) {
+          decisionCreate.status = modStatus;
+          decisionCreate.reasonCode = moderationReasonCode;
+          decisionCreate.categories = [moderationReasonCode];
+        }
+      }
+
       if (removedAssetIds.length) {
         await tx.marketplaceAsset.updateMany({
           where: { id: { in: removedAssetIds }, postId: post.id },
           data: { postId: null, status: MarketplaceAssetStatus.DELETE_PENDING, url: null, deletionRequestedAt: new Date() }
         });
       }
-      return tx.marketplacePost.update({
-        where: { id: post.id },
+      if (materialChanged) {
+        await tx.marketplaceAppeal.updateMany({
+          where: { postId: post.id, status: 'PENDING' },
+          data: { status: 'SUPERSEDED', updatedAt: new Date() }
+        });
+      }
+
+      const changed = await tx.marketplacePost.updateMany({
+        where: { id: post.id, moderationVersion: expectedVersion, deletedAt: null },
         data: {
           ...postInput,
           category: input.category as any,
           ...(input.whatsapp !== undefined ? { whatsapp: normalizeWhatsapp(input.whatsapp) } : {}),
           moderationStatus: modStatus,
           moderationReasonCode,
-          ...(decisionCreate ? { decisions: { create: decisionCreate } } : {})
-        },
-        include: { user: { select: userSelect }, assets: { select: assetSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] } }
+          moderationVersion: { increment: 1 },
+        }
       });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      if (changed.count !== 1) throw new ApiError(409, "MODERATION_VERSION_CONFLICT");
+      if (decisionCreate) {
+        await tx.marketplaceModerationDecision.create({
+          data: {
+            ...decisionCreate,
+            postId: post.id,
+            fromStatus: post.moderationStatus,
+            fromVersion: expectedVersion,
+            toVersion: expectedVersion + 1
+          }
+        });
+      }
+      return tx.marketplacePost.findUniqueOrThrow({
+        where: { id: post.id },
+        include: {
+          user: { select: userSelect },
+          assets: { select: assetSelect, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+          appeals: { where: { status: "PENDING" }, take: 1, orderBy: { createdAt: "desc" } }
+        }
+      });
+    });
     await marketplaceAssetService.cleanupAssetsById(removedAssetIds).catch(() => {
       logger.warn({ assetCount: removedAssetIds.length }, "La limpieza inmediata de assets reemplazados quedó pendiente");
     });
-    return presentMarketplacePost(updated);
+    return presentMarketplaceOwnerPost(updated);
   },
 
   async remove(barrioSlug: string, postId: string, requesterId: string, requesterRole: UserRole) {
     const barrio = await resolveBarrio(barrioSlug);
 
     const post = await prisma.marketplacePost.findFirst({
-      where: { id: postId, barrioId: barrio.id },
+      where: { id: postId, barrioId: barrio.id, deletedAt: null },
       include: { assets: { select: { id: true } } }
     });
     if (!post) throw new ApiError(404, "Publicacion no encontrada");
@@ -336,12 +487,16 @@ export const marketplaceService = {
     }
 
     const assetIds = post.assets.map((asset) => asset.id);
-    await prisma.$transaction(async (tx) => {
+    await serializable(async (tx) => {
+      const removed = await tx.marketplacePost.updateMany({
+        where: { id: post.id, moderationVersion: post.moderationVersion, deletedAt: null },
+        data: { deletedAt: new Date(), moderationVersion: { increment: 1 } }
+      });
+      if (removed.count !== 1) throw new ApiError(409, "MODERATION_VERSION_CONFLICT");
       await tx.marketplaceAsset.updateMany({
         where: { postId: post.id },
         data: { postId: null, status: MarketplaceAssetStatus.DELETE_PENDING, url: null, deletionRequestedAt: new Date() }
       });
-      await tx.marketplacePost.delete({ where: { id: post.id } });
     });
     await marketplaceAssetService.cleanupAssetsById(assetIds).catch(() => {
       logger.warn({ assetCount: assetIds.length }, "La limpieza inmediata de assets eliminados quedó pendiente");
@@ -351,64 +506,133 @@ export const marketplaceService = {
   async report(barrioSlug: string, postId: string, requesterId: string, input: { category: string; comment?: string }) {
     const barrio = await resolveBarrio(barrioSlug);
 
-    const post = await prisma.marketplacePost.findFirst({
-      where: {
-        id: postId,
-        barrioId: barrio.id,
-        availability: MarketplaceAvailability.AVAILABLE,
-        moderationStatus: ModerationStatus.APPROVED
-      }
-    });
-    if (!post) throw new ApiError(404, "Publicacion no encontrada");
+    try {
+      await serializable(async (tx) => {
+        const [lockedPost] = await tx.$queryRaw<{
+          id: string;
+          userId: string;
+          barrioId: string;
+          availability: MarketplaceAvailability;
+          moderationStatus: ModerationStatus;
+          moderationVersion: number;
+          deletedAt: Date | null;
+        }[]>`
+        SELECT id, "userId", "barrioId", availability, "moderationStatus", "moderationVersion", "deletedAt"
+        FROM "MarketplacePost"
+        WHERE id = ${postId} FOR UPDATE
+      `;
+        if (!lockedPost
+          || lockedPost.barrioId !== barrio.id
+          || lockedPost.deletedAt
+          || lockedPost.availability !== MarketplaceAvailability.AVAILABLE
+          || lockedPost.moderationStatus !== ModerationStatus.APPROVED) {
+          throw new ApiError(404, "Publicacion no encontrada");
+        }
+        if (lockedPost.userId === requesterId) throw new ApiError(400, "No podés reportar tu propia publicación");
 
-    if (post.userId === requesterId) {
-      throw new ApiError(400, "No podés reportar tu propia publicación");
-    }
+        await tx.marketplaceReport.create({
+          data: { postId, reporterId: requesterId, category: input.category as any, comment: input.comment }
+        });
 
-    const existingReport = await prisma.marketplaceReport.findUnique({
-      where: { postId_reporterId: { postId, reporterId: requesterId } }
-    });
-
-    if (existingReport) {
-      throw new ApiError(409, "Ya reportaste esta publicación");
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.marketplaceReport.create({
-        data: {
-          postId,
-          reporterId: requesterId,
-          category: input.category as any,
-          comment: input.comment
+        const reportsCount = await tx.marketplaceReport.count({ where: { postId, status: "OPEN" } });
+        if (reportsCount >= env.MARKETPLACE_REPORT_THRESHOLD) {
+          const hidden = await tx.marketplacePost.updateMany({
+            where: { id: postId, moderationVersion: lockedPost.moderationVersion, moderationStatus: ModerationStatus.APPROVED, deletedAt: null },
+            data: {
+              moderationStatus: ModerationStatus.PENDING_REVIEW,
+              moderationReasonCode: "REPORT_REVIEW",
+              moderationVersion: { increment: 1 }
+            }
+          });
+          if (hidden.count !== 1) throw new ApiError(409, "MODERATION_VERSION_CONFLICT");
+          await tx.marketplaceModerationDecision.create({
+            data: {
+              postId,
+              action: "REPORT_THRESHOLD",
+              status: ModerationStatus.PENDING_REVIEW,
+              fromStatus: ModerationStatus.APPROVED,
+              fromVersion: lockedPost.moderationVersion,
+              toVersion: lockedPost.moderationVersion + 1,
+              reasonCode: "REPORT_REVIEW",
+              reason: "Auto-ocultamiento por umbral de reportes",
+              ruleId: "REPORT_THRESHOLD",
+              ruleVersion: "reports-2",
+              policyVersion: "marketplace-review-2",
+              domain: "MARKETPLACE",
+              severity: "MEDIUM",
+              categories: ["REPORT_THRESHOLD"],
+              evidence: { openReports: reportsCount }
+            }
+          });
         }
       });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new ApiError(409, "ALREADY_REPORTED");
+      }
+      throw error;
+    }
+  },
 
-      const reportsCount = await tx.marketplaceReport.count({ where: { postId } });
+  async appeal(barrioSlug: string, postId: string, requesterId: string, input: { statement: string, expectedVersion: number, idempotencyKey: string }) {
+    const barrio = await resolveBarrio(barrioSlug);
+    try {
+      await serializable(async (tx) => {
+        const byKey = await tx.marketplaceAppeal.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
+        if (byKey) {
+          if (byKey.postId === postId
+            && byKey.ownerId === requesterId
+            && byKey.statement === input.statement
+            && byKey.postVersion === input.expectedVersion) return;
+          throw new ApiError(409, "IDEMPOTENCY_KEY_IN_USE");
+        }
 
-      // Auto-ocultamiento si llega a 3 reportes
-      if (reportsCount >= 3 && post.moderationStatus === ModerationStatus.APPROVED) {
-        await tx.marketplacePost.update({
-          where: { id: postId },
-          data: {
-            moderationStatus: ModerationStatus.PENDING_REVIEW,
-            moderationReasonCode: "REPORT_THRESHOLD"
-          }
+        const [post] = await tx.$queryRaw<{
+          id: string;
+          userId: string;
+          barrioId: string;
+          moderationStatus: ModerationStatus;
+          moderationVersion: number;
+          deletedAt: Date | null;
+        }[]>`
+          SELECT id, "userId", "barrioId", "moderationStatus", "moderationVersion", "deletedAt"
+          FROM "MarketplacePost"
+          WHERE id = ${postId} FOR UPDATE
+        `;
+        if (!post || post.barrioId !== barrio.id || post.deletedAt) throw new ApiError(404, "Publicacion no encontrada");
+        if (post.userId !== requesterId) throw new ApiError(403, "Solo el propietario puede apelar");
+        if (post.moderationStatus !== ModerationStatus.REJECTED && post.moderationStatus !== ModerationStatus.REMOVED) {
+          throw new ApiError(409, "INVALID_APPEAL_STATE");
+        }
+        if (post.moderationVersion !== input.expectedVersion) throw new ApiError(409, "MODERATION_VERSION_CONFLICT");
+
+        const againstDecision = await tx.marketplaceModerationDecision.findFirst({
+          where: { postId },
+          orderBy: { createdAt: "desc" },
+          select: { id: true }
         });
-
-        await tx.marketplaceModerationDecision.create({
+        await tx.marketplaceAppeal.create({
           data: {
             postId,
-            status: ModerationStatus.PENDING_REVIEW,
-            reason: "Auto-ocultamiento por umbral de reportes (>=3)",
-            ruleId: "REPORT_THRESHOLD",
-            ruleVersion: "reports-1",
-            policyVersion: "reports-1",
-            domain: "MARKETPLACE",
-            severity: "MEDIUM",
-            categories: ["REPORT_THRESHOLD"]
+            ownerId: requesterId,
+            statement: input.statement,
+            idempotencyKey: input.idempotencyKey,
+            postVersion: input.expectedVersion,
+            againstDecisionId: againstDecision?.id,
+            status: "PENDING"
           }
         });
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const byKey = await prisma.marketplaceAppeal.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
+        if (byKey?.postId === postId
+          && byKey.ownerId === requesterId
+          && byKey.statement === input.statement
+          && byKey.postVersion === input.expectedVersion) return;
+        throw new ApiError(409, "APPEAL_ALREADY_PENDING");
       }
-    });
+      throw error;
+    }
   }
 };

@@ -41,6 +41,7 @@ export const messagesService = {
       const post = await prisma.marketplacePost.findUnique({ where: { id: input.postId } });
       if (!post) throw new ApiError(404, "Publicacion no encontrada");
       if (
+        post.deletedAt !== null ||
         post.availability !== MarketplaceAvailability.AVAILABLE ||
         post.moderationStatus !== ModerationStatus.APPROVED
       ) {

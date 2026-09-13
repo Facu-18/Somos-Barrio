@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { cleanupOrphanAssets } = vi.hoisted(() => ({ cleanupOrphanAssets: vi.fn() }));
+const { cleanupOrphanAssets, reconcilePendingReviews } = vi.hoisted(() => ({ cleanupOrphanAssets: vi.fn(), reconcilePendingReviews: vi.fn() }));
 vi.mock("../../config/env", () => ({ env: {
   MARKETPLACE_ASSET_ORPHAN_TTL_MS: 60_000,
+  MARKETPLACE_ASSET_REVIEW_TTL_MS: 604_800_000,
   MARKETPLACE_ASSET_CLEANUP_INTERVAL_MS: 5_000
 } }));
 vi.mock("../../config/logger", () => ({ logger: { info: vi.fn(), error: vi.fn() } }));
-vi.mock("./marketplace-asset.service", () => ({ marketplaceAssetService: { cleanupOrphanAssets } }));
+vi.mock("./marketplace-asset.service", () => ({ marketplaceAssetService: { cleanupOrphanAssets, reconcilePendingReviews } }));
 
 import { processMarketplaceAssetCleanup, startMarketplaceAssetCleanup, stopMarketplaceAssetCleanup } from "./marketplace-asset.cleanup";
 
@@ -15,12 +16,16 @@ describe("marketplace asset cleanup lifecycle", () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     cleanupOrphanAssets.mockResolvedValue({ deleted: 0, pending: 0 });
+    reconcilePendingReviews.mockResolvedValue({ completed: 0, pending: 0 });
   });
 
   it("uses the configured orphan TTL", async () => {
     vi.setSystemTime(new Date("2026-09-12T12:00:00.000Z"));
     await processMarketplaceAssetCleanup();
-    expect(cleanupOrphanAssets).toHaveBeenCalledWith(new Date("2026-09-12T11:59:00.000Z"));
+    expect(cleanupOrphanAssets).toHaveBeenCalledWith(
+      new Date("2026-09-12T11:59:00.000Z"),
+      new Date("2026-09-05T12:00:00.000Z")
+    );
   });
 
   it("starts once and stops without leaving an interval", async () => {

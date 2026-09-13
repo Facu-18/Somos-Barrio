@@ -10,6 +10,7 @@ const cuid = (): OpenAPIV3.SchemaObject => ({
   example: "clx1a2b3c0000d4e5f6g7h8i9"
 });
 const nullableCuid = (): OpenAPIV3.SchemaObject => ({ ...cuid(), nullable: true });
+const uuid = (): OpenAPIV3.SchemaObject => ({ type: "string", format: "uuid" });
 const dateTime = (nullable = false): OpenAPIV3.SchemaObject => ({
   type: "string",
   format: "date-time",
@@ -31,6 +32,11 @@ const jsonResponse = (description: string, schema: Schema): OpenAPIV3.ResponseOb
 });
 const ok = (schema: Schema): OpenAPIV3.ResponseObject => jsonResponse("OK", envelope(schema));
 const created = (schema: Schema): OpenAPIV3.ResponseObject => jsonResponse("Created", envelope(schema));
+const acceptedMessage = (description: string): OpenAPIV3.ResponseObject => jsonResponse(description, {
+  type: "object",
+  required: ["success", "message"],
+  properties: { success: { type: "boolean", enum: [true] }, message: { type: "string" } }
+});
 const noContent: OpenAPIV3.ResponseObject = { description: "No Content" };
 const errorResponse = (description: string): OpenAPIV3.ResponseObject =>
   jsonResponse(description, ref("Error"));
@@ -241,6 +247,19 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
       createdAt: dateTime(), updatedAt: dateTime(), user: ref("UserSummary")
     }
   },
+  MarketplaceOwnerPost: {
+    allOf: [
+      ref("MarketplacePost"),
+      {
+        type: "object", required: ["moderationVersion", "managedAssets", "currentAppeal"],
+        properties: {
+          moderationVersion: { type: "integer", minimum: 0, description: "Versión requerida por operaciones CAS" },
+          managedAssets: arrayOf(ref("MarketplaceAsset")),
+          currentAppeal: { allOf: [ref("MarketplaceAppeal")], nullable: true }
+        }
+      }
+    ]
+  },
   MarketplaceListItem: {
     type: "object",
     required: ["id", "title", "description", "price", "currency", "category", "availability", "moderationStatus", "moderationReasonCode", "images", "assetIds", "location", "views", "createdAt", "user"],
@@ -264,12 +283,40 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   },
   MarketplaceAsset: {
     type: "object",
-    required: ["id", "status", "url", "createdAt", "scannedAt"],
+    required: ["id", "status", "url", "moderationVersion", "createdAt", "scannedAt"],
     properties: {
-      id: cuid(), status: { type: "string", enum: ["QUARANTINED", "APPROVED", "REJECTED"] },
+      id: cuid(), status: { type: "string", enum: ["QUARANTINED", "PROMOTION_PENDING", "APPROVED", "REJECTION_PENDING", "REJECTED", "DELETE_PENDING"] },
       url: { type: "string", format: "uri", nullable: true },
+      moderationVersion: { type: "integer", minimum: 0 },
       createdAt: dateTime(), scannedAt: dateTime(true)
     }
+  },
+  MarketplaceAppeal: {
+    type: "object", required: ["id", "statement", "status", "createdAt"],
+    properties: {
+      id: cuid(), statement: { type: "string" }, status: { type: "string", enum: ["PENDING", "ACCEPTED", "REJECTED", "SUPERSEDED"] }, createdAt: dateTime()
+    }
+  },
+  MarketplaceModerationAsset: {
+    type: "object", required: ["id", "status", "mimeType", "byteSize", "moderationVersion", "previewUrl", "createdAt"],
+    properties: {
+      id: cuid(), status: { type: "string", enum: ["QUARANTINED", "PROMOTION_PENDING", "APPROVED", "REJECTION_PENDING", "REJECTED", "DELETE_PENDING"] },
+      mimeType: { type: "string" }, byteSize: { type: "integer" }, moderationVersion: { type: "integer" }, previewUrl: { type: "string", format: "uri", nullable: true }, createdAt: dateTime()
+    }
+  },
+  MarketplaceModerationPost: {
+    allOf: [
+      ref("MarketplaceOwnerPost"),
+      {
+        type: "object",
+        properties: {
+          deletedAt: dateTime(true), barrio: ref("BarrioSummary"),
+          reports: arrayOf({ type: "object", properties: { id: cuid(), category: { type: "string" }, comment: nullableString(), createdAt: dateTime() } }),
+          appeals: arrayOf(ref("MarketplaceAppeal")),
+          decisions: arrayOf({ type: "object", properties: { id: cuid(), action: { type: "string" }, reasonCode: { type: "string" }, privateNote: nullableString(), fromVersion: { type: "integer" }, toVersion: { type: "integer" }, createdAt: dateTime() } })
+        }
+      }
+    ]
   },
   ForumSubforum: {
     type: "object",
@@ -350,6 +397,18 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
     type: "object", required: ["items", "total", "page", "limit"],
     properties: { items: arrayOf(ref("MarketplaceListItem")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
   },
+  PaginatedMarketplaceOwner: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("MarketplaceOwnerPost")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
+  PaginatedMarketplaceModeration: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("MarketplaceModerationPost")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
+  PaginatedMarketplaceAssets: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("MarketplaceModerationAsset")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
   PaginatedThreads: {
     type: "object", required: ["items", "total", "page", "limit"],
     properties: { items: arrayOf(ref("ForumThread")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
@@ -410,6 +469,13 @@ const businessCategory = { type: "string", enum: ["GASTRONOMIA", "SALUD", "EDUCA
 const marketplaceCategory = { type: "string", enum: ["ELECTRONICA", "ROPA", "MUEBLES", "DEPORTES", "SE_BUSCA", "SE_REGALA", "OTROS"] } satisfies OpenAPIV3.SchemaObject;
 const marketplaceAvailability = { type: "string", enum: ["AVAILABLE", "SOLD", "PAUSED"] } satisfies OpenAPIV3.SchemaObject;
 const moderationStatus = { type: "string", enum: ["PENDING_REVIEW", "APPROVED", "REJECTED", "REMOVED"] } satisfies OpenAPIV3.SchemaObject;
+const marketplaceReasonCode = { type: "string", enum: ["POLICY_COMPLIANT", "PROHIBITED_ITEM", "REGULATED_ITEM", "FRAUD_OR_MISLEADING", "SPAM_OR_DUPLICATE", "INAPPROPRIATE_CONTENT", "IMAGE_POLICY", "REPORT_REVIEW", "CONTENT_CORRECTED", "OTHER_POLICY"] } satisfies OpenAPIV3.SchemaObject;
+const idempotentDecisionProperties = {
+  reasonCode: marketplaceReasonCode,
+  privateNote: { type: "string", maxLength: 2000 },
+  expectedVersion: { type: "integer", minimum: 0 },
+  idempotencyKey: uuid()
+} satisfies Record<string, OpenAPIV3.SchemaObject>;
 const rsvpStatus = { type: "string", enum: ["GOING", "INTERESTED", "NOT_GOING"] } satisfies OpenAPIV3.SchemaObject;
 
 const createNewsBody: OpenAPIV3.SchemaObject = {
@@ -486,12 +552,13 @@ const createMarketplaceBody: OpenAPIV3.SchemaObject = {
   }
 };
 const updateMarketplaceBody: OpenAPIV3.SchemaObject = {
-  type: "object", additionalProperties: false,
+  type: "object", additionalProperties: false, required: ["expectedVersion"],
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 }, description: { type: "string", minLength: 5, maxLength: 2000 },
     price: { type: "integer", minimum: 0 }, category: marketplaceCategory, availability: marketplaceAvailability,
     assetIds: { type: "array", maxItems: 5, uniqueItems: true, items: cuid() }, location: { type: "string", maxLength: 120 },
-    whatsapp: { type: "string", minLength: 8, maxLength: 30, description: "Se normaliza a E.164" }
+    whatsapp: { type: "string", minLength: 8, maxLength: 30, description: "Se normaliza a E.164" },
+    expectedVersion: { type: "integer", minimum: 0 }
   }
 };
 const createEventBody: OpenAPIV3.SchemaObject = {
@@ -836,8 +903,8 @@ export const openapiSpec: OpenAPIV3.Document = {
         responses: { 200: ok(ref("PaginatedMarketplace")), 400: badRequest, 404: notFound }
       },
       post: {
-        tags: ["Marketplace"], summary: "Crear y moderar una publicación", description: "assetIds solo acepta assets APPROVED propios y libres. images es salida derivada por el servidor. Solo APPROVED + AVAILABLE se publica.", security: bearerSecurity, requestBody: jsonBody(createMarketplaceBody),
-        responses: { 201: created(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable }
+        tags: ["Marketplace"], summary: "Crear y moderar una publicación", description: "assetIds acepta assets APPROVED o QUARANTINED propios y libres. Una cuarentena deja el post PENDING_REVIEW y nunca expone su URL. Solo APPROVED + AVAILABLE se publica.", security: bearerSecurity, requestBody: jsonBody(createMarketplaceBody),
+        responses: { 201: created(ref("MarketplaceOwnerPost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable }
       }
     },
     "/barrios/{barrioSlug}/marketplace/me": {
@@ -848,15 +915,15 @@ export const openapiSpec: OpenAPIV3.Document = {
         description: "Permite al autor recuperar publicaciones pendientes, rechazadas o retiradas.",
         security: bearerSecurity,
         parameters: [pageParam, limit10Param],
-        responses: { 200: ok(ref("PaginatedMarketplace")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+        responses: { 200: ok(ref("PaginatedMarketplaceOwner")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       }
     },
     "/barrios/{barrioSlug}/marketplace/{postId}": {
       parameters: [barrioSlugParam, pathParam("postId", cuid())],
-      get: { tags: ["Marketplace"], summary: "Obtener publicación o preview privado", description: "El público solo accede a APPROVED + AVAILABLE. El propietario y moderadores conservan acceso privado a contenido pendiente o rechazado.", security: bearerSecurity, responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } },
+       get: { tags: ["Marketplace"], summary: "Obtener publicación o preview privado", description: "Los miembros acceden a contenido APPROVED + AVAILABLE. El propietario y moderadores reciben además versión, assets y apelación.", security: bearerSecurity, responses: { 200: ok({ oneOf: [ref("MarketplacePost"), ref("MarketplaceOwnerPost")] }), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } },
       patch: {
         tags: ["Marketplace"], summary: "Actualizar publicación", description: "Cambiar texto, precio, categoría, ubicación o assetIds invalida la aprobación previa y crea una decisión append-only. Los assets quitados se eliminan de Cloudinary.", security: bearerSecurity, requestBody: jsonBody(updateMarketplaceBody),
-        responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable }
+        responses: { 200: ok(ref("MarketplaceOwnerPost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable }
       },
       delete: { tags: ["Marketplace"], summary: "Eliminar publicación", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
     },
@@ -868,7 +935,15 @@ export const openapiSpec: OpenAPIV3.Document = {
           type: "object", required: ["category"],
           properties: { category: { type: "string", enum: ["FRAUD", "SPAM", "INAPPROPRIATE", "WEAPONS", "DRUGS", "OTHER"] }, comment: { type: "string", maxLength: 1000 } }
         }),
-        responses: { 201: created({ type: "object", properties: { message: { type: "string" } } }), 400: badRequest, 401: unauthorized, 404: notFound, 409: conflict, 503: serviceUnavailable }
+        responses: { 201: acceptedMessage("Reporte recibido"), 400: badRequest, 401: unauthorized, 404: notFound, 409: conflict, 429: errorResponse("Too Many Requests"), 503: serviceUnavailable }
+      }
+    },
+    "/barrios/{barrioSlug}/marketplace/{postId}/appeals": {
+      parameters: [barrioSlugParam, pathParam("postId", cuid())],
+      post: {
+        tags: ["Marketplace"], summary: "Apelar una decisión de moderación", description: "Solo el propietario puede apelar un post REJECTED o REMOVED. Se admite una apelación PENDING por post.", security: bearerSecurity,
+        requestBody: jsonBody({ type: "object", additionalProperties: false, required: ["statement", "expectedVersion", "idempotencyKey"], properties: { statement: { type: "string", minLength: 20, maxLength: 2000 }, expectedVersion: { type: "integer", minimum: 0 }, idempotencyKey: uuid() } }),
+        responses: { 201: acceptedMessage("Apelación recibida"), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 429: errorResponse("Too Many Requests"), 503: serviceUnavailable }
       }
     },
     "/barrios/{barrioSlug}/forum": {
@@ -1064,8 +1139,8 @@ export const openapiSpec: OpenAPIV3.Document = {
     "/moderation/marketplace": {
       get: {
         tags: ["Admin"], summary: "Listar publicaciones del marketplace para moderación", security: bearerSecurity,
-        parameters: [queryParam("status", moderationStatus), queryParam("barrioSlug", { type: "string" }), pageParam, limit10Param],
-        responses: { 200: ok(ref("PaginatedMarketplace")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+        parameters: [queryParam("queue", { type: "string", enum: ["PENDING_REVIEW", "REPORTED", "REJECTED", "REMOVED", "APPEALED", "DELETED"] }), queryParam("barrioSlug", { type: "string" }), pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedMarketplaceModeration")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       }
     },
     "/moderation/marketplace/{postId}/decision": {
@@ -1073,10 +1148,25 @@ export const openapiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Admin"], summary: "Moderar publicación del marketplace", security: bearerSecurity,
         requestBody: jsonBody({
-          type: "object", required: ["decision", "reason"],
-          properties: { decision: { type: "string", enum: ["APPROVE", "REJECT", "REMOVE", "RESTORE"] }, reason: { type: "string", minLength: 1 }, privateNote: { type: "string" } }
+          type: "object", additionalProperties: false, required: ["decision", "reasonCode", "expectedVersion", "idempotencyKey"],
+          properties: { decision: { type: "string", enum: ["APPROVE", "REJECT", "REMOVE", "RESTORE"] }, ...idempotentDecisionProperties }
         }),
-        responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+        responses: { 200: ok(ref("MarketplacePost")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable }
+      }
+    },
+    "/moderation/marketplace/assets": {
+      get: {
+        tags: ["Admin"], summary: "Listar imágenes del marketplace para moderación", security: bearerSecurity,
+        parameters: [queryParam("status", { type: "string", enum: ["QUARANTINED", "PROMOTION_PENDING", "APPROVED", "REJECTION_PENDING", "REJECTED", "DELETE_PENDING"], default: "QUARANTINED" }), queryParam("barrioSlug", { type: "string" }), pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedMarketplaceAssets")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
+    },
+    "/moderation/marketplace/assets/{assetId}/decision": {
+      parameters: [pathParam("assetId", cuid())],
+      post: {
+        tags: ["Admin"], summary: "Moderar una imagen en cuarentena", security: bearerSecurity,
+        requestBody: jsonBody({ type: "object", additionalProperties: false, required: ["decision", "reasonCode", "expectedVersion", "idempotencyKey"], properties: { decision: { type: "string", enum: ["APPROVE", "REJECT"] }, ...idempotentDecisionProperties } }),
+        responses: { 200: ok(ref("MarketplaceAsset")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 502: errorResponse("Asset effect pending retry"), 503: serviceUnavailable }
       }
     }
   }

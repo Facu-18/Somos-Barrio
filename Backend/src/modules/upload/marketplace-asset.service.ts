@@ -13,6 +13,7 @@ const publicAssetSelect = {
   id: true,
   status: true,
   url: true,
+  moderationVersion: true,
   createdAt: true,
   scannedAt: true
 } satisfies Prisma.MarketplaceAssetSelect;
@@ -54,6 +55,14 @@ async function destroyClaimedAsset(asset: { id: string; cloudinaryPublicId: stri
         invalidate: true
       });
     }
+    const reviewDecisions = await prisma.marketplaceAssetModerationDecision.count({ where: { assetId: asset.id } });
+    if (reviewDecisions > 0) {
+      const retained = await prisma.marketplaceAsset.updateMany({
+        where: { id: asset.id, postId: null, status: MarketplaceAssetStatus.DELETE_PENDING },
+        data: { cloudinaryPublicId: null, cloudinaryType: null, deletionRequestedAt: null }
+      });
+      return retained.count === 1;
+    }
     const deleted = await prisma.marketplaceAsset.deleteMany({
       where: { id: asset.id, postId: null, status: MarketplaceAssetStatus.DELETE_PENDING }
     });
@@ -69,6 +78,94 @@ async function destroyClaimedAsset(asset: { id: string; cloudinaryPublicId: stri
 }
 
 export const marketplaceAssetService = {
+  getSignedUrl(publicId: string): string {
+    return cloudinary.url(publicId, {
+      type: 'authenticated',
+      sign_url: true,
+      secure: true,
+      expires_at: Math.floor(Date.now() / 1000) + env.MARKETPLACE_ASSET_REVIEW_URL_TTL_SECONDS
+    });
+  },
+
+  async promoteToPublic(publicId: string): Promise<{ public_id: string; secure_url: string }> {
+    try {
+      return await cloudinary.uploader.rename(publicId, publicId, {
+        type: "authenticated",
+        to_type: "upload",
+        invalidate: true
+      }) as { public_id: string; secure_url: string };
+    } catch (error) {
+      // A retry after a successful rename must recognize the already-public resource.
+      try {
+        return await cloudinary.api.resource(publicId, { type: "upload", resource_type: "image" }) as {
+          public_id: string;
+          secure_url: string;
+        };
+      } catch {
+        throw error;
+      }
+    }
+  },
+
+  async reconcileReviewAsset(assetId: string) {
+    const asset = await prisma.marketplaceAsset.findUnique({ where: { id: assetId } });
+    if (!asset) return null;
+    if (asset.status === MarketplaceAssetStatus.APPROVED || asset.status === MarketplaceAssetStatus.REJECTED) {
+      return prisma.marketplaceAsset.findUnique({ where: { id: assetId }, select: publicAssetSelect });
+    }
+
+    try {
+      if (asset.status === MarketplaceAssetStatus.PROMOTION_PENDING) {
+        if (!asset.cloudinaryPublicId || asset.cloudinaryType !== "authenticated") {
+          throw new Error("missing authenticated resource");
+        }
+        const promoted = await marketplaceAssetService.promoteToPublic(asset.cloudinaryPublicId);
+        await prisma.marketplaceAsset.updateMany({
+          where: { id: assetId, status: MarketplaceAssetStatus.PROMOTION_PENDING },
+          data: {
+            status: MarketplaceAssetStatus.APPROVED,
+            cloudinaryPublicId: promoted.public_id,
+            cloudinaryType: "upload",
+            url: promoted.secure_url
+          }
+        });
+      } else if (asset.status === MarketplaceAssetStatus.REJECTION_PENDING) {
+        if (asset.cloudinaryPublicId) {
+          await cloudinary.uploader.destroy(asset.cloudinaryPublicId, {
+            resource_type: "image",
+            type: asset.cloudinaryType ?? "authenticated",
+            invalidate: true
+          });
+        }
+        await prisma.marketplaceAsset.updateMany({
+          where: { id: assetId, status: MarketplaceAssetStatus.REJECTION_PENDING },
+          data: {
+            status: MarketplaceAssetStatus.REJECTED,
+            cloudinaryPublicId: null,
+            cloudinaryType: null,
+            url: null
+          }
+        });
+      } else {
+        return null;
+      }
+      return prisma.marketplaceAsset.findUnique({ where: { id: assetId }, select: publicAssetSelect });
+    } catch {
+      logger.warn({ assetId, provider: "cloudinary", status: asset.status }, "La decisión de asset quedó pendiente de reconciliación");
+      return null;
+    }
+  },
+
+  async reconcilePendingReviews(): Promise<{ completed: number; pending: number }> {
+    const assets = await prisma.marketplaceAsset.findMany({
+      where: { status: { in: [MarketplaceAssetStatus.PROMOTION_PENDING, MarketplaceAssetStatus.REJECTION_PENDING] } },
+      select: { id: true }
+    });
+    const results = await Promise.all(assets.map((asset) => marketplaceAssetService.reconcileReviewAsset(asset.id)));
+    const completed = results.filter(Boolean).length;
+    return { completed, pending: results.length - completed };
+  },
+
   async create(userId: string, file: Express.Multer.File) {
     const asset = await prisma.marketplaceAsset.create({
       data: {
@@ -200,11 +297,18 @@ export const marketplaceAssetService = {
     return { deleted, pending: results.length - deleted };
   },
 
-  async cleanupOrphanAssets(olderThan = new Date(Date.now() - 24 * 60 * 60 * 1000)) {
+  async cleanupOrphanAssets(
+    olderThan = new Date(Date.now() - env.MARKETPLACE_ASSET_ORPHAN_TTL_MS),
+    reviewOlderThan = new Date(Date.now() - env.MARKETPLACE_ASSET_REVIEW_TTL_MS)
+  ) {
     const assets = await prisma.marketplaceAsset.findMany({
       where: {
         postId: null,
-        OR: [{ createdAt: { lt: olderThan } }, { status: MarketplaceAssetStatus.DELETE_PENDING }]
+        OR: [
+          { status: MarketplaceAssetStatus.DELETE_PENDING, deletionRequestedAt: { not: null } },
+          { status: MarketplaceAssetStatus.QUARANTINED, createdAt: { lt: reviewOlderThan } },
+          { status: { in: [MarketplaceAssetStatus.APPROVED, MarketplaceAssetStatus.REJECTED] }, createdAt: { lt: olderThan } }
+        ]
       },
       select: { id: true }
     });

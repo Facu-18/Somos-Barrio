@@ -89,6 +89,7 @@ export const searchService = {
         prisma.marketplacePost
           .findMany({
             where: {
+              deletedAt: null,
               availability: MarketplaceAvailability.AVAILABLE,
               moderationStatus: ModerationStatus.APPROVED,
               ...(barrioId ? { barrioId } : {}),

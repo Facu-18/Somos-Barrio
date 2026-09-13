@@ -1,9 +1,11 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
 import { app } from "../../app";
 import { API, registerAndLogin, seedBarrio } from "../../test/helpers";
 import { prisma } from "../../lib/prisma";
 import { moderationService } from "../moderation/moderation.service";
+import { marketplaceAssetService } from "../upload/marketplace-asset.service";
+import { env } from "../../config/env";
 
 describe("Marketplace — integration", () => {
   let barrioSlug: string;
@@ -15,6 +17,8 @@ describe("Marketplace — integration", () => {
   let editorId: string;
   let assetPostId: string;
   let attachedAssetIds: string[];
+  let quarantinedAssetId: string;
+  let quarantinedPostId: string;
 
   beforeAll(async () => {
     const barrio = await seedBarrio(`mkt-barrio-${Date.now()}`);
@@ -28,7 +32,9 @@ describe("Marketplace — integration", () => {
     editorId = editor.user.id;
     await prisma.user.update({ where: { id: editor.user.id }, data: { role: "EDITOR" } });
     const otherBarrio = await seedBarrio(`mkt-other-${Date.now()}`);
-    outsiderToken = (await registerAndLogin({ name: "Foraneo", barrioSlug: otherBarrio.slug })).token;
+    const outsider = await registerAndLogin({ name: "Foraneo", barrioSlug: otherBarrio.slug });
+    outsiderToken = outsider.token;
+    await prisma.user.update({ where: { id: outsider.user.id }, data: { role: "EDITOR" } });
   });
 
   it("GET /barrios/:slug/marketplace — lista (paginada)", async () => {
@@ -101,13 +107,21 @@ describe("Marketplace — integration", () => {
       data: { uploaderId: editorId, status: "APPROVED", mimeType: "image/jpeg", byteSize: 4, contentHash: "foreign", cloudinaryPublicId: `test/${Date.now()}-foreign`, cloudinaryType: "upload", url: "https://cdn.test/foreign.jpg" }
     });
     const pending = await prisma.marketplaceAsset.create({
-      data: { uploaderId: sellerId, status: "QUARANTINED", mimeType: "image/jpeg", byteSize: 4, contentHash: "pending" }
+      data: {
+        uploaderId: sellerId,
+        status: "QUARANTINED",
+        mimeType: "image/jpeg",
+        byteSize: 4,
+        contentHash: "pending",
+        cloudinaryPublicId: `test/${Date.now()}-pending`,
+        cloudinaryType: "authenticated"
+      }
     });
     const claimed = await prisma.marketplaceAsset.create({
       data: { uploaderId: sellerId, status: "DELETE_PENDING", mimeType: "image/jpeg", byteSize: 4, contentHash: "claimed", deletionRequestedAt: new Date() }
     });
 
-    for (const assetId of [foreign.id, pending.id, claimed.id]) {
+    for (const assetId of [foreign.id, claimed.id]) {
       const rejected = await request(app)
         .post(`${API}/barrios/${barrioSlug}/marketplace`)
         .set("Authorization", `Bearer ${sellerToken}`)
@@ -115,6 +129,16 @@ describe("Marketplace — integration", () => {
       expect(rejected.status).toBe(400);
       expect(await prisma.marketplacePost.count({ where: { title: "Silla usada" } })).toBe(0);
     }
+
+    const quarantined = await request(app)
+      .post(`${API}/barrios/${barrioSlug}/marketplace`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({ title: "Foto para revisar", description: "Producto con imagen ambigua", category: "OTROS", whatsapp: "+5493515550101", assetIds: [pending.id] });
+    expect(quarantined.status).toBe(201);
+    expect(quarantined.body.data).toMatchObject({ moderationStatus: "PENDING_REVIEW", images: [] });
+    expect(quarantined.body.data.managedAssets).toEqual([expect.objectContaining({ id: pending.id, status: "QUARANTINED", url: null })]);
+    quarantinedAssetId = pending.id;
+    quarantinedPostId = quarantined.body.data.id;
 
     const accepted = await request(app)
       .post(`${API}/barrios/${barrioSlug}/marketplace`)
@@ -128,11 +152,77 @@ describe("Marketplace — integration", () => {
     attachedAssetIds = accepted.body.data.assetIds;
   });
 
+  it("modera assets con CAS sin publicar automáticamente el post", async () => {
+    const ownQueue = await request(app)
+      .get(`${API}/moderation/marketplace/assets`)
+      .set("Authorization", `Bearer ${editorToken}`);
+    expect(ownQueue.status).toBe(200);
+    expect(ownQueue.body.data.items.some((item: { id: string }) => item.id === quarantinedAssetId)).toBe(true);
+
+    const foreignQueue = await request(app)
+      .get(`${API}/moderation/marketplace/assets?barrioSlug=${barrioSlug}`)
+      .set("Authorization", `Bearer ${outsiderToken}`);
+    expect(foreignQueue.status).toBe(200);
+    expect(foreignQueue.body.data.items.some((item: { id: string }) => item.id === quarantinedAssetId)).toBe(false);
+
+    const promote = vi.spyOn(marketplaceAssetService, "promoteToPublic").mockResolvedValue({
+      public_id: `test/${quarantinedAssetId}`,
+      secure_url: "https://cdn.test/review-approved.jpg"
+    });
+    const body = {
+      decision: "APPROVE",
+      reasonCode: "POLICY_COMPLIANT",
+      expectedVersion: 0,
+      idempotencyKey: "00000000-0000-4000-8000-000000000030"
+    };
+    await request(app)
+      .post(`${API}/moderation/marketplace/assets/${quarantinedAssetId}/decision`)
+      .set("Authorization", `Bearer ${editorToken}`)
+      .send(body)
+      .expect(200);
+    await request(app)
+      .post(`${API}/moderation/marketplace/assets/${quarantinedAssetId}/decision`)
+      .set("Authorization", `Bearer ${editorToken}`)
+      .send(body)
+      .expect(200);
+    await request(app)
+      .post(`${API}/moderation/marketplace/assets/${quarantinedAssetId}/decision`)
+      .set("Authorization", `Bearer ${editorToken}`)
+      .send({ ...body, reasonCode: "IMAGE_POLICY" })
+      .expect(409);
+    promote.mockRestore();
+
+    expect(await prisma.marketplaceAsset.findUnique({ where: { id: quarantinedAssetId } })).toMatchObject({ status: "APPROVED" });
+    expect(await prisma.marketplacePost.findUnique({ where: { id: quarantinedPostId } })).toMatchObject({ moderationStatus: "PENDING_REVIEW" });
+  });
+
+  it("aplica una sola decisión de umbral ante reportes concurrentes", async () => {
+    const created = await request(app)
+      .post(`${API}/barrios/${barrioSlug}/marketplace`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({ title: "Producto reportable", description: "Publicación inicialmente permitida", category: "OTROS", whatsapp: "+5493515550101" });
+    expect(created.status).toBe(201);
+    const reporters = [];
+    for (let index = 0; index < env.MARKETPLACE_REPORT_THRESHOLD; index += 1) {
+      reporters.push(await registerAndLogin({ name: `Reporter ${index}`, barrioSlug }));
+    }
+
+    const responses = await Promise.all(reporters.map(({ token }) => request(app)
+      .post(`${API}/barrios/${barrioSlug}/marketplace/${created.body.data.id}/reports`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ category: "SPAM" })));
+    expect(responses.every((response) => response.status === 201)).toBe(true);
+    expect(await prisma.marketplacePost.findUnique({ where: { id: created.body.data.id } })).toMatchObject({ moderationStatus: "PENDING_REVIEW" });
+    expect(await prisma.marketplaceModerationDecision.count({ where: { postId: created.body.data.id, action: "REPORT_THRESHOLD" } })).toBe(1);
+    const publicList = await request(app).get(`${API}/barrios/${barrioSlug}/marketplace`);
+    expect(publicList.body.data.items.some((item: { id: string }) => item.id === created.body.data.id)).toBe(false);
+  });
+
   it("no invalida la aprobación cuando solo cambia el orden de assetIds", async () => {
     const response = await request(app)
       .patch(`${API}/barrios/${barrioSlug}/marketplace/${assetPostId}`)
       .set("Authorization", `Bearer ${sellerToken}`)
-      .send({ assetIds: [...attachedAssetIds].reverse() });
+      .send({ assetIds: [...attachedAssetIds].reverse(), expectedVersion: 0 });
 
     expect(response.status).toBe(200);
     expect(response.body.data.moderationStatus).toBe("APPROVED");
@@ -181,7 +271,7 @@ describe("Marketplace — integration", () => {
     expect(JSON.stringify(ownList.body)).not.toContain("legacy.test");
 
     const queue = await request(app)
-      .get(`${API}/moderation/marketplace?status=PENDING_REVIEW`)
+      .get(`${API}/moderation/marketplace?queue=PENDING_REVIEW`)
       .set("Authorization", `Bearer ${editorToken}`);
     expect(queue.status).toBe(200);
     expect(queue.body.data.items.some((item: { id: string }) => item.id === res.body.data.id)).toBe(true);
@@ -199,7 +289,7 @@ describe("Marketplace — integration", () => {
     const res = await request(app)
       .patch(`${API}/barrios/${barrioSlug}/marketplace/${postId}`)
       .set("Authorization", `Bearer ${sellerToken}`)
-      .send({ title: "Bicicleta urbana usada" });
+      .send({ title: "Bicicleta urbana usada", expectedVersion: 0 });
 
     expect(res.status).toBe(200);
     expect(res.body.data.moderationStatus).toBe("PENDING_REVIEW");
@@ -212,7 +302,7 @@ describe("Marketplace — integration", () => {
     const res = await request(app)
       .post(`${API}/moderation/marketplace/${postId}/decision`)
       .set("Authorization", `Bearer ${editorToken}`)
-      .send({ decision: "APPROVE", reason: "Contenido permitido" });
+      .send({ decision: "APPROVE", reasonCode: "POLICY_COMPLIANT", expectedVersion: 1, idempotencyKey: "00000000-0000-4000-8000-000000000010" });
 
     expect(res.status).toBe(200);
     expect(res.body.data.moderationStatus).toBe("APPROVED");
@@ -231,17 +321,22 @@ describe("Marketplace — integration", () => {
     const res = await request(app)
       .patch(`${API}/barrios/${barrioSlug}/marketplace/${postId}`)
       .set("Authorization", `Bearer ${sellerToken}`)
-      .send({ description: "Vendo marihuana" });
+      .send({ description: "Vendo marihuana", expectedVersion: 2 });
 
     expect(res.status).toBe(200);
     expect(res.body.data.moderationStatus).toBe("REJECTED");
-    expect(res.body.data.moderationReasonCode).toBe("DRUGS");
+    expect(res.body.data.moderationReasonCode).toBe("PROHIBITED_ITEM");
   });
 
   it("un moderador no puede aprobar su propia publicación", async () => {
     await prisma.user.update({ where: { id: sellerId }, data: { role: "EDITOR" } });
     await expect(
-      moderationService.moderateMarketplacePost(sellerId, postId, { decision: "APPROVE", reason: "Propia" })
+      moderationService.moderateMarketplacePost(sellerId, postId, {
+        decision: "APPROVE",
+        reasonCode: "POLICY_COMPLIANT",
+        expectedVersion: 3,
+        idempotencyKey: "00000000-0000-4000-8000-000000000001"
+      })
     ).rejects.toMatchObject({ statusCode: 403 });
     await prisma.user.update({ where: { id: sellerId }, data: { role: "VECINO" } });
   });
@@ -250,7 +345,7 @@ describe("Marketplace — integration", () => {
     const res = await request(app)
       .patch(`${API}/barrios/${barrioSlug}/marketplace/${postId}`)
       .set("Authorization", `Bearer ${sellerToken}`)
-      .send({ availability: "SOLD" });
+      .send({ availability: "SOLD", expectedVersion: 3 });
 
     expect(res.status).toBe(200);
     expect(res.body.data.availability).toBe("SOLD");
@@ -260,11 +355,87 @@ describe("Marketplace — integration", () => {
     expect(decisions).toBe(4);
   });
 
+  it("aplica CAS e idempotencia al apelar y resolver", async () => {
+    const idempotencyKey = "00000000-0000-4000-8000-000000000020";
+    const appeal = {
+      statement: "El contenido fue corregido y cumple con las normas del marketplace.",
+      expectedVersion: 4,
+      idempotencyKey
+    };
+
+    await request(app)
+      .post(`${API}/barrios/${barrioSlug}/marketplace/${postId}/appeals`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send(appeal)
+      .expect(201);
+    await request(app)
+      .post(`${API}/barrios/${barrioSlug}/marketplace/${postId}/appeals`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send(appeal)
+      .expect(201);
+
+    await request(app)
+      .post(`${API}/barrios/${barrioSlug}/marketplace/${postId}/appeals`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({ ...appeal, statement: "Intento de reutilizar la clave con un payload completamente diferente." })
+      .expect(409);
+
+    const ownPost = await request(app)
+      .get(`${API}/barrios/${barrioSlug}/marketplace/${postId}`)
+      .set("Authorization", `Bearer ${sellerToken}`);
+    expect(ownPost.body.data.currentAppeal).toMatchObject({ status: "PENDING" });
+
+    const correction = await request(app)
+      .patch(`${API}/barrios/${barrioSlug}/marketplace/${postId}`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({ title: "Edición durante apelación", expectedVersion: 4 });
+    expect(correction.status).toBe(200);
+    expect(correction.body.data).toMatchObject({ moderationStatus: "REJECTED", moderationVersion: 5, currentAppeal: null });
+
+    const queue = await request(app)
+      .get(`${API}/moderation/marketplace?queue=APPEALED`)
+      .set("Authorization", `Bearer ${editorToken}`);
+    expect(queue.status).toBe(200);
+    expect(queue.body.data.items.some((item: { id: string }) => item.id === postId)).toBe(false);
+
+    const decision = {
+      decision: "APPROVE",
+      reasonCode: "POLICY_COMPLIANT",
+      expectedVersion: 5,
+      idempotencyKey: "00000000-0000-4000-8000-000000000021"
+    };
+    await request(app)
+      .post(`${API}/moderation/marketplace/${postId}/decision`)
+      .set("Authorization", `Bearer ${editorToken}`)
+      .send(decision)
+      .expect(200);
+    await request(app)
+      .post(`${API}/moderation/marketplace/${postId}/decision`)
+      .set("Authorization", `Bearer ${editorToken}`)
+      .send(decision)
+      .expect(200);
+    await request(app)
+      .post(`${API}/moderation/marketplace/${postId}/decision`)
+      .set("Authorization", `Bearer ${editorToken}`)
+      .send({ ...decision, reasonCode: "SPAM_OR_DUPLICATE" })
+      .expect(409);
+
+    await request(app)
+      .patch(`${API}/barrios/${barrioSlug}/marketplace/${postId}`)
+      .set("Authorization", `Bearer ${sellerToken}`)
+      .send({ availability: "AVAILABLE", expectedVersion: 4 })
+      .expect(409);
+  });
+
   it("DELETE /barrios/:slug/marketplace/:postId — dueño puede borrar", async () => {
     const res = await request(app)
       .delete(`${API}/barrios/${barrioSlug}/marketplace/${postId}`)
       .set("Authorization", `Bearer ${sellerToken}`);
 
     expect(res.status).toBe(204);
+    expect(await prisma.marketplacePost.findUnique({ where: { id: postId } })).toMatchObject({ deletedAt: expect.any(Date) });
+
+    const publicList = await request(app).get(`${API}/barrios/${barrioSlug}/marketplace`);
+    expect(publicList.body.data.items.some((item: { id: string }) => item.id === postId)).toBe(false);
   });
 });

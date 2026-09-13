@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image, TouchableOpacity, Linking, Alert, useWindowDimensions, Modal, TextInput } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import * as Crypto from 'expo-crypto';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
 import { ClayTheme } from '../../../constants/ClayTheme';
@@ -10,13 +11,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const moderationReasonLabels: Record<string, string> = {
-  DRUGS: 'producto prohibido',
-  WEAPONS: 'producto regulado',
-  INSULT: 'lenguaje inapropiado',
-  CONTENT_CHANGED: 'cambios por revisar',
-  IMAGE_REVIEW: 'imagen por revisar',
+  PROHIBITED_ITEM: 'producto prohibido',
+  REGULATED_ITEM: 'producto regulado',
+  INAPPROPRIATE_CONTENT: 'contenido inapropiado',
+  FRAUD_OR_MISLEADING: 'información engañosa',
+  SPAM_OR_DUPLICATE: 'spam o contenido duplicado',
+  QUARANTINED_ASSET: 'imagen por revisar',
   REPORT_THRESHOLD: 'reportes vecinales',
-  MANUAL_REVIEW: 'decisión editorial'
+  OTHER_POLICY: 'política del marketplace'
 };
 
 export default function MarketDetailScreen() {
@@ -25,11 +27,16 @@ export default function MarketDetailScreen() {
   const barrioSlug = user!.barrio!.slug;
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
 
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportCategory, setReportCategory] = useState<string>('');
   const [reportComment, setReportComment] = useState('');
   const [isReporting, setIsReporting] = useState(false);
+
+  const [appealModalVisible, setAppealModalVisible] = useState(false);
+  const [appealStatement, setAppealStatement] = useState('');
+  const [isAppealing, setIsAppealing] = useState(false);
 
   const { data: item, isLoading, isError, refetch } = useQuery({
     queryKey: ['market-detail', barrioSlug, id],
@@ -90,10 +97,36 @@ export default function MarketDetailScreen() {
       setReportModalVisible(false);
       setReportCategory('');
       setReportComment('');
+      await queryClient.invalidateQueries({ queryKey: ['market', barrioSlug] });
+      const refreshed = await refetch();
+      if (refreshed.isError) router.back();
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.message || 'No se pudo enviar el reporte.');
     } finally {
       setIsReporting(false);
+    }
+  };
+
+  const submitAppeal = async () => {
+    if (appealStatement.length < 20) {
+      Alert.alert('Error', 'Por favor explica en más detalle (mínimo 20 caracteres) por qué tu publicación cumple con las normas.');
+      return;
+    }
+    setIsAppealing(true);
+    try {
+      await api.post(`/barrios/${barrioSlug}/marketplace/${id}/appeals`, {
+        statement: appealStatement,
+        expectedVersion: item.moderationVersion,
+        idempotencyKey: Crypto.randomUUID()
+      });
+      Alert.alert('Apelación enviada', 'Tu apelación será revisada por el equipo de moderación.');
+      setAppealModalVisible(false);
+      setAppealStatement('');
+      refetch();
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.message || 'No se pudo enviar la apelación.');
+    } finally {
+      setIsAppealing(false);
     }
   };
 
@@ -139,12 +172,24 @@ export default function MarketDetailScreen() {
           )}
           {item.moderationStatus === 'REJECTED' && (
              <View style={{backgroundColor: '#fee2e2', padding: 12, borderRadius: 12, marginBottom: 16}}>
-               <Text style={{color: '#dc2626', fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13}}>Esta publicación fue rechazada por {moderationReasonLabels[item.moderationReasonCode] ?? 'contenido no permitido'} y no es visible al público.</Text>
+               <Text style={{color: '#dc2626', fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13}}>Esta publicación fue rechazada por {moderationReasonLabels[item.moderationReasonCode ?? ''] ?? 'contenido no permitido'} y no es visible al público.</Text>
+                {user?.id === item.user?.id && !item.currentAppeal && (
+                  <TouchableOpacity onPress={() => setAppealModalVisible(true)} style={{marginTop: 8}}>
+                   <Text style={{color: '#b91c1c', fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 14, textDecorationLine: 'underline'}}>Apelar decisión</Text>
+                 </TouchableOpacity>
+                )}
+                {item.currentAppeal && <Text style={{color: '#b91c1c', marginTop: 8}}>Apelación pendiente de revisión.</Text>}
              </View>
           )}
           {item.moderationStatus === 'REMOVED' && (
              <View style={{backgroundColor: '#fee2e2', padding: 12, borderRadius: 12, marginBottom: 16}}>
                <Text style={{color: '#dc2626', fontFamily: ClayTheme.typography.fontFamily.bold, fontSize: 13}}>Esta publicación fue retirada por moderación y no es visible al público.</Text>
+                {user?.id === item.user?.id && !item.currentAppeal && (
+                 <TouchableOpacity onPress={() => setAppealModalVisible(true)} style={{marginTop: 8}}>
+                   <Text style={{color: '#b91c1c', fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 14, textDecorationLine: 'underline'}}>Apelar decisión</Text>
+                 </TouchableOpacity>
+                )}
+                {item.currentAppeal && <Text style={{color: '#b91c1c', marginTop: 8}}>Apelación pendiente de revisión.</Text>}
              </View>
           )}
 
@@ -172,6 +217,14 @@ export default function MarketDetailScreen() {
             <Text style={styles.descriptionTitle}>Descripción</Text>
             <Text style={styles.descriptionText}>{item.description}</Text>
           </View>
+          {user?.id === item.user?.id && item.moderationStatus !== 'APPROVED' && (
+            <ClayButton
+              title="Corregir publicación"
+              onPress={() => router.push(`/(app)/create-market?postId=${item.id}`)}
+              variant="secondary"
+              style={{ marginTop: 16 }}
+            />
+          )}
         </View>
       </ScrollView>
 
@@ -228,6 +281,30 @@ export default function MarketDetailScreen() {
             <View style={styles.modalButtons}>
               <ClayButton title="Cancelar" onPress={() => setReportModalVisible(false)} variant="secondary" style={{ flex: 1, marginRight: 8 }} />
               <ClayButton title="Enviar Reporte" onPress={submitReport} loading={isReporting} style={{ flex: 1, backgroundColor: ClayTheme.colors.error }} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Appeal Modal */}
+      <Modal visible={appealModalVisible} transparent animationType="slide" onRequestClose={() => setAppealModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Apelar decisión</Text>
+            <Text style={styles.modalSubtitle}>Explicá por qué creés que tu publicación cumple con las normas del barrio y debe ser restaurada.</Text>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Explica tu caso aquí..."
+              value={appealStatement}
+              onChangeText={setAppealStatement}
+              multiline
+              maxLength={2000}
+            />
+
+            <View style={styles.modalButtons}>
+              <ClayButton title="Cancelar" onPress={() => setAppealModalVisible(false)} variant="secondary" style={{ flex: 1, marginRight: 8 }} />
+              <ClayButton title="Enviar Apelación" onPress={submitAppeal} loading={isAppealing} style={{ flex: 1 }} />
             </View>
           </View>
         </View>

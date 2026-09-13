@@ -7,9 +7,11 @@ import {
   marketplaceListQuerySchema,
   createMarketplacePostSchema,
   updateMarketplacePostSchema,
-  createMarketplaceReportSchema
+  createMarketplaceReportSchema,
+  createMarketplaceAppealSchema
 } from "./marketplace.schema";
 import { marketplaceController } from "./marketplace.controller";
+import { marketplaceAppealRateLimiter, marketplaceReportRateLimiter } from "../../middlewares/rate-limit";
 
 const marketplaceRouter = Router({ mergeParams: true });
 
@@ -63,8 +65,18 @@ marketplaceRouter.post(
   "/:postId/reports",
   requireAuth,
   requireBarrioMember,
+  marketplaceReportRateLimiter,
   validate({ params: marketplaceIdParamSchema, body: createMarketplaceReportSchema }),
   asyncHandler(marketplaceController.report)
+);
+
+marketplaceRouter.post(
+  "/:postId/appeals",
+  requireAuth,
+  requireBarrioMember,
+  marketplaceAppealRateLimiter,
+  validate({ params: marketplaceIdParamSchema, body: createMarketplaceAppealSchema }),
+  asyncHandler(marketplaceController.appeal)
 );
 
 export { marketplaceRouter };

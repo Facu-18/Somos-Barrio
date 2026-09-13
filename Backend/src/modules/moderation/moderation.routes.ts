@@ -7,7 +7,9 @@ import { requireAuth, requireRole } from "../../middlewares/auth";
 import { moderationController } from "./moderation.controller";
 import {
   getMarketplaceQueueQuerySchema,
-  moderateMarketplaceDecisionSchema
+  moderateMarketplaceDecisionSchema,
+  getMarketplaceAssetQueueQuerySchema,
+  moderateMarketplaceAssetDecisionSchema
 } from "./moderation.schema";
 
 export const moderationRouter = Router();
@@ -29,4 +31,19 @@ moderationRouter.post(
   "/marketplace/:postId/decision",
   validate({ params: postIdParamSchema, body: moderateMarketplaceDecisionSchema }),
   asyncHandler(moderationController.moderateMarketplacePost)
+);
+
+// ── Marketplace Asset Moderation ───────────────────────────────────────────
+moderationRouter.get(
+  "/marketplace/assets",
+  validate({ query: getMarketplaceAssetQueueQuerySchema }),
+  asyncHandler(moderationController.getMarketplaceAssetQueue)
+);
+
+const assetIdParamSchema = z.object({ assetId: z.string().cuid() });
+
+moderationRouter.post(
+  "/marketplace/assets/:assetId/decision",
+  validate({ params: assetIdParamSchema, body: moderateMarketplaceAssetDecisionSchema }),
+  asyncHandler(moderationController.moderateMarketplaceAsset)
 );

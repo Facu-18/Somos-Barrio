@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   assetUpdateMany: vi.fn(),
   assetFindMany: vi.fn(),
   assetDeleteMany: vi.fn(),
+  decisionCount: vi.fn(),
   scan: vi.fn(),
   evaluate: vi.fn(),
   uploadStream: vi.fn(),
@@ -23,7 +24,9 @@ vi.mock("../../config/env", () => ({ env: {
   },
   CLOUDINARY_CLOUD_NAME: "cloud",
   CLOUDINARY_API_KEY: "key",
-  CLOUDINARY_API_SECRET: "secret"
+  CLOUDINARY_API_SECRET: "secret",
+  MARKETPLACE_ASSET_ORPHAN_TTL_MS: 86_400_000,
+  MARKETPLACE_ASSET_REVIEW_TTL_MS: 604_800_000
 } }));
 vi.mock("../../config/logger", () => ({ logger: { warn: mocks.warn } }));
 vi.mock("../../lib/prisma", () => ({ prisma: { marketplaceAsset: {
@@ -32,7 +35,7 @@ vi.mock("../../lib/prisma", () => ({ prisma: { marketplaceAsset: {
   updateMany: mocks.assetUpdateMany,
   findMany: mocks.assetFindMany,
   deleteMany: mocks.assetDeleteMany
-} } }));
+}, marketplaceAssetModerationDecision: { count: mocks.decisionCount } } }));
 vi.mock("../../lib/cloudinary", () => ({ cloudinary: { uploader: {
   upload_stream: mocks.uploadStream,
   destroy: mocks.destroy
@@ -65,6 +68,7 @@ describe("marketplaceAssetService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.assetCreate.mockResolvedValue({ id: "asset-1" });
+    mocks.decisionCount.mockResolvedValue(0);
     mocks.assetUpdate.mockImplementation(({ data, select }) => Promise.resolve({
       id: "asset-1", status: data.status, url: data.url ?? null,
       provider: "sightengine", providerRequestId: data.providerRequestId ?? null,
@@ -173,7 +177,11 @@ describe("marketplaceAssetService", () => {
 
     await marketplaceAssetService.cleanupOrphanAssets(cutoff);
     expect(mocks.assetFindMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      where: { postId: null, OR: [{ createdAt: { lt: cutoff } }, { status: "DELETE_PENDING" }] }
+      where: { postId: null, OR: [
+        { status: "DELETE_PENDING", deletionRequestedAt: { not: null } },
+        { status: "QUARANTINED", createdAt: { lt: expect.any(Date) } },
+        { status: { in: ["APPROVED", "REJECTED"] }, createdAt: { lt: cutoff } }
+      ] }
     }));
   });
 

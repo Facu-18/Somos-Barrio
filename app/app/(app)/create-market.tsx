@@ -13,7 +13,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { MarketplaceAssetUpload } from '../../types/api';
+import type { MarketplaceAssetStatus, MarketplaceAssetUpload, MarketplacePost } from '../../types/api';
 
 const marketSchema = z.object({
   title: z.string().min(3, 'El título es muy corto').max(255),
@@ -41,7 +41,7 @@ const categories = [
 type SelectedImage = {
   uri: string;
   assetId?: string;
-  status?: MarketplaceAssetUpload['status'];
+  status?: MarketplaceAssetStatus;
   name?: string;
   mimeType?: string;
   file?: File;
@@ -57,7 +57,7 @@ export default function CreateMarketScreen() {
   const [isUploading, setIsUploading] = useState(false);
   const insets = useSafeAreaInsets();
 
-  const { data: postToEdit, isLoading: isLoadingPost } = useQuery({
+  const { data: postToEdit, isLoading: isLoadingPost, refetch: refetchPost } = useQuery<MarketplacePost>({
     queryKey: ['market', barrioSlug, postId],
     queryFn: async () => {
       const response = await api.get(`/barrios/${barrioSlug}/marketplace/${postId}`);
@@ -77,13 +77,13 @@ export default function CreateMarketScreen() {
         title: postToEdit.title,
         description: postToEdit.description,
         price: postToEdit.price ? postToEdit.price.toString() : '',
-        whatsapp: postToEdit.whatsapp,
+        whatsapp: postToEdit.whatsapp || '',
         category: postToEdit.category,
       });
-      setSelectedImages((postToEdit.images || []).map((uri: string, index: number) => ({
-        uri,
-        assetId: postToEdit.assetIds?.[index],
-        status: 'APPROVED'
+      setSelectedImages((postToEdit.managedAssets || []).map((asset) => ({
+        uri: asset.url || '',
+        assetId: asset.id,
+        status: asset.status
       })));
     }
   }, [postToEdit, reset]);
@@ -157,7 +157,7 @@ export default function CreateMarketScreen() {
         });
       } catch (error: any) {
         const details = error.response?.data?.details;
-        if (details?.assetId && ['QUARANTINED', 'REJECTED'].includes(details.status)) {
+        if (details?.assetId && details.status === 'REJECTED') {
           setSelectedImages((current) => current.map((candidate) =>
             candidate === image ? { ...candidate, assetId: details.assetId, status: details.status } : candidate
           ));
@@ -168,9 +168,6 @@ export default function CreateMarketScreen() {
       setSelectedImages((current) => current.map((candidate) =>
         candidate === image ? { ...candidate, assetId: uploadedAsset.id, status: uploadedAsset.status } : candidate
       ));
-      if (uploadedAsset.status !== 'APPROVED') {
-        throw new Error('La imagen quedó en revisión. Quitala para publicar ahora o esperá la revisión.');
-      }
       const assetId = uploadedAsset.id;
       assetIds.push(assetId);
     }
@@ -182,10 +179,9 @@ export default function CreateMarketScreen() {
       if (selectedImages.some((image) => image.status === 'REJECTED')) {
         throw new Error('Hay una imagen rechazada. Quitala para continuar.');
       }
-      if (selectedImages.some((image) => image.assetId && image.status === 'QUARANTINED')) {
-        throw new Error('Hay una imagen todavía en revisión. Quitala para continuar.');
-      }
-      const existingAssetIds = selectedImages.flatMap((image) => image.assetId && image.status === 'APPROVED' ? [image.assetId] : []);
+      const existingAssetIds = selectedImages.flatMap((image) =>
+        image.assetId && ['APPROVED', 'QUARANTINED'].includes(image.status || '') ? [image.assetId] : []
+      );
       const localImages = selectedImages.filter((image) => !image.assetId);
       let uploadedAssetIds: string[] = [];
       if (localImages.length > 0) {
@@ -203,6 +199,7 @@ export default function CreateMarketScreen() {
         category: data.category,
         whatsapp: normalizeWhatsApp(data.whatsapp),
         assetIds: [...existingAssetIds, ...uploadedAssetIds],
+        ...(postId && postToEdit ? { expectedVersion: postToEdit.moderationVersion } : {})
       };
 
       const response = postId
@@ -227,11 +224,14 @@ export default function CreateMarketScreen() {
     onError: (error: any) => {
       setIsUploading(false);
       const status = error.response?.status;
+      if (status === 409 && postId) void refetchPost();
       const fallback = status === 422
         ? 'Una imagen fue rechazada por la política de contenido.'
-        : [502, 503, 504].includes(status)
-          ? 'El verificador de imágenes no está disponible. Intentá nuevamente más tarde.'
-          : error.message || 'Error al publicar el producto.';
+        : status === 409
+          ? 'La publicación fue modificada o está en apelación por lo que no se pudo actualizar. Volvé a intentarlo.'
+          : [502, 503, 504].includes(status)
+            ? 'El verificador de imágenes no está disponible. Intentá nuevamente más tarde.'
+            : error.message || 'Error al publicar el producto.';
       setGlobalError(error.response?.data?.message || fallback);
     }
   });
@@ -264,7 +264,13 @@ export default function CreateMarketScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
               {selectedImages.map((image, index) => (
                 <View key={image.assetId ?? image.uri} style={styles.imagePreview}>
-                  <Image source={{ uri: image.uri }} style={styles.image} />
+                  {image.uri ? (
+                    <Image source={{ uri: image.uri }} style={styles.image} />
+                  ) : (
+                    <View style={[styles.image, { alignItems: 'center', justifyContent: 'center' }]}>
+                      <MaterialCommunityIcons name="shield-search" size={30} color={ClayTheme.colors.textMuted} />
+                    </View>
+                  )}
                   {image.status === 'QUARANTINED' || image.status === 'REJECTED' ? (
                     <View style={styles.imageReviewBadge}>
                       <Text style={styles.imageReviewText}>{image.status === 'REJECTED' ? 'Rechazada' : 'En revisión'}</Text>

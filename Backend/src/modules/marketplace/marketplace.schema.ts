@@ -31,7 +31,8 @@ export const updateMarketplacePostSchema = z.object({
   availability: z.nativeEnum(MarketplaceAvailability).optional(),
   assetIds: z.array(z.string().cuid()).max(5).refine((ids) => new Set(ids).size === ids.length, "No se permiten assets duplicados").optional(),
   location: z.string().max(120).optional(),
-  whatsapp: z.string().min(8).max(30).optional()
+  whatsapp: z.string().min(8).max(30).optional(),
+  expectedVersion: z.number().int().nonnegative()
 }).strict();
 
 import { MarketplaceReportCategory } from "@prisma/client";
@@ -39,3 +40,9 @@ export const createMarketplaceReportSchema = z.object({
   category: z.nativeEnum(MarketplaceReportCategory),
   comment: z.string().max(1000).optional()
 });
+
+export const createMarketplaceAppealSchema = z.object({
+  statement: z.string().min(20).max(2000),
+  expectedVersion: z.number().int().nonnegative(),
+  idempotencyKey: z.string().uuid()
+}).strict();

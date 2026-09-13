@@ -46,5 +46,10 @@ export const marketplaceController = {
   async report(req: Request, res: Response): Promise<void> {
     await marketplaceService.report(req.params.barrioSlug, req.params.postId, req.user!.id, req.body);
     res.status(201).json({ success: true, message: "Reporte recibido" });
+  },
+
+  async appeal(req: Request, res: Response): Promise<void> {
+    await marketplaceService.appeal(req.params.barrioSlug, req.params.postId, req.user!.id, req.body);
+    res.status(201).json({ success: true, message: "Apelación recibida" });
   }
 };

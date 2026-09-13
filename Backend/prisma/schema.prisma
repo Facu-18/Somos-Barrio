@@ -72,6 +72,38 @@ enum MarketplaceAssetStatus {
   APPROVED
   REJECTED
   DELETE_PENDING
+  PROMOTION_PENDING
+  REJECTION_PENDING
+}
+
+enum MarketplaceModerationAction {
+  AUTO_REVIEW
+  REPORT_THRESHOLD
+  APPROVE
+  REJECT
+  REMOVE
+  RESTORE
+  OWNER_RESUBMIT
+  APPEAL_ACCEPT
+  APPEAL_REJECT
+}
+
+enum MarketplaceReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum MarketplaceAppealStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  SUPERSEDED
+}
+
+enum MarketplaceAssetModerationAction {
+  APPROVE
+  REJECT
 }
 
 enum MarketplaceReportCategory {
@@ -97,56 +129,61 @@ enum EventRsvpStatus {
 }
 
 model Barrio {
-  id               String            @id @default(cuid())
-  name             String
-  slug             String            @unique
-  city             String
-  province         String
-  country          String            @default("AR")
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  users            User[]
-  businesses       Business[]
-  news             News[]
-  marketplacePosts MarketplacePost[]
-  forumSubforums   ForumSubforum[]
-  forumThreads     ForumThread[]
-  events           Event[]
+  id                String             @id @default(cuid())
+  name              String
+  slug              String             @unique
+  city              String
+  province          String
+  country           String             @default("AR")
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  users             User[]
+  businesses        Business[]
+  news              News[]
+  marketplacePosts  MarketplacePost[]
+  marketplaceAssets MarketplaceAsset[]
+  forumSubforums    ForumSubforum[]
+  forumThreads      ForumThread[]
+  events            Event[]
 }
 
 model User {
-  id                    String                          @id @default(cuid())
-  email                 String                          @unique
-  name                  String
-  nickname              String?
-  bio                   String?
-  passwordHash          String?
-  avatarUrl             String?
-  avatarPublicId        String?
-  role                  UserRole                        @default(VECINO)
-  authProvider          AuthProvider                    @default(LOCAL)
-  authProviderAccountId String?
-  barrioId              String?
-  createdAt             DateTime                        @default(now())
-  updatedAt             DateTime                        @updatedAt
-  barrio                Barrio?                         @relation(fields: [barrioId], references: [id], onDelete: SetNull)
-  businesses            Business[]
-  news                  News[]
-  marketplacePosts      MarketplacePost[]
-  forumThreads          ForumThread[]
-  forumReplies          ForumReply[]
-  events                Event[]
-  sentMessages          Message[]                       @relation("messages_sent")
-  receivedMessages      Message[]                       @relation("messages_received")
-  reviews               Review[]
-  eventRsvps            EventRsvp[]
-  forumVotes            ForumVote[]
-  newsVotes             NewsVote[]
-  pushDevices           PushDevice[]
-  notificationOutbox    NotificationOutbox[]
-  marketplaceDecisions  MarketplaceModerationDecision[]
-  marketplaceReports    MarketplaceReport[]
-  marketplaceAssets     MarketplaceAsset[]
+  id                         String                               @id @default(cuid())
+  email                      String                               @unique
+  name                       String
+  nickname                   String?
+  bio                        String?
+  passwordHash               String?
+  avatarUrl                  String?
+  avatarPublicId             String?
+  role                       UserRole                             @default(VECINO)
+  authProvider               AuthProvider                         @default(LOCAL)
+  authProviderAccountId      String?
+  barrioId                   String?
+  createdAt                  DateTime                             @default(now())
+  updatedAt                  DateTime                             @updatedAt
+  barrio                     Barrio?                              @relation(fields: [barrioId], references: [id], onDelete: SetNull)
+  businesses                 Business[]
+  news                       News[]
+  marketplacePosts           MarketplacePost[]
+  forumThreads               ForumThread[]
+  forumReplies               ForumReply[]
+  events                     Event[]
+  sentMessages               Message[]                            @relation("messages_sent")
+  receivedMessages           Message[]                            @relation("messages_received")
+  reviews                    Review[]
+  eventRsvps                 EventRsvp[]
+  forumVotes                 ForumVote[]
+  newsVotes                  NewsVote[]
+  pushDevices                PushDevice[]
+  notificationOutbox         NotificationOutbox[]
+  marketplaceDecisions       MarketplaceModerationDecision[]
+  marketplaceReports         MarketplaceReport[]                  @relation("MarketplaceReportReporter")
+  resolvedMarketplaceReports MarketplaceReport[]                  @relation("MarketplaceReportResolver")
+  marketplaceAssets          MarketplaceAsset[]
+  marketplaceAppeals         MarketplaceAppeal[]                  @relation("MarketplaceAppealOwner")
+  resolvedMarketplaceAppeals MarketplaceAppeal[]                  @relation("MarketplaceAppealResolver")
+  assetModerationDecisions   MarketplaceAssetModerationDecision[]
 
   @@index([barrioId])
   @@index([role])
@@ -252,38 +289,45 @@ model MarketplacePost {
   decisions            MarketplaceModerationDecision[]
   reports              MarketplaceReport[]
   assets               MarketplaceAsset[]
+  appeals              MarketplaceAppeal[]
+  moderationVersion    Int                             @default(0)
+  deletedAt            DateTime?
 
   @@index([userId])
-  @@index([barrioId, availability, moderationStatus, createdAt])
+  @@index([barrioId, deletedAt, moderationStatus, updatedAt])
 }
 
 model MarketplaceAsset {
-  id                  String                 @id @default(cuid())
+  id                  String                               @id @default(cuid())
   uploaderId          String
   postId              String?
-  status              MarketplaceAssetStatus @default(QUARANTINED)
-  provider            String                 @default("sightengine")
+  status              MarketplaceAssetStatus               @default(QUARANTINED)
+  provider            String                               @default("sightengine")
   providerRequestId   String?
   scores              Json?
   mimeType            String
   byteSize            Int
   contentHash         String
-  cloudinaryPublicId  String?                @unique
+  cloudinaryPublicId  String?                              @unique
   cloudinaryType      String?
   url                 String?
   ocrDecision         String?
-  ocrCategories       String[]               @default([])
+  ocrCategories       String[]                             @default([])
   ocrRuleId           String?
   ocrRuleVersion      String?
   ocrPolicyVersion    String?
   ocrContentHash      String?
   scannedAt           DateTime?
   deletionRequestedAt DateTime?
-  deletionAttempts    Int                    @default(0)
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  uploader            User                   @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
-  post                MarketplacePost?       @relation(fields: [postId], references: [id], onDelete: SetNull)
+  deletionAttempts    Int                                  @default(0)
+  createdAt           DateTime                             @default(now())
+  updatedAt           DateTime                             @updatedAt
+  barrioId            String?
+  moderationVersion   Int                                  @default(0)
+  reviewDecisions     MarketplaceAssetModerationDecision[]
+  uploader            User                                 @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  post                MarketplacePost?                     @relation(fields: [postId], references: [id], onDelete: SetNull)
+  barrio              Barrio?                              @relation(fields: [barrioId], references: [id], onDelete: SetNull)
 
   @@index([uploaderId, createdAt])
   @@index([postId])
@@ -292,40 +336,107 @@ model MarketplaceAsset {
 }
 
 model MarketplaceModerationDecision {
-  id            String           @id @default(cuid())
-  postId        String
-  moderatorId   String?
-  status        ModerationStatus
-  reason        String?
-  privateNote   String?
-  ruleId        String?
-  ruleVersion   String?
-  policyVersion String?
-  domain        String?
-  severity      String?
-  contentHash   String?
-  categories    String[]         @default([])
-  createdAt     DateTime         @default(now())
+  id             String                       @id @default(cuid())
+  postId         String
+  moderatorId    String?
+  status         ModerationStatus
+  reason         String?
+  privateNote    String?
+  ruleId         String?
+  ruleVersion    String?
+  policyVersion  String?
+  domain         String?
+  severity       String?
+  contentHash    String?
+  categories     String[]                     @default([])
+  action         MarketplaceModerationAction?
+  reasonCode     String?
+  fromStatus     ModerationStatus?
+  fromVersion    Int?
+  toVersion      Int?
+  idempotencyKey String?                      @unique
+  evidence       Json?
+  appealId       String?
+  createdAt      DateTime                     @default(now())
 
-  post      MarketplacePost @relation(fields: [postId], references: [id], onDelete: Cascade)
-  moderator User?           @relation(fields: [moderatorId], references: [id], onDelete: SetNull)
+  post            MarketplacePost     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  moderator       User?               @relation(fields: [moderatorId], references: [id], onDelete: SetNull)
+  appeal          MarketplaceAppeal?  @relation("AppealOutcome", fields: [appealId], references: [id], onDelete: SetNull)
+  appealsAgainst  MarketplaceAppeal[] @relation("AppealAgainstDecision")
+  resolvedAppeals MarketplaceAppeal[] @relation("AppealResolutionDecision")
+  resolvedReports MarketplaceReport[] @relation("ReportResolutionDecision")
+
+  @@unique([postId, toVersion])
+  @@index([postId, createdAt])
+}
+
+model MarketplaceReport {
+  id                   String                    @id @default(cuid())
+  postId               String
+  reporterId           String
+  category             MarketplaceReportCategory
+  comment              String?
+  status               MarketplaceReportStatus   @default(OPEN)
+  resolvedAt           DateTime?
+  resolvedById         String?
+  resolutionDecisionId String?
+  createdAt            DateTime                  @default(now())
+
+  post               MarketplacePost                @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporter           User                           @relation("MarketplaceReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  resolvedBy         User?                          @relation("MarketplaceReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolutionDecision MarketplaceModerationDecision? @relation("ReportResolutionDecision", fields: [resolutionDecisionId], references: [id], onDelete: SetNull)
+
+  @@unique([postId, reporterId])
+  @@index([postId, createdAt])
+}
+
+model MarketplaceAppeal {
+  id                   String                  @id @default(cuid())
+  postId               String
+  ownerId              String
+  againstDecisionId    String?
+  statement            String
+  status               MarketplaceAppealStatus @default(PENDING)
+  idempotencyKey       String                  @unique
+  postVersion          Int
+  resolutionDecisionId String?
+  resolvedById         String?
+  resolvedAt           DateTime?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  post               MarketplacePost                 @relation(fields: [postId], references: [id], onDelete: Cascade)
+  owner              User                            @relation("MarketplaceAppealOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  resolvedBy         User?                           @relation("MarketplaceAppealResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  againstDecision    MarketplaceModerationDecision?  @relation("AppealAgainstDecision", fields: [againstDecisionId], references: [id], onDelete: SetNull)
+  resolutionDecision MarketplaceModerationDecision?  @relation("AppealResolutionDecision", fields: [resolutionDecisionId], references: [id], onDelete: SetNull)
+  outcomeDecisions   MarketplaceModerationDecision[] @relation("AppealOutcome")
 
   @@index([postId])
 }
 
-model MarketplaceReport {
-  id         String                    @id @default(cuid())
-  postId     String
-  reporterId String
-  category   MarketplaceReportCategory
-  comment    String?
-  createdAt  DateTime                  @default(now())
+model MarketplaceAssetModerationDecision {
+  id             String                           @id @default(cuid())
+  assetId        String
+  moderatorId    String?
+  action         MarketplaceAssetModerationAction
+  reasonCode     String?
+  privateNote    String?
+  fromStatus     MarketplaceAssetStatus?
+  toStatus       MarketplaceAssetStatus?
+  fromVersion    Int?
+  toVersion      Int?
+  idempotencyKey String                           @unique
+  policyVersion  String?
+  evidence       Json?
+  createdAt      DateTime                         @default(now())
 
-  post     MarketplacePost @relation(fields: [postId], references: [id], onDelete: Cascade)
-  reporter User            @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  asset     MarketplaceAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  moderator User?            @relation(fields: [moderatorId], references: [id], onDelete: SetNull)
 
-  @@unique([postId, reporterId])
-  @@index([postId, createdAt])
+  @@unique([assetId, toVersion])
+  @@index([assetId, createdAt])
 }
 
 model ForumSubforum {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { listPerf } from '../../constants/ListPerf';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
@@ -8,13 +8,15 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { MarketplacePost } from '../../types/api';
 
 const moderationReasonLabels: Record<string, string> = {
-  DRUGS: 'producto prohibido',
-  WEAPONS: 'producto regulado',
-  INSULT: 'lenguaje inapropiado',
-  CONTENT_CHANGED: 'cambios por revisar',
-  IMAGE_REVIEW: 'imagen por revisar',
+  PROHIBITED_ITEM: 'producto prohibido',
+  REGULATED_ITEM: 'producto regulado',
+  INAPPROPRIATE_CONTENT: 'contenido inapropiado',
+  FRAUD_OR_MISLEADING: 'información engañosa',
+  SPAM_OR_DUPLICATE: 'spam o publicación repetida',
+  QUARANTINED_ASSET: 'imagen por revisar',
   REPORT_THRESHOLD: 'reportes vecinales',
   MANUAL_REVIEW: 'decisión editorial'
 };
@@ -23,19 +25,20 @@ export default function MyPostsScreen() {
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
   const insets = useSafeAreaInsets();
+  const [page, setPage] = useState(1);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ['market', barrioSlug, 'me'],
+    queryKey: ['market', barrioSlug, 'me', page],
     queryFn: async () => {
-      const response = await api.get(`/barrios/${barrioSlug}/marketplace/me?page=1&limit=20`);
+      const response = await api.get(`/barrios/${barrioSlug}/marketplace/me?page=${page}&limit=20`);
       return response.data.data;
     }
   });
 
-  const renderItem = ({ item }: { item: any }) => (
+  const renderItem = ({ item }: { item: MarketplacePost }) => (
     <TouchableOpacity 
       style={styles.card}
-      onPress={() => router.push(`/(app)/create-market?postId=${item.id}`)}
+      onPress={() => router.push(`/(app)/market/${item.id}`)}
     >
       <View style={styles.imageContainer}>
         {item.images && item.images.length > 0 ? (
@@ -76,7 +79,14 @@ export default function MyPostsScreen() {
           </Text>
         </View>
       </View>
-      <MaterialCommunityIcons name="chevron-right" size={24} color={ClayTheme.colors.textMuted} />
+      <TouchableOpacity
+        style={styles.editButton}
+        onPress={() => router.push(`/(app)/create-market?postId=${item.id}`)}
+        accessibilityRole="button"
+        accessibilityLabel={`Editar ${item.title}`}
+      >
+        <MaterialCommunityIcons name="pencil-outline" size={21} color={ClayTheme.colors.primaryText} />
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 
@@ -113,6 +123,17 @@ export default function MyPostsScreen() {
             </View>
           ) : null
         }
+        ListFooterComponent={data?.total > data?.limit ? (
+          <View style={styles.pagination}>
+            <TouchableOpacity disabled={page === 1} onPress={() => setPage((value) => Math.max(1, value - 1))}>
+              <Text style={[styles.pageAction, page === 1 && styles.disabled]}>Anterior</Text>
+            </TouchableOpacity>
+            <Text style={styles.date}>Página {page}</Text>
+            <TouchableOpacity disabled={page * data.limit >= data.total} onPress={() => setPage((value) => value + 1)}>
+              <Text style={[styles.pageAction, page * data.limit >= data.total && styles.disabled]}>Siguiente</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       />
     </View>
   );
@@ -175,6 +196,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  editButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: ClayTheme.colors.inputBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   content: {
     flex: 1,
     gap: 4,
@@ -204,6 +233,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: ClayTheme.colors.textMuted,
   },
+  pagination: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 18 },
+  pageAction: { color: ClayTheme.colors.primaryText, fontFamily: ClayTheme.typography.fontFamily.bold },
+  disabled: { opacity: 0.35 },
   empty: {
     alignItems: 'center',
     marginTop: 60,
