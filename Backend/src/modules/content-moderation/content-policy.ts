@@ -12,6 +12,9 @@ export interface PolicyRule {
   maxDistance?: number; // Sólo usado si type es FUZZY
   version?: string;
   domains?: Array<'MARKETPLACE' | 'FORUM'>;
+  // Solo REGEX: 'COMPACT' (default) ignora espacios y separadores; 'NORMALIZED' conserva
+  // los límites de palabra para frases literales.
+  target?: 'COMPACT' | 'NORMALIZED';
 }
 
 export interface ModerationResult {
@@ -79,7 +82,7 @@ export class ContentPolicy {
       } else if (rule.type === 'REGEX') {
         const regex = rule.value as RegExp;
         regex.lastIndex = 0;
-        if (regex.test(compactText)) {
+        if (regex.test(rule.target === 'NORMALIZED' ? views.normalized : compactText)) {
           isMatch = true;
         }
         regex.lastIndex = 0;
@@ -104,9 +107,11 @@ export class ContentPolicy {
         if (rule.decision === 'BLOCK') {
           return this.result('BLOCK', rule, domain, contentHash, rule.categories);
         } else if (rule.decision === 'REVIEW') {
+          // La primera regla de revisión identifica la decisión; las categorías se acumulan
+          // para que una regla genérica no oculte otra más específica.
           finalDecision = 'REVIEW';
-          matchedRule = rule;
-          matchedCategories = rule.categories;
+          matchedRule ??= rule;
+          matchedCategories = [...new Set([...matchedCategories, ...rule.categories])];
         }
       }
     }

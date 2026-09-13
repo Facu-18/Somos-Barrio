@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -8,41 +8,71 @@ import { ClayTheme } from '../../constants/ClayTheme';
 import { ClayButton } from '../../components/ClayButton';
 import { ClayInput } from '../../components/ClayInput';
 import { api } from '../../lib/api';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { ForumContentStatus, forumErrorMessage, forumModerationMessage } from '../../lib/forum';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const threadSchema = z.object({
-  title: z.string().min(3, 'El título debe tener al menos 3 caracteres').max(255),
-  content: z.string().min(5, 'Escribe un poco más de detalle').max(5000),
+  title: z.string().trim().min(3, 'El título debe tener al menos 3 caracteres').max(255),
+  content: z.string().trim().min(5, 'Escribe un poco más de detalle').max(5000),
 });
 
 type ThreadForm = z.infer<typeof threadSchema>;
+type SavedThread = { id: string; title: string; content: string; status: ForumContentStatus; moderationReasonCode: string | null };
 
 export default function CreateThreadScreen() {
-  const { subforumSlug } = useLocalSearchParams<{ subforumSlug: string }>();
+  // Con threadId la pantalla corrige un hilo propio en lugar de crear uno nuevo.
+  const { subforumSlug, threadId } = useLocalSearchParams<{ subforumSlug: string; threadId?: string }>();
+  const isEditing = !!threadId;
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
   const [globalError, setGlobalError] = useState('');
 
+  const { data: existingThread, isLoading: isLoadingThread } = useQuery({
+    queryKey: ['thread-detail', barrioSlug, subforumSlug, threadId],
+    queryFn: async () => {
+      const response = await api.get(`/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${threadId}`);
+      return response.data.data as SavedThread;
+    },
+    enabled: isEditing,
+  });
+
   const { control, handleSubmit, formState: { errors } } = useForm<ThreadForm>({
     resolver: zodResolver(threadSchema),
-    defaultValues: { title: '', content: '' }
+    defaultValues: { title: '', content: '' },
+    values: existingThread ? { title: existingThread.title, content: existingThread.content } : undefined,
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: ThreadForm) => {
-      const response = await api.post(`/barrios/${barrioSlug}/forum/${subforumSlug}/threads`, data);
-      return response.data;
+      const response = isEditing
+        ? await api.patch(`/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${threadId}`, data)
+        : await api.post(`/barrios/${barrioSlug}/forum/${subforumSlug}/threads`, data);
+      return response.data.data as SavedThread;
     },
-    onSuccess: () => {
-      // Invalidate threads query so the new thread appears
+    onSuccess: (thread) => {
       queryClient.invalidateQueries({ queryKey: ['threads', barrioSlug, subforumSlug] });
-      router.back();
+      queryClient.invalidateQueries({ queryKey: ['subforums', barrioSlug] });
+      queryClient.invalidateQueries({ queryKey: ['thread-detail', barrioSlug, subforumSlug, thread.id] });
+
+      if (thread.status === 'PUBLISHED') {
+        router.back();
+        return;
+      }
+      Alert.alert(
+        thread.status === 'BLOCKED' ? 'No se publicó tu hilo' : 'Tu hilo quedó en revisión',
+        forumModerationMessage(thread.status, thread.moderationReasonCode)
+      );
+      if (isEditing) {
+        router.back();
+      } else {
+        router.replace({ pathname: '/(app)/thread/[id]', params: { id: thread.id, subforumSlug } });
+      }
     },
     onError: (error: any) => {
-      setGlobalError(error.response?.data?.message || 'Error al crear la publicación.');
+      setGlobalError(forumErrorMessage(error, isEditing ? 'Error al guardar los cambios.' : 'Error al crear la publicación.'));
     }
   });
 
@@ -60,13 +90,16 @@ export default function CreateThreadScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
           <MaterialCommunityIcons name="close" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Nueva Conversación</Text>
+        <Text style={styles.headerTitle}>{isEditing ? 'Editar Conversación' : 'Nueva Conversación'}</Text>
         <View style={{ width: 24 }} />
       </View>
 
+      {isEditing && isLoadingThread ? (
+        <ActivityIndicator size="large" color={ClayTheme.colors.primary} style={{ marginTop: 40 }} />
+      ) : (
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.subtitle}>
-          Estás publicando en <Text style={{ color: ClayTheme.colors.primaryText }}>{subforumSlug}</Text>
+          {isEditing ? 'Editando en ' : 'Estás publicando en '}<Text style={{ color: ClayTheme.colors.primaryText }}>{subforumSlug}</Text>
         </Text>
 
         <View style={styles.form}>
@@ -109,14 +142,15 @@ export default function CreateThreadScreen() {
             )}
           />
 
-          <ClayButton 
-            title={createMutation.isPending ? "Publicando..." : "Publicar"} 
-            onPress={handleSubmit(onSubmit)} 
+          <ClayButton
+            title={createMutation.isPending ? (isEditing ? "Guardando..." : "Publicando...") : (isEditing ? "Guardar cambios" : "Publicar")}
+            onPress={handleSubmit(onSubmit)}
             disabled={createMutation.isPending}
             style={styles.submitButton}
           />
         </View>
       </ScrollView>
+      )}
     </KeyboardAvoidingView>
   );
 }

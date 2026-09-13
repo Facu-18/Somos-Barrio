@@ -6,7 +6,7 @@ class ContentModerationService {
 
   constructor() {
     // Inicializamos con la política de Argentina
-    this.defaultPolicy = new ContentPolicy('es-AR-1.0', rulesEsAR, allowlistEsAR);
+    this.defaultPolicy = new ContentPolicy('es-AR-1.1', rulesEsAR, allowlistEsAR);
   }
 
   /**

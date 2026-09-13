@@ -55,6 +55,13 @@ export const requireAuth = async (req: Request, _res: Response, next: NextFuncti
   }
 };
 
+// Rutas públicas que muestran más datos al usuario autenticado (p. ej. su contenido en revisión).
+// Sin header sigue como anónimo; un token presente pero inválido responde 401 para que el cliente refresque.
+export const optionalAuth = (req: Request, res: Response, next: NextFunction): void => {
+  if (!req.headers.authorization) return next();
+  void requireAuth(req, res, next);
+};
+
 export const requireRole =
   (...roles: UserRole[]) =>
   (req: Request, _res: Response, next: NextFunction): void => {

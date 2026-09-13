@@ -122,6 +122,13 @@ enum ModerationStatus {
   REMOVED
 }
 
+enum ForumContentStatus {
+  PUBLISHED
+  PENDING_REVIEW
+  BLOCKED
+  REMOVED
+}
+
 enum EventRsvpStatus {
   GOING
   INTERESTED
@@ -465,6 +472,11 @@ model ForumThread {
   isClosed   Boolean       @default(false)
   closedAt   DateTime?
   closedById String?
+  status                  ForumContentStatus @default(PUBLISHED)
+  moderationReasonCode    String?
+  moderationRuleId        String?
+  moderationPolicyVersion String?
+  moderationContentHash   String?
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -475,6 +487,8 @@ model ForumThread {
 
   @@index([subforumId, createdAt])
   @@index([barrioId, createdAt])
+  @@index([subforumId, status, createdAt])
+  @@index([barrioId, status, createdAt])
 }
 
 model ForumReply {
@@ -485,6 +499,13 @@ model ForumReply {
   content       String
   upVotes       Int          @default(0)
   downVotes     Int          @default(0)
+  status                  ForumContentStatus @default(PUBLISHED)
+  moderationReasonCode    String?
+  moderationRuleId        String?
+  moderationPolicyVersion String?
+  moderationContentHash   String?
+  // Primera vez que quedó publicada; evita notificar dos veces.
+  publishedAt   DateTime?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   thread        ForumThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
@@ -494,6 +515,7 @@ model ForumReply {
   votes         ForumVote[]
 
   @@index([threadId, createdAt])
+  @@index([threadId, status, createdAt])
   @@index([userId])
   @@index([parentReplyId])
 }

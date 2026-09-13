@@ -1,4 +1,4 @@
-import { NewsStatus, MarketplaceAvailability, ModerationStatus } from "@prisma/client";
+import { ForumContentStatus, NewsStatus, MarketplaceAvailability, ModerationStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 
@@ -119,6 +119,7 @@ export const searchService = {
         prisma.forumThread
           .findMany({
             where: {
+              status: ForumContentStatus.PUBLISHED,
               ...(barrioId ? { barrioId } : {}),
               OR: [
                 { title: { contains: q, mode } },

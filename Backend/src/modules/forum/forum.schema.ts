@@ -16,15 +16,28 @@ export const forumListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(50).default(10)
 });
 
+const threadTitle = z.string().trim().min(3).max(255);
+const threadContent = z.string().trim().min(5).max(5000);
+const replyContent = z.string().trim().min(1).max(5000);
+
 export const createThreadSchema = z.object({
-  title: z.string().min(3).max(255),
-  content: z.string().min(5).max(5000)
+  title: threadTitle,
+  content: threadContent
 });
 
+export const updateThreadSchema = z
+  .object({ title: threadTitle.optional(), content: threadContent.optional() })
+  .strict()
+  .refine((value) => value.title !== undefined || value.content !== undefined, {
+    message: "Indicá al menos un campo para actualizar"
+  });
+
 export const createReplySchema = z.object({
-  content: z.string().min(1).max(5000),
+  content: replyContent,
   parentReplyId: z.string().cuid().optional()
 });
+
+export const updateReplySchema = z.object({ content: replyContent }).strict();
 
 export const voteSchema = z.object({
   value: z.union([z.literal(1), z.literal(-1)])

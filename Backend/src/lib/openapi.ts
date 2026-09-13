@@ -47,6 +47,15 @@ const notFound = errorResponse("Not Found");
 const conflict = errorResponse("Conflict");
 const unprocessable = errorResponse("Unprocessable Entity");
 const serviceUnavailable = errorResponse("Service Unavailable");
+const forumRateLimited = jsonResponse("Too Many Requests: `details.code` es `FORUM_THREAD_RATE_LIMIT`, `FORUM_REPLY_RATE_LIMIT`, `FORUM_EDIT_RATE_LIMIT` o `FORUM_IP_RATE_LIMIT`", {
+  type: "object",
+  required: ["success", "message", "details"],
+  properties: {
+    success: { type: "boolean", enum: [false] },
+    message: { type: "string" },
+    details: { type: "object", required: ["code"], properties: { code: { type: "string" } } }
+  }
+});
 const bearerSecurity: OpenAPIV3.SecurityRequirementObject[] = [{ bearerAuth: [] }];
 
 const jsonBody = (schema: Schema, required = true): OpenAPIV3.RequestBodyObject => ({
@@ -324,26 +333,46 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
     properties: {
       id: cuid(), barrioId: cuid(), name: { type: "string" }, slug: { type: "string" }, description: nullableString(),
       createdAt: dateTime(), updatedAt: dateTime(),
-      _count: { type: "object", required: ["threads"], properties: { threads: { type: "integer" } } }
+      _count: { type: "object", required: ["threads"], description: "Cuenta solo hilos publicados.", properties: { threads: { type: "integer" } } }
     }
+  },
+  ForumContentStatus: {
+    type: "string",
+    enum: ["PUBLISHED", "PENDING_REVIEW", "BLOCKED", "REMOVED"],
+    description: "Solo PUBLISHED es visible públicamente. El autor ve su propio contenido en cualquier estado; ADMIN y EDITOR del barrio ven todo en el detalle."
+  },
+  ForumModerationReasonCode: {
+    type: "string",
+    nullable: true,
+    enum: ["THREAT", "DISCRIMINATION", "INAPPROPRIATE_CONTENT", "OTHER_POLICY", null],
+    description: "Motivo genérico de la retención automática; null cuando el contenido está publicado. Nunca identifica la regla exacta."
   },
   ForumReply: {
     type: "object",
-    required: ["id", "threadId", "userId", "parentReplyId", "content", "upVotes", "downVotes", "createdAt", "updatedAt"],
+    required: ["id", "threadId", "userId", "parentReplyId", "content", "upVotes", "downVotes", "status", "moderationReasonCode", "publishedAt", "createdAt", "updatedAt"],
     properties: {
       id: cuid(), threadId: cuid(), userId: cuid(), parentReplyId: nullableCuid(), content: { type: "string" },
-      upVotes: { type: "integer" }, downVotes: { type: "integer" }, createdAt: dateTime(), updatedAt: dateTime(),
+      upVotes: { type: "integer" }, downVotes: { type: "integer" },
+      status: ref("ForumContentStatus"), moderationReasonCode: ref("ForumModerationReasonCode"), publishedAt: dateTime(true),
+      createdAt: dateTime(), updatedAt: dateTime(),
       user: ref("UserSummary"), childReplies: arrayOf(ref("ForumReply"))
     }
   },
   ForumThread: {
     type: "object",
-    required: ["id", "userId", "barrioId", "subforumId", "title", "content", "upVotes", "downVotes", "createdAt", "updatedAt"],
+    required: ["id", "userId", "barrioId", "subforumId", "title", "content", "upVotes", "downVotes", "isClosed", "status", "moderationReasonCode", "createdAt", "updatedAt"],
     properties: {
       id: cuid(), userId: cuid(), barrioId: cuid(), subforumId: cuid(), title: { type: "string" }, content: { type: "string" },
-      upVotes: { type: "integer" }, downVotes: { type: "integer" }, createdAt: dateTime(), updatedAt: dateTime(),
+      upVotes: { type: "integer" }, downVotes: { type: "integer" },
+      isClosed: { type: "boolean" }, closedAt: dateTime(true), closedById: nullableCuid(),
+      status: ref("ForumContentStatus"), moderationReasonCode: ref("ForumModerationReasonCode"),
+      createdAt: dateTime(), updatedAt: dateTime(),
       user: ref("UserSummary"), replies: arrayOf(ref("ForumReply")),
-      _count: { type: "object", required: ["replies"], properties: { replies: { type: "integer" } } }
+      _count: {
+        type: "object", required: ["replies"],
+        description: "Cuenta solo respuestas publicadas.",
+        properties: { replies: { type: "integer" } }
+      }
     }
   },
   EventRsvp: {
@@ -953,38 +982,87 @@ export const openapiSpec: OpenAPIV3.Document = {
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads": {
       parameters: [barrioSlugParam, subforumSlugParam],
       get: {
-        tags: ["Foro"], summary: "Listar hilos", parameters: [pageParam, limit10Param],
-        responses: { 200: ok(ref("PaginatedThreads")), 400: badRequest, 404: notFound }
+        tags: ["Foro"], summary: "Listar hilos",
+        description: "Autenticación opcional. Sin token devuelve solo hilos PUBLISHED; con token agrega los hilos propios en cualquier estado (y `total` los incluye).",
+        parameters: [pageParam, limit10Param],
+        responses: { 200: ok(ref("PaginatedThreads")), 400: badRequest, 401: unauthorized, 404: notFound }
       },
       post: {
         tags: ["Foro"], summary: "Crear hilo", security: bearerSecurity,
+        description: "Título y contenido se recortan y se moderan antes de persistir. Contenido grave queda BLOCKED y ambiguo u ofuscado PENDING_REVIEW; en ambos casos responde 201 con el estado y no es visible públicamente. Límite por usuario (`FORUM_THREAD_USER_LIMIT`, 5/h por defecto) y por IP (`FORUM_WRITE_IP_LIMIT`).",
         requestBody: jsonBody({
           type: "object", required: ["title", "content"],
           properties: { title: { type: "string", minLength: 3, maxLength: 255 }, content: { type: "string", minLength: 5, maxLength: 5000 } }
         }),
-        responses: { 201: created(ref("ForumThread")), 400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable }
+        responses: { 201: created(ref("ForumThread")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 429: forumRateLimited, 503: serviceUnavailable }
       }
     },
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}": {
       parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
-      get: { tags: ["Foro"], summary: "Obtener hilo con respuestas", responses: { 200: ok(ref("ForumThread")), 400: badRequest, 404: notFound } },
+      get: {
+        tags: ["Foro"], summary: "Obtener hilo con respuestas",
+        description: "Autenticación opcional. Un hilo no publicado responde 404 salvo para su autor, ADMIN o EDITOR del barrio. Las respuestas no publicadas solo se incluyen para su autor y para moderadores.",
+        responses: { 200: ok(ref("ForumThread")), 400: badRequest, 401: unauthorized, 404: notFound }
+      },
+      patch: {
+        tags: ["Foro"], summary: "Corregir hilo propio", security: bearerSecurity,
+        description: "Solo el autor. Vuelve a moderar el contenido: una corrección limpia de un hilo PENDING_REVIEW o BLOCKED queda PUBLISHED. El contenido REMOVED no se puede editar. Límite `FORUM_EDIT_USER_LIMIT` por usuario.",
+        requestBody: jsonBody({
+          type: "object", additionalProperties: false, minProperties: 1,
+          properties: { title: { type: "string", minLength: 3, maxLength: 255 }, content: { type: "string", minLength: 5, maxLength: 5000 } }
+        }),
+        responses: {
+          200: ok(ref("ForumThread")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound,
+          409: errorResponse("Conflict: `CONTENT_REMOVED` o `FORUM_CONTENT_CONFLICT` (el hilo cambió mientras se editaba)"),
+          429: forumRateLimited, 503: serviceUnavailable
+        }
+      },
       delete: { tags: ["Foro"], summary: "Eliminar hilo", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
     },
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/replies": {
       parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
       post: {
         tags: ["Foro"], summary: "Crear respuesta", security: bearerSecurity,
+        description: "El contenido se recorta y se modera antes de persistir. Solo una respuesta PUBLISHED encola push, con texto genérico. El hilo debe estar PUBLISHED y abierto, y el padre (si se indica) PUBLISHED y del mismo hilo. Límite por usuario (`FORUM_REPLY_USER_LIMIT`, 30/h por defecto) y por IP.",
         requestBody: jsonBody({
           type: "object", required: ["content"],
           properties: { content: { type: "string", minLength: 1, maxLength: 5000 }, parentReplyId: cuid() }
         }),
-        responses: { 201: created(ref("ForumReply")), 400: badRequest, 401: unauthorized, 404: notFound, 503: serviceUnavailable }
+        responses: {
+          201: created(ref("ForumReply")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound,
+          409: errorResponse("Conflict: `THREAD_CLOSED`, `THREAD_NOT_PUBLISHED` (solo para el autor del hilo) o `PARENT_REPLY_UNAVAILABLE`"),
+          429: forumRateLimited, 503: serviceUnavailable
+        }
+      }
+    },
+    "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/replies/{replyId}": {
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid()), pathParam("replyId", cuid())],
+      patch: {
+        tags: ["Foro"], summary: "Corregir respuesta propia", security: bearerSecurity,
+        description: "Solo el autor, en hilos publicados y abiertos. Vuelve a moderar; si la respuesta queda PUBLISHED por primera vez se encolan las notificaciones una única vez. El contenido REMOVED no se puede editar.",
+        requestBody: jsonBody({
+          type: "object", additionalProperties: false, required: ["content"],
+          properties: { content: { type: "string", minLength: 1, maxLength: 5000 } }
+        }),
+        responses: {
+          200: ok(ref("ForumReply")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound,
+          409: errorResponse("Conflict: `THREAD_CLOSED`, `THREAD_NOT_PUBLISHED`, `CONTENT_REMOVED` o `FORUM_CONTENT_CONFLICT`"),
+          429: forumRateLimited, 503: serviceUnavailable
+        }
+      }
+    },
+    "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/close": {
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
+      post: {
+        tags: ["Foro"], summary: "Cerrar hilo", security: bearerSecurity,
+        description: "Autor, EDITOR o ADMIN. Un hilo cerrado rechaza nuevas respuestas y ediciones de respuestas con 409 `THREAD_CLOSED`.",
+        responses: { 200: ok(ref("ForumThread")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       }
     },
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/vote": {
       parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
       post: {
-        tags: ["Foro"], summary: "Alternar voto del hilo", security: bearerSecurity,
+        tags: ["Foro"], summary: "Alternar voto del hilo", security: bearerSecurity, description: "Solo hilos PUBLISHED; en otro estado responde 404.",
         requestBody: jsonBody({ type: "object", required: ["value"], properties: { value: { type: "integer", enum: [1, -1] } } }),
         responses: {
           200: ok({ type: "object", required: ["voted", "value"], properties: { voted: { type: "boolean" }, value: { type: "integer", enum: [1, -1], nullable: true } } }),
@@ -995,7 +1073,7 @@ export const openapiSpec: OpenAPIV3.Document = {
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/replies/{replyId}/vote": {
       parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid()), pathParam("replyId", cuid())],
       post: {
-        tags: ["Foro"], summary: "Alternar voto de la respuesta", security: bearerSecurity,
+        tags: ["Foro"], summary: "Alternar voto de la respuesta", security: bearerSecurity, description: "Solo respuestas PUBLISHED de hilos PUBLISHED; en otro estado responde 404.",
         requestBody: jsonBody({ type: "object", required: ["value"], properties: { value: { type: "integer", enum: [1, -1] } } }),
         responses: {
           200: ok({ type: "object", required: ["voted", "value"], properties: { voted: { type: "boolean" }, value: { type: "integer", enum: [1, -1], nullable: true } } }),

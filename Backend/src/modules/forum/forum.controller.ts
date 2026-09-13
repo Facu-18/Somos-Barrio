@@ -11,7 +11,8 @@ export const forumController = {
     const result = await forumService.listThreads(
       req.params.barrioSlug,
       req.params.subforumSlug,
-      req.query as any
+      req.query as any,
+      req.user
     );
     res.json({ success: true, data: result });
   },
@@ -20,7 +21,8 @@ export const forumController = {
     const thread = await forumService.getThread(
       req.params.barrioSlug,
       req.params.subforumSlug,
-      req.params.threadId
+      req.params.threadId,
+      req.user
     );
     res.json({ success: true, data: thread });
   },
@@ -35,6 +37,17 @@ export const forumController = {
     res.status(201).json({ success: true, data: thread });
   },
 
+  async updateThread(req: Request, res: Response): Promise<void> {
+    const thread = await forumService.updateThread(
+      req.params.barrioSlug,
+      req.params.subforumSlug,
+      req.params.threadId,
+      req.user!.id,
+      req.body
+    );
+    res.json({ success: true, data: thread });
+  },
+
   async createReply(req: Request, res: Response): Promise<void> {
     const reply = await forumService.createReply(
       req.params.barrioSlug,
@@ -44,6 +57,18 @@ export const forumController = {
       req.body
     );
     res.status(201).json({ success: true, data: reply });
+  },
+
+  async updateReply(req: Request, res: Response): Promise<void> {
+    const reply = await forumService.updateReply(
+      req.params.barrioSlug,
+      req.params.subforumSlug,
+      req.params.threadId,
+      req.params.replyId,
+      req.user!.id,
+      req.body
+    );
+    res.json({ success: true, data: reply });
   },
 
   async voteThread(req: Request, res: Response): Promise<void> {

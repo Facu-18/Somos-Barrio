@@ -8,6 +8,7 @@ import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { EmptyState } from '../../../components/EmptyState';
+import { ForumContentStatus, forumStatusInfo } from '../../../lib/forum';
 
 interface Subforum {
   id: string;
@@ -20,6 +21,7 @@ interface Thread {
   title: string;
   createdAt: string;
   upVotes: number;
+  status: ForumContentStatus;
   _count: {
     replies: number;
   };
@@ -124,6 +126,8 @@ export default function ForumScreen() {
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         renderItem={({ item: thread, index }) => {
               const avatarStyle = getAvatarStyle(index);
+              // El backend solo devuelve hilos no publicados a su autor.
+              const statusInfo = thread.status && thread.status !== 'PUBLISHED' ? forumStatusInfo[thread.status] : null;
           return (
                 <TouchableOpacity 
                   style={styles.threadCard}
@@ -144,7 +148,13 @@ export default function ForumScreen() {
                   
                   <View style={styles.threadContent}>
                     <Text style={styles.threadTitle} numberOfLines={2}>{thread.title}</Text>
-                    
+                    {statusInfo && (
+                      <View style={[styles.statusBadge, { backgroundColor: statusInfo.colors.bg }]}>
+                        <MaterialCommunityIcons name={statusInfo.icon} size={12} color={statusInfo.colors.text} />
+                        <Text style={[styles.statusBadgeText, { color: statusInfo.colors.text }]}>{statusInfo.label} · solo vos lo ves</Text>
+                      </View>
+                    )}
+
                     <View style={styles.threadMetaRow}>
                       <View style={styles.metaItem}>
                         <MaterialCommunityIcons name="arrow-up" size={14} color={ClayTheme.colors.textMuted} />
@@ -292,6 +302,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: ClayTheme.colors.text,
     lineHeight: 21,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusBadgeText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    fontSize: 11,
   },
   threadMetaRow: {
     flexDirection: 'row',

@@ -8,13 +8,17 @@ import { ClayTheme } from '../../../constants/ClayTheme';
 import { ClayInput } from '../../../components/ClayInput';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ForumContentStatus, canEditForumContent, forumErrorMessage, forumModerationMessage, forumStatusInfo } from '../../../lib/forum';
 
 interface Reply {
   id: string;
+  userId: string;
   content: string;
   createdAt: string;
   upVotes: number;
   parentReplyId: string | null;
+  status: ForumContentStatus;
+  moderationReasonCode: string | null;
   user: {
     name: string;
     nickname?: string;
@@ -33,10 +37,43 @@ const formatDate = (dateString: string) => {
 
 const getInitials = (name?: string | null) => (name?.trim()?.slice(0, 2) || '?').toUpperCase();
 
-const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply, isClosed = false }: { reply: ReplyNode; highlightedReplyId?: string; depth?: number; onReply: (id: string, name: string) => void; isClosed?: boolean }) => {
+// Solo el autor (o moderación) recibe contenido no publicado; se marca con su estado.
+const ModerationNotice = ({ status, reasonCode, isOwn, onEdit }: { status: ForumContentStatus; reasonCode: string | null; isOwn: boolean; onEdit?: () => void }) => {
+  if (status === 'PUBLISHED') return null;
+  const info = forumStatusInfo[status];
+  return (
+    <View style={[styles.moderationNotice, { backgroundColor: info.colors.bg }]} accessibilityRole="summary">
+      <View style={styles.moderationNoticeHeader}>
+        <MaterialCommunityIcons name={info.icon} size={16} color={info.colors.text} />
+        <Text style={[styles.moderationNoticeTitle, { color: info.colors.text }]}>{info.label}</Text>
+        {onEdit && (
+          <TouchableOpacity onPress={onEdit} style={styles.moderationEditBtn} accessibilityRole="button" accessibilityLabel="Editar para corregir">
+            <MaterialCommunityIcons name="pencil-outline" size={14} color={info.colors.text} />
+            <Text style={[styles.moderationNoticeTitle, { color: info.colors.text }]}>Editar</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      {isOwn && <Text style={[styles.moderationNoticeText, { color: info.colors.text }]}>{forumModerationMessage(status, reasonCode)}</Text>}
+    </View>
+  );
+};
+
+type ReplyItemProps = {
+  reply: ReplyNode;
+  highlightedReplyId?: string;
+  depth?: number;
+  onReply: (id: string, name: string) => void;
+  onEdit: (reply: Reply) => void;
+  currentUserId?: string;
+  isClosed?: boolean;
+};
+
+const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply, onEdit, currentUserId, isClosed = false }: ReplyItemProps) => {
   const visualDepth = Math.min(depth, 3);
   const paddingLeft = visualDepth * 16;
-  
+  const isPublished = reply.status === 'PUBLISHED';
+  const canEdit = reply.userId === currentUserId && canEditForumContent(reply.status) && !isClosed;
+
   return (
     <View style={{ paddingLeft, marginBottom: 16 }}>
       <View
@@ -57,8 +94,8 @@ const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply, isClosed = f
               <Text style={styles.timeAgo}>{formatDate(reply.createdAt)}</Text>
             </View>
           </View>
-          {!isClosed && (
-            <TouchableOpacity 
+          {!isClosed && isPublished && (
+            <TouchableOpacity
               style={styles.replyActionBtn}
               onPress={() => onReply(reply.id, reply.user?.nickname || reply.user?.name)}
               accessibilityRole="button"
@@ -70,10 +107,11 @@ const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply, isClosed = f
           )}
         </View>
         <Text style={styles.replyContent}>{reply.content}</Text>
+        <ModerationNotice status={reply.status} reasonCode={reply.moderationReasonCode} isOwn={reply.userId === currentUserId} onEdit={canEdit ? () => onEdit(reply) : undefined} />
       </View>
-      
+
       {reply.children.map(child => (
-        <ReplyItem key={child.id} reply={child} highlightedReplyId={highlightedReplyId} depth={depth + 1} onReply={onReply} isClosed={isClosed} />
+        <ReplyItem key={child.id} reply={child} highlightedReplyId={highlightedReplyId} depth={depth + 1} onReply={onReply} onEdit={onEdit} currentUserId={currentUserId} isClosed={isClosed} />
       ))}
     </View>
   );
@@ -88,6 +126,7 @@ export default function ThreadDetailScreen() {
 
   const [replyContent, setReplyContent] = useState('');
   const [replyingTo, setReplyingTo] = useState<{id: string, name: string} | null>(null);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
 
   const { data: thread, isLoading } = useQuery({
     queryKey: ['thread-detail', barrioSlug, subforumSlug, id],
@@ -98,24 +137,55 @@ export default function ThreadDetailScreen() {
     enabled: !!id && !!subforumSlug && !!user,
   });
 
+  const refreshThread = () => {
+    queryClient.invalidateQueries({ queryKey: ['thread-detail', barrioSlug, subforumSlug, id] });
+    queryClient.invalidateQueries({ queryKey: ['threads', barrioSlug, subforumSlug] });
+  };
+
   const replyMutation = useMutation({
     mutationFn: async (content: string) => {
-      const payload: any = { content };
+      const basePath = `/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${id}/replies`;
+      if (editingReplyId) {
+        const response = await api.patch(`${basePath}/${editingReplyId}`, { content });
+        return response.data.data as Reply;
+      }
+      const payload: { content: string; parentReplyId?: string } = { content };
       if (replyingTo) {
         payload.parentReplyId = replyingTo.id;
       }
-      const response = await api.post(`/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${id}/replies`, payload);
-      return response.data.data;
+      const response = await api.post(basePath, payload);
+      return response.data.data as Reply;
     },
-    onSuccess: () => {
+    onSuccess: (reply) => {
       setReplyContent('');
       setReplyingTo(null);
-      queryClient.invalidateQueries({ queryKey: ['thread-detail', barrioSlug, subforumSlug, id] });
+      setEditingReplyId(null);
+      refreshThread();
+      if (reply.status !== 'PUBLISHED') {
+        Alert.alert(
+          reply.status === 'BLOCKED' ? 'No se publicó tu respuesta' : 'Tu respuesta quedó en revisión',
+          forumModerationMessage(reply.status, reply.moderationReasonCode)
+        );
+      }
     },
-    onError: () => {
-      alert('Error al enviar respuesta');
+    onError: (error: any) => {
+      // Si el hilo o el padre cambiaron de estado, la pantalla debe reflejarlo.
+      if (error.response?.status === 409) refreshThread();
+      Alert.alert('Error', forumErrorMessage(error, 'Error al enviar respuesta'));
     }
   });
+
+  const startEditingReply = (reply: Reply) => {
+    setReplyingTo(null);
+    setEditingReplyId(reply.id);
+    setReplyContent(reply.content);
+  };
+
+  const cancelComposerContext = () => {
+    if (editingReplyId) setReplyContent('');
+    setReplyingTo(null);
+    setEditingReplyId(null);
+  };
 
   const handleSendReply = () => {
     if (!replyContent.trim()) return;
@@ -186,6 +256,10 @@ export default function ThreadDetailScreen() {
   }
 
   const replyTree = buildReplyTree(thread.replies);
+  const threadStatus: ForumContentStatus = thread.status ?? 'PUBLISHED';
+  const isThreadAuthor = thread.userId === user?.id;
+  const acceptsReplies = threadStatus === 'PUBLISHED' && !thread.isClosed;
+  const composerContextName = editingReplyId ? null : replyingTo?.name;
 
   return (
     <KeyboardAvoidingView 
@@ -219,7 +293,16 @@ export default function ThreadDetailScreen() {
           
           <Text style={styles.threadTitle}>{thread.title}</Text>
           <Text style={styles.threadContent}>{thread.content}</Text>
-          
+
+          <ModerationNotice
+            status={threadStatus}
+            reasonCode={thread.moderationReasonCode}
+            isOwn={isThreadAuthor}
+            onEdit={isThreadAuthor && canEditForumContent(threadStatus)
+              ? () => router.push({ pathname: '/(app)/create-thread', params: { subforumSlug, threadId: thread.id } })
+              : undefined}
+          />
+
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <MaterialCommunityIcons name="arrow-up-bold-outline" size={18} color={ClayTheme.colors.textMuted} />
@@ -227,7 +310,7 @@ export default function ThreadDetailScreen() {
             </View>
             <View style={styles.statItem}>
               <MaterialCommunityIcons name="comment-text-outline" size={18} color={ClayTheme.colors.textMuted} />
-              <Text style={styles.statText}>{thread.replies?.length || 0} respuestas</Text>
+              <Text style={styles.statText}>{thread._count?.replies ?? thread.replies?.length ?? 0} respuestas</Text>
             </View>
             {(thread.userId === user?.id || user?.role === 'ADMIN' || user?.role === 'EDITOR') && !thread.isClosed && (
               <TouchableOpacity style={[styles.statItem, { marginLeft: 'auto' }]} onPress={handleCloseThread} disabled={closeThreadMutation.isPending}>
@@ -249,11 +332,13 @@ export default function ThreadDetailScreen() {
         {/* Replies */}
         <View style={styles.repliesSection}>
           {replyTree.map(node => (
-            <ReplyItem 
-              key={node.id} 
-              reply={node} 
+            <ReplyItem
+              key={node.id}
+              reply={node}
               highlightedReplyId={replyId}
-              onReply={(replyId, name) => setReplyingTo({id: replyId, name})} 
+              onReply={(replyId, name) => { setEditingReplyId(null); setReplyingTo({id: replyId, name}); }}
+              onEdit={startEditingReply}
+              currentUserId={user?.id}
               isClosed={thread.isClosed}
             />
           ))}
@@ -265,25 +350,31 @@ export default function ThreadDetailScreen() {
       </ScrollView>
 
       {/* Contextual Input Area */}
-      {thread.isClosed ? (
+      {!acceptsReplies ? (
         <View style={[styles.closedBanner, { paddingBottom: insets.bottom + 16 }]}>
-            <MaterialCommunityIcons name="lock" size={20} color={ClayTheme.colors.textMuted} />
-            <Text style={styles.closedBannerText}>Este hilo está cerrado a nuevas respuestas.</Text>
+            <MaterialCommunityIcons name={thread.isClosed ? 'lock' : 'clock-outline'} size={20} color={ClayTheme.colors.textMuted} />
+            <Text style={styles.closedBannerText}>
+              {thread.isClosed ? 'Este hilo está cerrado a nuevas respuestas.' : 'Las respuestas se habilitan cuando el hilo esté publicado.'}
+            </Text>
         </View>
       ) : (
         <View style={[styles.inputContainerWrapper, { paddingBottom: insets.bottom }]}>
-          {replyingTo && (
+          {(editingReplyId || composerContextName) && (
             <View style={styles.replyContextBanner}>
-              <Text style={styles.replyContextText}>Respondiendo a <Text style={{fontFamily: ClayTheme.typography.fontFamily.bold}}>{replyingTo.name}</Text></Text>
-              <TouchableOpacity onPress={() => setReplyingTo(null)} style={styles.replyContextClose}>
+              {editingReplyId ? (
+                <Text style={styles.replyContextText}>Editando tu respuesta</Text>
+              ) : (
+                <Text style={styles.replyContextText}>Respondiendo a <Text style={{fontFamily: ClayTheme.typography.fontFamily.bold}}>{composerContextName}</Text></Text>
+              )}
+              <TouchableOpacity onPress={cancelComposerContext} style={styles.replyContextClose} accessibilityRole="button" accessibilityLabel="Cancelar">
                 <MaterialCommunityIcons name="close" size={18} color={ClayTheme.colors.textMuted} />
               </TouchableOpacity>
             </View>
           )}
           <View style={styles.inputArea}>
             <View style={styles.inputWrapper}>
-              <ClayInput 
-                placeholder={replyingTo ? "Escribí tu respuesta..." : "Comentar en el hilo..."}
+              <ClayInput
+                placeholder={editingReplyId ? "Corregí tu respuesta..." : replyingTo ? "Escribí tu respuesta..." : "Comentar en el hilo..."}
                 value={replyContent}
                 onChangeText={setReplyContent}
                 multiline
@@ -558,5 +649,34 @@ const styles = StyleSheet.create({
     fontFamily: ClayTheme.typography.fontFamily.semiBold,
     fontSize: 14,
     color: ClayTheme.colors.textMuted,
+  },
+  moderationNotice: {
+    borderRadius: ClayTheme.borders.radiusSunk,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 12,
+    gap: 4,
+  },
+  moderationNoticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  moderationNoticeTitle: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    fontSize: 13,
+  },
+  moderationNoticeText: {
+    fontFamily: ClayTheme.typography.fontFamily.medium,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  moderationEditBtn: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
 });

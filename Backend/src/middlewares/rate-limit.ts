@@ -1,4 +1,4 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { type Options, type Store } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import { env } from "../config/env";
 import { redis } from "../lib/redis";
@@ -76,6 +76,64 @@ export const marketplaceAppealRateLimiter = rateLimit({
   skip: () => isTest,
   message: { success: false, message: "Alcanzaste el límite de apelaciones. Intentá nuevamente más tarde." },
   store: new RedisStore({ sendCommand, prefix: "rl:marketplace-appeal:" })
+});
+
+type ForumWriteLimiterOptions = {
+  code: string;
+  message: string;
+  limit: number;
+  prefix: string;
+  keyBy: "user" | "ip";
+  windowMs?: number;
+  store?: Store;
+  skip?: Options["skip"];
+};
+
+// Contrato estable de 429 para el foro: mismo formato que el error-handler más un código.
+export function createForumWriteLimiter(options: ForumWriteLimiterOptions) {
+  return rateLimit({
+    passOnStoreError: true,
+    windowMs: options.windowMs ?? env.FORUM_RATE_LIMIT_WINDOW_MS,
+    limit: options.limit,
+    ...(options.keyBy === "user" ? { keyGenerator: (req) => req.user?.id ?? req.ip ?? "anonymous" } : {}),
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    skip: options.skip ?? (() => isTest),
+    message: { success: false, message: options.message, details: { code: options.code } },
+    store: options.store ?? new RedisStore({ sendCommand, prefix: options.prefix })
+  });
+}
+
+export const forumThreadRateLimiter = createForumWriteLimiter({
+  code: "FORUM_THREAD_RATE_LIMIT",
+  message: "Alcanzaste el límite de hilos por hora. Intentá nuevamente más tarde.",
+  limit: env.FORUM_THREAD_USER_LIMIT,
+  prefix: "rl:forum-thread:",
+  keyBy: "user"
+});
+
+export const forumReplyRateLimiter = createForumWriteLimiter({
+  code: "FORUM_REPLY_RATE_LIMIT",
+  message: "Alcanzaste el límite de respuestas por hora. Intentá nuevamente más tarde.",
+  limit: env.FORUM_REPLY_USER_LIMIT,
+  prefix: "rl:forum-reply:",
+  keyBy: "user"
+});
+
+export const forumEditRateLimiter = createForumWriteLimiter({
+  code: "FORUM_EDIT_RATE_LIMIT",
+  message: "Alcanzaste el límite de ediciones por hora. Intentá nuevamente más tarde.",
+  limit: env.FORUM_EDIT_USER_LIMIT,
+  prefix: "rl:forum-edit:",
+  keyBy: "user"
+});
+
+export const forumIpRateLimiter = createForumWriteLimiter({
+  code: "FORUM_IP_RATE_LIMIT",
+  message: "Demasiadas publicaciones desde esta red. Intentá nuevamente más tarde.",
+  limit: env.FORUM_WRITE_IP_LIMIT,
+  prefix: "rl:forum-ip:",
+  keyBy: "ip"
 });
 
 export const deviceCleanupRateLimiter = rateLimit({
