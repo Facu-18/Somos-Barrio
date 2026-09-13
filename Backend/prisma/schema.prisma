@@ -35,6 +35,12 @@ enum NewsStatus {
   ARCHIVED
 }
 
+enum NewsAiOperation {
+  SUMMARIZE
+  IMPROVE
+  ASSIST
+}
+
 enum NewsVoteValue {
   CONFIRM
   DISPUTE
@@ -187,6 +193,7 @@ model Barrio {
   forumSubforums    ForumSubforum[]
   forumThreads      ForumThread[]
   forumDecisions    ForumModerationDecision[]
+  newsAiGenerations NewsAiGeneration[]
   events            Event[]
 }
 
@@ -232,6 +239,8 @@ model User {
   resolvedForumReports       ForumReport[]                        @relation("ForumReportResolver")
   forumAppeals               ForumAppeal[]                        @relation("ForumAppealOwner")
   resolvedForumAppeals       ForumAppeal[]                        @relation("ForumAppealResolver")
+  requestedNewsAiGenerations NewsAiGeneration[]                   @relation("NewsAiGenerationRequester")
+  appliedNewsAiGenerations   NewsAiGeneration[]                   @relation("NewsAiGenerationApplier")
 
   @@index([barrioId])
   @@index([role])
@@ -287,12 +296,39 @@ model News {
 
   aiSummary Json?
 
-  author User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  barrio Barrio     @relation(fields: [barrioId], references: [id], onDelete: Cascade)
-  votes  NewsVote[]
+  author        User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  barrio        Barrio             @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  votes         NewsVote[]
+  aiGenerations NewsAiGeneration[]
 
   @@index([barrioId, status])
   @@index([category, publishedAt])
+}
+
+// Sugerencia de IA guardada del lado servidor. Aplicarla exige que el contenido fuente no haya
+// cambiado (`sourceHash`) y que no se haya aplicado antes; proveedor y modelo nunca vienen del cliente.
+model NewsAiGeneration {
+  id            String          @id @default(cuid())
+  newsId        String?
+  barrioId      String
+  requestedById String?
+  operation     NewsAiOperation
+  promptVersion String
+  provider      String
+  model         String
+  finishReason  String
+  sourceHash    String
+  output        Json
+  appliedAt     DateTime?
+  appliedById   String?
+  createdAt     DateTime        @default(now())
+
+  news        News?  @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  barrio      Barrio @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  requestedBy User?  @relation("NewsAiGenerationRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  appliedBy   User?  @relation("NewsAiGenerationApplier", fields: [appliedById], references: [id], onDelete: SetNull)
+
+  @@index([newsId, createdAt])
 }
 
 model NewsVote {

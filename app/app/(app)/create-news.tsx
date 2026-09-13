@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,6 +12,8 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AiSuggestionField } from '../../components/AiSuggestionField';
+import { AiGeneration, aiErrorMessage } from '../../lib/ai';
 
 const newsSchema = z.object({
   title: z.string().min(3, 'El título es muy corto').max(255),
@@ -21,6 +23,7 @@ const newsSchema = z.object({
 });
 
 type NewsForm = z.infer<typeof newsSchema>;
+type AssistReview = { generation: AiGeneration; sent: Pick<NewsForm, 'title' | 'excerpt' | 'content'> };
 
 const categories = [
   { label: 'Seguridad', value: 'SEGURIDAD' },
@@ -51,7 +54,11 @@ export default function CreateNewsScreen() {
     enabled: !!existingSlug,
   });
 
-  const { control, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<NewsForm>({
+  const [assistReview, setAssistReview] = useState<AssistReview | null>(null);
+  const [assistExcerpt, setAssistExcerpt] = useState('');
+  const [assistContent, setAssistContent] = useState('');
+
+  const { control, handleSubmit, setValue, getValues, watch, reset, formState: { errors } } = useForm<NewsForm>({
     resolver: zodResolver(newsSchema),
     defaultValues: { title: '', excerpt: '', content: '', category: 'COMUNIDAD' }
   });
@@ -73,18 +80,42 @@ export default function CreateNewsScreen() {
 
   const improveMutation = useMutation({
     mutationFn: async (data: NewsForm) => {
-      const response = await api.post(`/barrios/${barrioSlug}/news/assist`, data);
-      return response.data.data as { excerpt: string; content: string };
+      const sent = { title: data.title, excerpt: data.excerpt, content: data.content };
+      const response = await api.post(`/barrios/${barrioSlug}/news/assist`, sent);
+      return { generation: response.data.data as AiGeneration, sent };
     },
-    onSuccess: (improved) => {
-      setValue('excerpt', improved.excerpt, { shouldDirty: true, shouldValidate: true });
-      setValue('content', improved.content, { shouldDirty: true, shouldValidate: true });
-      Alert.alert('Texto mejorado', 'Qwen actualizó la descripción y el cuerpo. Revisalos antes de enviar la noticia.');
+    // La sugerencia nunca reemplaza el formulario sola: se revisa el diff y se confirma.
+    onSuccess: (review) => {
+      setAssistReview(review);
+      setAssistExcerpt(review.generation.suggestion.excerpt ?? review.sent.excerpt ?? '');
+      setAssistContent(review.generation.suggestion.content ?? review.sent.content);
     },
     onError: (error: any) => {
-      Alert.alert('No se pudo mejorar', error.response?.data?.message || 'No se pudo conectar con el modelo de IA.');
+      Alert.alert('No se pudo mejorar', aiErrorMessage(error, 'No se pudo conectar con el modelo de IA.'));
     },
   });
+
+  const closeAssistReview = () => {
+    setAssistReview(null);
+    setAssistExcerpt('');
+    setAssistContent('');
+  };
+
+  const applyAssistReview = () => {
+    if (!assistReview) return;
+    const current = getValues();
+    const { sent } = assistReview;
+    // Si el borrador cambió mientras la IA trabajaba, aplicar pisaría esas ediciones.
+    const stale = current.title !== sent.title || (current.excerpt ?? '') !== (sent.excerpt ?? '') || current.content !== sent.content;
+    if (stale) {
+      closeAssistReview();
+      Alert.alert('Sugerencia desactualizada', 'Editaste el borrador mientras se generaba la sugerencia. Volvé a pedir la mejora para no perder tus cambios.');
+      return;
+    }
+    setValue('excerpt', assistExcerpt.trim(), { shouldDirty: true, shouldValidate: true });
+    setValue('content', assistContent.trim(), { shouldDirty: true, shouldValidate: true });
+    closeAssistReview();
+  };
 
   const improveWithAi = handleSubmit((data) => improveMutation.mutate(data));
 
@@ -231,7 +262,7 @@ export default function CreateNewsScreen() {
             accessibilityLabel="Mejorar descripción y cuerpo con inteligencia artificial"
           >
             {improveMutation.isPending ? (
-              <Text style={styles.aiButtonText}>Qwen está mejorando el texto...</Text>
+              <Text style={styles.aiButtonText}>La IA está preparando una sugerencia...</Text>
             ) : (
               <>
                 <MaterialCommunityIcons name="auto-fix" size={21} color={ClayTheme.categories.MUNICIPIO.text} />
@@ -248,6 +279,42 @@ export default function CreateNewsScreen() {
           />
         </View>
       </ScrollView>
+
+      <Modal visible={!!assistReview} transparent animationType="slide" onRequestClose={closeAssistReview}>
+        <View style={styles.modalOverlay}>
+          <ScrollView style={styles.modalSheet} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.modalTitle}>Sugerencia de la IA</Text>
+            <Text style={styles.modalDesc}>En verde lo que agrega y tachado lo que quita. Revisá que no cambie ningún dato antes de aplicarla.</Text>
+            {assistReview && (
+              <>
+                <AiSuggestionField
+                  label="Descripción"
+                  original={assistReview.sent.excerpt ?? null}
+                  value={assistExcerpt}
+                  onChangeText={setAssistExcerpt}
+                  maxLength={500}
+                />
+                <AiSuggestionField
+                  label="Cuerpo de la noticia"
+                  original={assistReview.sent.content}
+                  value={assistContent}
+                  onChangeText={setAssistContent}
+                  tall
+                />
+              </>
+            )}
+            <View style={styles.modalActions}>
+              <ClayButton title="Descartar" variant="secondary" onPress={closeAssistReview} style={{ flex: 1 }} />
+              <ClayButton
+                title="Aplicar sugerencia"
+                onPress={applyAssistReview}
+                disabled={!assistExcerpt.trim() || assistContent.trim().length < 10}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -282,5 +349,11 @@ const styles = StyleSheet.create({
   observationText: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 13, color: ClayTheme.colors.error },
   aiButton: { minHeight: 56, borderRadius: ClayTheme.borders.radiusPill, paddingHorizontal: 22, backgroundColor: ClayTheme.categories.MUNICIPIO.bg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   aiButtonDisabled: { opacity: 0.45 },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  modalSheet: { maxHeight: '92%', backgroundColor: ClayTheme.colors.background, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  modalContent: { padding: 24, paddingBottom: 40 },
+  modalTitle: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 21, color: ClayTheme.colors.text, marginBottom: 6 },
+  modalDesc: { fontFamily: ClayTheme.typography.fontFamily.medium, fontSize: 14, lineHeight: 20, color: ClayTheme.colors.textMuted, marginBottom: 18 },
+  modalActions: { flexDirection: 'row', gap: 10 },
   aiButtonText: { fontFamily: ClayTheme.typography.fontFamily.extraBold, fontSize: 14, color: ClayTheme.categories.MUNICIPIO.text, textAlign: 'center' },
 });

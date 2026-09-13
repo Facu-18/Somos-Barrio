@@ -128,17 +128,11 @@ describe("Noticias — integration", () => {
       .send({
         excerpt: "Descripción revisada por el editor.",
         content: "Contenido revisado de la noticia con suficiente información.",
-        aiSummary: {
-          summary: "Resumen revisado.",
-          provider: "OpenAI-Compatible",
-          model: "test-model",
-          generatedAt: new Date().toISOString(),
-        },
       });
 
     expect(res.status).toBe(200);
     expect(res.body.data.status).toBe("PUBLISHED");
-    expect(res.body.data.aiSummary.summary).toBe("Resumen revisado.");
+    expect(res.body.data.aiSummary).toBeNull();
     const notifications = await prisma.notificationOutbox.findMany({ where: { data: { path: ["newsSlug"], equals: newsSlug } } });
     expect(notifications).toHaveLength(1);
     expect(notifications[0].userId).toBe(observerId);

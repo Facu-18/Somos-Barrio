@@ -9,6 +9,8 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AiSuggestionField } from '../../components/AiSuggestionField';
+import { AiGeneration, aiErrorCode, aiErrorMessage } from '../../lib/ai';
 
 interface PendingNews {
   id: string;
@@ -22,17 +24,6 @@ interface PendingNews {
   };
 }
 
-interface AiSummary {
-  summary: string;
-  provider: string;
-  model: string;
-  generatedAt: string;
-}
-
-interface AiEditorialDraft extends AiSummary {
-  excerpt: string;
-  content: string;
-}
 
 export default function NewsInboxScreen() {
   const { data: user } = useAuth();
@@ -47,7 +38,7 @@ export default function NewsInboxScreen() {
   const [aiSummaryText, setAiSummaryText] = useState('');
   const [aiExcerptText, setAiExcerptText] = useState('');
   const [aiContentText, setAiContentText] = useState('');
-  const [aiSummaryData, setAiSummaryData] = useState<AiEditorialDraft | null>(null);
+  const [aiGeneration, setAiGeneration] = useState<AiGeneration | null>(null);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['news-pending', barrioSlug],
@@ -58,23 +49,33 @@ export default function NewsInboxScreen() {
     enabled: !!user,
   });
 
+  const closeAiModal = () => {
+    setSummarizingNews(null);
+    setAiGeneration(null);
+    setAiSummaryText('');
+    setAiExcerptText('');
+    setAiContentText('');
+  };
+
   const approveMutation = useMutation({
-    mutationFn: async ({ slug, aiSummary, excerpt, content }: { slug: string; aiSummary?: AiSummary; excerpt?: string; content?: string }) => {
-      await api.post(`/barrios/${barrioSlug}/news/${slug}/approve`, { aiSummary, excerpt, content });
+    // Con IA solo se manda la generación y el texto revisado: proveedor y modelo los pone el servidor.
+    mutationFn: async ({ slug, aiGenerationId, summary, excerpt, content }: { slug: string; aiGenerationId?: string; summary?: string; excerpt?: string; content?: string }) => {
+      await api.post(`/barrios/${barrioSlug}/news/${slug}/approve`, { aiGenerationId, summary, excerpt, content });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['news-pending', barrioSlug] });
       queryClient.invalidateQueries({ queryKey: ['news', barrioSlug] });
       queryClient.invalidateQueries({ queryKey: ['news-mine', barrioSlug] });
-      setSummarizingNews(null);
-      setAiSummaryText('');
-      setAiExcerptText('');
-      setAiContentText('');
-      setAiSummaryData(null);
+      closeAiModal();
       Alert.alert("Éxito", "La noticia ha sido publicada.");
     },
     onError: (error: any) => {
-      Alert.alert("Error", error.response?.data?.message || "No se pudo aprobar la noticia.");
+      const code = aiErrorCode(error);
+      if (code === 'AI_GENERATION_STALE' || code === 'AI_GENERATION_ALREADY_APPLIED') {
+        closeAiModal();
+        queryClient.invalidateQueries({ queryKey: ['news-pending', barrioSlug] });
+      }
+      Alert.alert("Error", aiErrorMessage(error, "No se pudo aprobar la noticia."));
     }
   });
 
@@ -108,16 +109,16 @@ export default function NewsInboxScreen() {
   const summarizeMutation = useMutation({
     mutationFn: async (slug: string) => {
       const response = await api.post(`/barrios/${barrioSlug}/news/editorial/${slug}/improve`);
-      return response.data.data as AiEditorialDraft;
+      return response.data.data as AiGeneration;
     },
     onSuccess: (data) => {
-      setAiSummaryData(data);
-      setAiSummaryText(data.summary);
-      setAiExcerptText(data.excerpt);
-      setAiContentText(data.content);
+      setAiGeneration(data);
+      setAiSummaryText(data.suggestion.summary);
+      setAiExcerptText(data.suggestion.excerpt ?? data.original.excerpt ?? '');
+      setAiContentText(data.suggestion.content ?? data.original.content);
     },
     onError: (error: any) => {
-      Alert.alert("Error de IA", error.response?.data?.message || "No se pudo generar el resumen.");
+      Alert.alert("Error de IA", aiErrorMessage(error, "No se pudo generar la propuesta."));
       setSummarizingNews(null);
     }
   });
@@ -128,18 +129,26 @@ export default function NewsInboxScreen() {
   };
 
   const handleApproveWithSummary = () => {
-    if (!summarizingNews || !aiSummaryData) return;
-    approveMutation.mutate({
-      slug: summarizingNews,
-      excerpt: aiExcerptText,
-      content: aiContentText,
-      aiSummary: {
-        summary: aiSummaryText,
-        provider: aiSummaryData.provider,
-        model: aiSummaryData.model,
-        generatedAt: aiSummaryData.generatedAt,
-      }
-    });
+    if (!summarizingNews || !aiGeneration) return;
+    const slug = summarizingNews;
+    // Confirmación humana explícita: la IA puede equivocarse y lo que se publica es responsabilidad editorial.
+    Alert.alert(
+      "Publicar con cambios de IA",
+      "Revisaste los cambios en descripción, cuerpo y resumen? Se van a publicar tal como están ahora.",
+      [
+        { text: "Seguir revisando", style: "cancel" },
+        {
+          text: "Publicar",
+          onPress: () => approveMutation.mutate({
+            slug,
+            aiGenerationId: aiGeneration.generationId,
+            summary: aiSummaryText.trim(),
+            excerpt: aiExcerptText.trim(),
+            content: aiContentText.trim(),
+          }),
+        },
+      ]
+    );
   };
 
   const handleReject = () => {
@@ -284,28 +293,27 @@ export default function NewsInboxScreen() {
                 <ActivityIndicator size="large" color={ClayTheme.categories.MUNICIPIO.text} />
                 <Text style={styles.aiLoadingText}>Mejorando descripción, cuerpo y resumen sin cambiar los hechos...</Text>
               </View>
-            ) : aiSummaryData ? (
+            ) : aiGeneration ? (
               <View>
-                <Text style={styles.modalDesc}>Revisá cada propuesta antes de publicar. La IA puede equivocarse y no debe agregar hechos.</Text>
+                <Text style={styles.modalDesc}>Revisá los cambios marcados antes de publicar: en verde lo que agrega la IA y tachado lo que quita. La IA puede equivocarse y no debe agregar hechos.</Text>
 
-                <Text style={styles.inputLabel}>Descripción</Text>
-                <TextInput
-                  style={styles.textInput}
-                  multiline
+                <AiSuggestionField
+                  label="Descripción"
+                  original={aiGeneration.original.excerpt}
                   value={aiExcerptText}
                   onChangeText={setAiExcerptText}
                   maxLength={500}
                 />
 
-                <Text style={styles.inputLabel}>Cuerpo de la noticia</Text>
-                <TextInput
-                  style={[styles.textInput, styles.bodyInput]}
-                  multiline
+                <AiSuggestionField
+                  label="Cuerpo de la noticia"
+                  original={aiGeneration.original.content}
                   value={aiContentText}
                   onChangeText={setAiContentText}
+                  tall
                 />
 
-                <Text style={styles.inputLabel}>Resumen destacado</Text>
+                <Text style={styles.inputLabel}>Resumen destacado (nuevo)</Text>
                 
                 <TextInput
                   style={styles.textInput}
@@ -314,10 +322,10 @@ export default function NewsInboxScreen() {
                   onChangeText={setAiSummaryText}
                 />
                 
-                <Text style={styles.aiMeta}>Generado por {aiSummaryData.provider}</Text>
+                <Text style={styles.aiMeta}>Generado por {aiGeneration.provider} · {aiGeneration.model} · {aiGeneration.promptVersion}</Text>
 
                 <View style={styles.modalActions}>
-                  <TouchableOpacity style={styles.modalBtnCancel} onPress={() => { setSummarizingNews(null); setAiSummaryData(null); setAiExcerptText(''); setAiContentText(''); }}>
+                  <TouchableOpacity style={styles.modalBtnCancel} onPress={closeAiModal}>
                     <Text style={styles.modalBtnCancelText}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
@@ -325,13 +333,13 @@ export default function NewsInboxScreen() {
                     onPress={handleApproveWithSummary}
                     disabled={approveMutation.isPending || !aiExcerptText.trim() || aiContentText.trim().length < 10 || !aiSummaryText.trim()}
                   >
-                    <Text style={styles.modalBtnSubmitText}>{approveMutation.isPending ? 'Publicando...' : 'Publicar con Resumen'}</Text>
+                    <Text style={styles.modalBtnSubmitText}>{approveMutation.isPending ? 'Publicando...' : 'Revisar y publicar'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ) : (
               <View style={styles.modalActions}>
-                <TouchableOpacity style={styles.modalBtnCancel} onPress={() => setSummarizingNews(null)}>
+                <TouchableOpacity style={styles.modalBtnCancel} onPress={closeAiModal}>
                   <Text style={styles.modalBtnCancelText}>Cerrar</Text>
                 </TouchableOpacity>
               </View>

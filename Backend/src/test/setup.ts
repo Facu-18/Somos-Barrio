@@ -32,6 +32,7 @@ beforeAll(async () => {
     prisma.review.deleteMany(),
     prisma.message.deleteMany(),
     prisma.marketplacePost.deleteMany(),
+    prisma.newsAiGeneration.deleteMany(),
     prisma.news.deleteMany(),
     prisma.business.deleteMany(),
     prisma.user.deleteMany(),

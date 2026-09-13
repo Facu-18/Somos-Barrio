@@ -15,7 +15,7 @@ export class AiLimiter {
    */
   static async executeWithLimits<T>(
     userId: string,
-    promptParams: { title: string; excerpt?: string | null; content: string; operation: string },
+    promptParams: { title: string; excerpt?: string | null; content: string; operation: string; promptVersion: string },
     generateFn: () => Promise<{ result: T; tokens: number }>
   ): Promise<T> {
     if (!env.AI_ENABLED) {
@@ -30,6 +30,8 @@ export class AiLimiter {
     // 1. Hash de los parámetros para caché
     const hashPayload = JSON.stringify({
       operation: promptParams.operation,
+      // Un cambio de prompt o de contrato de salida no puede servir resultados viejos de la caché.
+      promptVersion: promptParams.promptVersion,
       model: env.AI_MODEL,
       title: promptParams.title,
       excerpt: promptParams.excerpt,

@@ -35,18 +35,16 @@ export const newsVoteSchema = z.object({
   sourceUrl: z.string().url("Debe ser una URL válida").max(500).optional().or(z.literal(''))
 });
 
-export const aiSummarySchema = z.object({
-  summary: z.string().trim().min(1).max(2000),
-  provider: z.string().min(1).max(100),
-  model: z.string().min(1).max(255),
-  generatedAt: z.string().datetime()
-});
-
+// Proveedor, modelo y versión de prompt no se aceptan del cliente: salen de la generación guardada.
 export const approveNewsSchema = z.object({
-  aiSummary: aiSummarySchema.optional(),
+  aiGenerationId: z.string().cuid().optional(),
+  summary: z.string().trim().min(1).max(600).optional(),
   excerpt: z.string().trim().max(500).optional(),
   content: z.string().trim().min(10).optional()
-}).default({});
+}).strict().refine(
+  (value) => Boolean(value.aiGenerationId) === Boolean(value.summary),
+  { message: "El resumen de IA requiere su aiGenerationId y viceversa", path: ["aiGenerationId"] }
+).default({});
 
 export const rejectNewsSchema = z.object({
   observation: z.string().trim().min(5).max(1000)

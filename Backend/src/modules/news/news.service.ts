@@ -1,8 +1,9 @@
-import { NewsStatus, Prisma, UserRole, NewsVoteValue } from "@prisma/client";
+import { NewsAiOperation, NewsStatus, Prisma, UserRole, NewsVoteValue } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 import { notificationsService } from "../notifications/notifications.service";
 import { newsSummaryProvider } from "./ai.provider";
+import { claimNewsAiGeneration, recordNewsAiGeneration } from "./news-ai";
 
 export type CreateNewsInput = {
   title: string;
@@ -27,15 +28,10 @@ const authorSelect = {
   avatarUrl: true,
 };
 
-type AiSummaryInput = {
-  summary: string;
-  provider: string;
-  model: string;
-  generatedAt: string;
-};
-
+// El editor manda solo la generación elegida y el resumen revisado; proveedor y modelo salen del servidor.
 type ApproveNewsInput = {
-  aiSummary?: AiSummaryInput;
+  aiGenerationId?: string;
+  summary?: string;
   excerpt?: string;
   content?: string;
 };
@@ -244,13 +240,24 @@ export const newsService = {
     if (!news) throw new ApiError(404, "Noticia no encontrada o no está en revisión");
 
     return prisma.$transaction(async (transaction) => {
+      const aiSummary = input.aiGenerationId && input.summary
+        ? await claimNewsAiGeneration(transaction, {
+          generationId: input.aiGenerationId,
+          newsId: news.id,
+          source: { title: news.title, excerpt: news.excerpt, content: news.content },
+          appliedById: requesterId,
+          summary: input.summary
+        })
+        : null;
+
+      // updatedAt asegura que el contenido validado contra la generación no cambió en el medio.
       const transition = await transaction.news.updateMany({
-        where: { id: news.id, status: NewsStatus.PENDING_REVIEW, publishedAt: null },
+        where: { id: news.id, status: NewsStatus.PENDING_REVIEW, publishedAt: null, updatedAt: news.updatedAt },
         data: {
           status: NewsStatus.PUBLISHED,
           publishedAt: new Date(),
           editorObservation: null,
-          aiSummary: input.aiSummary ?? Prisma.DbNull,
+          aiSummary: aiSummary ?? Prisma.DbNull,
           ...(input.excerpt !== undefined ? { excerpt: input.excerpt } : {}),
           ...(input.content !== undefined ? { content: input.content } : {})
         }
@@ -409,7 +416,17 @@ export const newsService = {
     });
     if (!news) throw new ApiError(404, "Noticia no encontrada o no está en revisión");
 
-    return newsSummaryProvider.summarizeNews(userId, news.title, news.content);
+    const source = { title: news.title, excerpt: news.excerpt, content: news.content };
+    const result = await newsSummaryProvider.summarizeNews(userId, source.title, source.content);
+    return recordNewsAiGeneration({
+      operation: NewsAiOperation.SUMMARIZE,
+      newsId: news.id,
+      barrioId: barrio.id,
+      requestedById: userId,
+      source,
+      output: { summary: result.summary },
+      meta: result.meta
+    });
   },
 
   async improve(barrioSlug: string, newsSlug: string, userId: string) {
@@ -419,11 +436,31 @@ export const newsService = {
     });
     if (!news) throw new ApiError(404, "Noticia no encontrada o no está en revisión");
 
-    return newsSummaryProvider.improveNews(userId, news.title, news.excerpt, news.content);
+    const source = { title: news.title, excerpt: news.excerpt, content: news.content };
+    const draft = await newsSummaryProvider.improveNews(userId, source.title, source.excerpt, source.content);
+    return recordNewsAiGeneration({
+      operation: NewsAiOperation.IMPROVE,
+      newsId: news.id,
+      barrioId: barrio.id,
+      requestedById: userId,
+      source,
+      output: { excerpt: draft.excerpt, content: draft.content, summary: draft.summary },
+      meta: draft.meta
+    });
   },
 
   async assist(barrioSlug: string, userId: string, input: { title: string; excerpt?: string; content: string }) {
-    await resolveBarrio(barrioSlug);
-    return newsSummaryProvider.improveNews(userId, input.title, input.excerpt || null, input.content);
+    const barrio = await resolveBarrio(barrioSlug);
+    const source = { title: input.title, excerpt: input.excerpt || null, content: input.content };
+    const draft = await newsSummaryProvider.improveNews(userId, source.title, source.excerpt, source.content);
+    // El borrador todavía no existe como noticia: la app compara contra su propio formulario antes de aplicar.
+    return recordNewsAiGeneration({
+      operation: NewsAiOperation.ASSIST,
+      barrioId: barrio.id,
+      requestedById: userId,
+      source,
+      output: { excerpt: draft.excerpt, content: draft.content, summary: draft.summary },
+      meta: draft.meta
+    });
   }
 };

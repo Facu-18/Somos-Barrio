@@ -175,19 +175,35 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   },
   NewsAiSummary: {
     type: "object",
-    required: ["summary", "provider", "model", "generatedAt"],
+    description: "Resumen aprobado por el equipo editorial. Proveedor, modelo y versión de prompt salen de la generación guardada en el servidor.",
+    required: ["summary", "provider", "model", "promptVersion", "generationId", "generatedAt"],
     properties: {
-      summary: { type: "string", minLength: 1, maxLength: 2000 },
-      provider: { type: "string" }, model: { type: "string" }, generatedAt: dateTime()
+      summary: { type: "string", minLength: 1, maxLength: 600 },
+      provider: { type: "string" }, model: { type: "string" }, promptVersion: { type: "string" },
+      generationId: cuid(), generatedAt: dateTime()
     }
   },
-  NewsEditorialDraft: {
+  NewsAiGeneration: {
     type: "object",
-    required: ["excerpt", "content", "summary", "provider", "model", "generatedAt"],
+    description: "Sugerencia guardada del lado servidor. La app debe mostrar el diff entre `original` y `suggestion` y pedir confirmación antes de aplicarla.",
+    required: ["generationId", "operation", "promptVersion", "provider", "model", "generatedAt", "sourceHash", "original", "suggestion"],
     properties: {
-      excerpt: { type: "string", maxLength: 500 }, content: { type: "string", minLength: 10 },
-      summary: { type: "string", minLength: 1, maxLength: 2000 },
-      provider: { type: "string" }, model: { type: "string" }, generatedAt: dateTime()
+      generationId: cuid(),
+      operation: { type: "string", enum: ["SUMMARIZE", "IMPROVE", "ASSIST"] },
+      promptVersion: { type: "string" }, provider: { type: "string" }, model: { type: "string" }, generatedAt: dateTime(),
+      sourceHash: { type: "string", pattern: "^[a-f0-9]{64}$", description: "SHA-256 del título, descripción y cuerpo sobre los que se generó" },
+      original: {
+        type: "object", required: ["title", "excerpt", "content"],
+        properties: { title: { type: "string" }, excerpt: nullableString(), content: { type: "string" } }
+      },
+      suggestion: {
+        type: "object", required: ["summary"], additionalProperties: false,
+        properties: {
+          summary: { type: "string", minLength: 1, maxLength: 600 },
+          excerpt: { type: "string", minLength: 1, maxLength: 500 },
+          content: { type: "string", minLength: 10, maxLength: 20000 }
+        }
+      }
     }
   },
   NewsVote: {
@@ -597,12 +613,25 @@ const newsAssistBody: OpenAPIV3.SchemaObject = {
   properties: {
     title: { type: "string", minLength: 3, maxLength: 255 },
     excerpt: { type: "string", maxLength: 500 },
-    content: { type: "string", minLength: 10 }
+    content: { type: "string", minLength: 10, maxLength: 12000 }
   }
 };
+const aiAssistDescription = "Los campos se envían al modelo como datos JSON delimitados, nunca como instrucciones, y sin tools. Antes de llamar al proveedor se aplican límites (título 255, descripción 500, cuerpo 12.000 caracteres, 48 KB y `AI_MAX_INPUT_TOKENS` estimados) y un detector determinista de inyección de prompt. La salida se valida con JSON Schema estricto y se rechaza si está truncada, tiene claves extra o tamaños fuera de rango.";
+const aiErrorResponses = {
+  400: errorResponse("Bad Request: validación, `details.code` = `PROMPT_INJECTION_DETECTED` (mensaje genérico) o `AI_INPUT_TOO_LARGE`"),
+  401: unauthorized, 403: forbidden, 404: notFound,
+  429: errorResponse("Too Many Requests: cuota diaria, solicitud en curso o límite del proveedor"),
+  502: errorResponse("Bad Gateway: proveedor caído o `details.code` = `AI_OUTPUT_INVALID` / `AI_OUTPUT_TRUNCATED`"),
+  503: serviceUnavailable,
+  504: errorResponse("Gateway Timeout")
+};
 const approveNewsBody: OpenAPIV3.SchemaObject = {
-  type: "object", properties: {
-    aiSummary: ref("NewsAiSummary"), excerpt: { type: "string", maxLength: 500 }, content: { type: "string", minLength: 10 }
+  type: "object", additionalProperties: false,
+  description: "`aiGenerationId` y `summary` van juntos. No se aceptan proveedor ni modelo del cliente.",
+  properties: {
+    aiGenerationId: cuid(),
+    summary: { type: "string", minLength: 1, maxLength: 600, description: "Resumen revisado por el editor a partir de la generación" },
+    excerpt: { type: "string", maxLength: 500 }, content: { type: "string", minLength: 10 }
   }
 };
 const rejectNewsBody: OpenAPIV3.SchemaObject = {
@@ -905,7 +934,7 @@ export const openapiSpec: OpenAPIV3.Document = {
     },
     "/barrios/{barrioSlug}/news/assist": {
       parameters: [barrioSlugParam],
-      post: { tags: ["Noticias"], summary: "Mejorar un borrador con IA antes de enviarlo", security: bearerSecurity, requestBody: jsonBody(newsAssistBody), responses: { 200: ok(ref("NewsEditorialDraft")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 429: errorResponse("Too Many Requests"), 502: errorResponse("Bad Gateway"), 503: serviceUnavailable, 504: errorResponse("Gateway Timeout") } }
+      post: { tags: ["Noticias"], summary: "Mejorar un borrador con IA antes de enviarlo", description: aiAssistDescription, security: bearerSecurity, requestBody: jsonBody(newsAssistBody), responses: { 200: ok(ref("NewsAiGeneration")), ...aiErrorResponses } }
     },
     "/barrios/{barrioSlug}/news/manage/{newsSlug}": {
       parameters: [barrioSlugParam, newsSlugParam],
@@ -921,7 +950,7 @@ export const openapiSpec: OpenAPIV3.Document = {
     },
     "/barrios/{barrioSlug}/news/{newsSlug}/approve": {
       parameters: [barrioSlugParam, newsSlugParam],
-      post: { tags: ["Noticias"], summary: "Aprobar y publicar una propuesta", security: bearerSecurity, requestBody: jsonBody(approveNewsBody), responses: { 200: ok(ref("News")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict } }
+      post: { tags: ["Noticias"], summary: "Aprobar y publicar una propuesta", description: "Con `aiGenerationId`, la generación debe pertenecer a la noticia, haberse creado sobre su contenido actual y no haberse aplicado antes; el servidor completa `aiSummary` con sus metadatos.", security: bearerSecurity, requestBody: jsonBody(approveNewsBody), responses: { 200: ok(ref("News")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: errorResponse("Conflict: la noticia cambió o `details.code` = `AI_GENERATION_STALE`, `AI_GENERATION_MISMATCH` o `AI_GENERATION_ALREADY_APPLIED`") } }
     },
     "/barrios/{barrioSlug}/news/{newsSlug}/reject": {
       parameters: [barrioSlugParam, newsSlugParam],
@@ -929,11 +958,11 @@ export const openapiSpec: OpenAPIV3.Document = {
     },
     "/barrios/{barrioSlug}/news/editorial/{newsSlug}/summarize": {
       parameters: [barrioSlugParam, newsSlugParam],
-      post: { tags: ["Noticias"], summary: "Generar resumen editorial con IA", security: bearerSecurity, responses: { 200: ok(ref("NewsAiSummary")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 429: errorResponse("Too Many Requests"), 502: errorResponse("Bad Gateway"), 503: serviceUnavailable, 504: errorResponse("Gateway Timeout") } }
+      post: { tags: ["Noticias"], summary: "Generar resumen editorial con IA", description: aiAssistDescription, security: bearerSecurity, responses: { 200: ok(ref("NewsAiGeneration")), ...aiErrorResponses } }
     },
     "/barrios/{barrioSlug}/news/editorial/{newsSlug}/improve": {
       parameters: [barrioSlugParam, newsSlugParam],
-      post: { tags: ["Noticias"], summary: "Mejorar descripción, cuerpo y resumen con IA", security: bearerSecurity, responses: { 200: ok(ref("NewsEditorialDraft")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 429: errorResponse("Too Many Requests"), 502: errorResponse("Bad Gateway"), 503: serviceUnavailable, 504: errorResponse("Gateway Timeout") } }
+      post: { tags: ["Noticias"], summary: "Mejorar descripción, cuerpo y resumen con IA", description: aiAssistDescription, security: bearerSecurity, responses: { 200: ok(ref("NewsAiGeneration")), ...aiErrorResponses } }
     },
     "/barrios/{barrioSlug}/news/{newsSlug}/vote": {
       parameters: [barrioSlugParam, newsSlugParam],
