@@ -71,6 +71,31 @@ export const forumController = {
     res.json({ success: true, data: reply });
   },
 
+  async report(req: Request, res: Response): Promise<void> {
+    await forumService.report(
+      req.params.barrioSlug,
+      req.params.subforumSlug,
+      req.user!.id,
+      { threadId: req.params.threadId, replyId: req.params.replyId },
+      req.body
+    );
+    res.status(201).json({ success: true, message: "Reporte recibido" });
+  },
+
+  async appeal(req: Request, res: Response): Promise<void> {
+    const appeal = await forumService.appeal(
+      req.params.barrioSlug,
+      req.params.subforumSlug,
+      req.user!.id,
+      { threadId: req.params.threadId, replyId: req.params.replyId },
+      req.body
+    );
+    res.status(201).json({
+      success: true,
+      data: { id: appeal.id, status: appeal.status, statement: appeal.statement, createdAt: appeal.createdAt }
+    });
+  },
+
   async voteThread(req: Request, res: Response): Promise<void> {
     const result = await forumService.voteThread(
       req.params.barrioSlug,

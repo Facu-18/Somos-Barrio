@@ -72,11 +72,18 @@ export default function ProfileScreen() {
 
         <View style={styles.actions}>
           {(user?.role === 'ADMIN' || user?.role === 'EDITOR') && (
-            <ClayButton
-              title="Panel de Moderación (Market)"
-              onPress={() => router.push('/(app)/admin-market-queue' as any)}
-              style={styles.modButton}
-            />
+            <>
+              <ClayButton
+                title="Panel de Moderación (Market)"
+                onPress={() => router.push('/(app)/admin-market-queue' as any)}
+                style={styles.modButton}
+              />
+              <ClayButton
+                title="Panel de Moderación (Foro)"
+                onPress={() => router.push('/(app)/admin-forum-queue' as any)}
+                style={styles.modButton}
+              />
+            </>
           )}
           <ClayButton 
             title="Editar perfil" 

@@ -344,8 +344,64 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
   ForumModerationReasonCode: {
     type: "string",
     nullable: true,
-    enum: ["THREAT", "DISCRIMINATION", "INAPPROPRIATE_CONTENT", "OTHER_POLICY", null],
-    description: "Motivo genérico de la retención automática; null cuando el contenido está publicado. Nunca identifica la regla exacta."
+    enum: ["THREAT", "DISCRIMINATION", "INAPPROPRIATE_CONTENT", "OTHER_POLICY", "CONTENT_CORRECTED", "REPORT_REVIEW", "HARASSMENT", "SPAM", null],
+    description: "Motivo genérico de la retención (automática, por reportes o de moderación); null cuando el contenido está publicado. Nunca identifica la regla exacta."
+  },
+  ForumAppeal: {
+    type: "object", required: ["id", "status", "statement", "createdAt"],
+    properties: {
+      id: cuid(), status: { type: "string", enum: ["PENDING", "ACCEPTED", "REJECTED", "SUPERSEDED"] },
+      statement: { type: "string" }, createdAt: dateTime()
+    }
+  },
+  ForumModerationDecision: {
+    type: "object",
+    description: "Entrada append-only del historial. La base rechaza modificarla.",
+    properties: {
+      id: cuid(),
+      action: { type: "string", enum: ["AUTO_REVIEW", "OWNER_EDIT", "OWNER_DELETE", "REPORT_THRESHOLD", "APPROVE", "BLOCK", "REMOVE", "RESTORE", "DISMISS_REPORTS", "APPEAL_ACCEPT", "APPEAL_REJECT"] },
+      fromStatus: { type: "string", enum: ["PUBLISHED", "PENDING_REVIEW", "BLOCKED", "REMOVED", null], nullable: true },
+      toStatus: ref("ForumContentStatus"),
+      fromVersion: { type: "integer", nullable: true }, toVersion: { type: "integer" },
+      reasonCode: nullableString(), privateNote: nullableString(),
+      ruleId: { type: "string", nullable: true, description: "Regla automática o marcador de revisión humana (MANUAL_REVIEW, REPORT_THRESHOLD, CONTENT_CORRECTED_REVIEW). Solo visible para moderación." },
+      policyVersion: nullableString(), createdAt: dateTime(),
+      actor: { type: "object", nullable: true, properties: { id: cuid(), name: { type: "string" } } }
+    }
+  },
+  ForumModerationItem: {
+    type: "object",
+    description: "Hilo o respuesta con autor, reportes abiertos, apelación pendiente y las últimas 10 decisiones. Las respuestas incluyen `thread`; los hilos, `barrio` y `subforum`.",
+    required: ["id", "status", "moderationVersion", "user", "reports", "appeals", "decisions"],
+    properties: {
+      id: cuid(), status: ref("ForumContentStatus"), moderationVersion: { type: "integer", minimum: 0 },
+      moderationReasonCode: nullableString(), moderationRuleId: nullableString(),
+      title: { type: "string" }, content: { type: "string" }, user: userSummary,
+      reports: arrayOf({ type: "object", properties: { id: cuid(), category: { type: "string", enum: ["THREAT", "HARASSMENT", "DISCRIMINATION", "SPAM", "OTHER"] }, comment: nullableString(), createdAt: dateTime() } }),
+      appeals: arrayOf({ type: "object", properties: { id: cuid(), statement: { type: "string" }, contentVersion: { type: "integer" }, createdAt: dateTime() } }),
+      decisions: arrayOf(ref("ForumModerationDecision")),
+      barrio: ref("BarrioSummary"),
+      thread: { type: "object", properties: { id: cuid(), title: { type: "string" }, status: ref("ForumContentStatus"), isClosed: { type: "boolean" } } }
+    }
+  },
+  PaginatedForumModeration: {
+    type: "object", required: ["items", "total", "page", "limit"],
+    properties: { items: arrayOf(ref("ForumModerationItem")), total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" } }
+  },
+  ForumModerationMetrics: {
+    type: "object", required: ["scope", "rules"],
+    properties: {
+      scope: { type: "string", enum: ["BARRIO", "GLOBAL"] },
+      rules: arrayOf({
+        type: "object", required: ["ruleId", "retained", "overridden", "overrideRate"],
+        properties: {
+          ruleId: { type: "string" },
+          retained: { type: "integer", description: "Contenidos retenidos automáticamente por la regla" },
+          overridden: { type: "integer", description: "Retenciones de la regla revertidas por una aprobación humana" },
+          overrideRate: { type: "number", minimum: 0, description: "overridden / retained; valores altos indican falsos positivos" }
+        }
+      })
+    }
   },
   ForumReply: {
     type: "object",
@@ -354,6 +410,8 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
       id: cuid(), threadId: cuid(), userId: cuid(), parentReplyId: nullableCuid(), content: { type: "string" },
       upVotes: { type: "integer" }, downVotes: { type: "integer" },
       status: ref("ForumContentStatus"), moderationReasonCode: ref("ForumModerationReasonCode"), publishedAt: dateTime(true),
+      moderationVersion: { type: "integer", minimum: 0, description: "Versión requerida para apelar (expectedVersion)" },
+      appeals: arrayOf(ref("ForumAppeal")),
       createdAt: dateTime(), updatedAt: dateTime(),
       user: ref("UserSummary"), childReplies: arrayOf(ref("ForumReply"))
     }
@@ -366,6 +424,8 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
       upVotes: { type: "integer" }, downVotes: { type: "integer" },
       isClosed: { type: "boolean" }, closedAt: dateTime(true), closedById: nullableCuid(),
       status: ref("ForumContentStatus"), moderationReasonCode: ref("ForumModerationReasonCode"),
+      moderationVersion: { type: "integer", minimum: 0, description: "Versión requerida para apelar (expectedVersion)" },
+      appeals: { ...arrayOf(ref("ForumAppeal")), description: "Apelación pendiente, si existe (máximo una)." },
       createdAt: dateTime(), updatedAt: dateTime(),
       user: ref("UserSummary"), replies: arrayOf(ref("ForumReply")),
       _count: {
@@ -1006,10 +1066,10 @@ export const openapiSpec: OpenAPIV3.Document = {
       },
       patch: {
         tags: ["Foro"], summary: "Corregir hilo propio", security: bearerSecurity,
-        description: "Solo el autor. Vuelve a moderar el contenido: una corrección limpia de un hilo PENDING_REVIEW o BLOCKED queda PUBLISHED. El contenido REMOVED no se puede editar. Límite `FORUM_EDIT_USER_LIMIT` por usuario.",
+        description: "Solo el autor. Vuelve a moderar el contenido y registra una decisión OWNER_EDIT. Una corrección limpia de una retención automática queda PUBLISHED; si la retención la decidió moderación o los reportes, queda PENDING_REVIEW con `CONTENT_CORRECTED`. Reemplaza (SUPERSEDED) la apelación pendiente. El contenido REMOVED no se puede editar. Límite `FORUM_EDIT_USER_LIMIT` por usuario.",
         requestBody: jsonBody({
           type: "object", additionalProperties: false, minProperties: 1,
-          properties: { title: { type: "string", minLength: 3, maxLength: 255 }, content: { type: "string", minLength: 5, maxLength: 5000 } }
+          properties: { title: { type: "string", minLength: 3, maxLength: 255 }, content: { type: "string", minLength: 5, maxLength: 5000 }, expectedVersion: { type: "integer", minimum: 0, description: "Opcional: rechaza la edición con FORUM_CONTENT_CONFLICT si el hilo cambió" } }
         }),
         responses: {
           200: ok(ref("ForumThread")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound,
@@ -1017,7 +1077,11 @@ export const openapiSpec: OpenAPIV3.Document = {
           429: forumRateLimited, 503: serviceUnavailable
         }
       },
-      delete: { tags: ["Foro"], summary: "Eliminar hilo", security: bearerSecurity, responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable } }
+      delete: {
+        tags: ["Foro"], summary: "Eliminar hilo", security: bearerSecurity,
+        description: "Autor o ADMIN. Borrado lógico: el hilo desaparece del foro, pero decisiones, reportes y apelaciones se conservan y se registra OWNER_DELETE.",
+        responses: { 204: noContent, 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 409: conflict, 503: serviceUnavailable }
+      }
     },
     "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/replies": {
       parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
@@ -1042,11 +1106,73 @@ export const openapiSpec: OpenAPIV3.Document = {
         description: "Solo el autor, en hilos publicados y abiertos. Vuelve a moderar; si la respuesta queda PUBLISHED por primera vez se encolan las notificaciones una única vez. El contenido REMOVED no se puede editar.",
         requestBody: jsonBody({
           type: "object", additionalProperties: false, required: ["content"],
-          properties: { content: { type: "string", minLength: 1, maxLength: 5000 } }
+          properties: { content: { type: "string", minLength: 1, maxLength: 5000 }, expectedVersion: { type: "integer", minimum: 0 } }
         }),
         responses: {
           200: ok(ref("ForumReply")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound,
           409: errorResponse("Conflict: `THREAD_CLOSED`, `THREAD_NOT_PUBLISHED`, `CONTENT_REMOVED` o `FORUM_CONTENT_CONFLICT`"),
+          429: forumRateLimited, 503: serviceUnavailable
+        }
+      }
+    },
+    "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/reports": {
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
+      post: {
+        tags: ["Foro"], summary: "Reportar hilo", security: bearerSecurity,
+        description: "Solo contenido PUBLISHED de otra persona. Un usuario reporta cada contenido una sola vez. Al llegar a `FORUM_REPORT_THRESHOLD` reportes abiertos el contenido pasa a PENDING_REVIEW (`REPORT_REVIEW`) con una única decisión REPORT_THRESHOLD. Límite `FORUM_REPORT_USER_LIMIT` por usuario.",
+        requestBody: jsonBody({
+          type: "object", additionalProperties: false, required: ["category"],
+          properties: { category: { type: "string", enum: ["THREAT", "HARASSMENT", "DISCRIMINATION", "SPAM", "OTHER"] }, comment: { type: "string", maxLength: 1000 } }
+        }),
+        responses: {
+          201: acceptedMessage("Reporte recibido"), 400: errorResponse("Bad Request (incluye `CANNOT_REPORT_OWN_CONTENT`)"), 401: unauthorized, 403: forbidden, 404: notFound,
+          409: errorResponse("Conflict: `ALREADY_REPORTED` o `MODERATION_VERSION_CONFLICT`"), 429: forumRateLimited, 503: serviceUnavailable
+        }
+      }
+    },
+    "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/replies/{replyId}/reports": {
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid()), pathParam("replyId", cuid())],
+      post: {
+        tags: ["Foro"], summary: "Reportar respuesta", security: bearerSecurity,
+        description: "Solo contenido PUBLISHED de otra persona. Un usuario reporta cada contenido una sola vez. Al llegar a `FORUM_REPORT_THRESHOLD` reportes abiertos el contenido pasa a PENDING_REVIEW (`REPORT_REVIEW`) con una única decisión REPORT_THRESHOLD. Límite `FORUM_REPORT_USER_LIMIT` por usuario.",
+        requestBody: jsonBody({
+          type: "object", additionalProperties: false, required: ["category"],
+          properties: { category: { type: "string", enum: ["THREAT", "HARASSMENT", "DISCRIMINATION", "SPAM", "OTHER"] }, comment: { type: "string", maxLength: 1000 } }
+        }),
+        responses: {
+          201: acceptedMessage("Reporte recibido"), 400: errorResponse("Bad Request (incluye `CANNOT_REPORT_OWN_CONTENT`)"), 401: unauthorized, 403: forbidden, 404: notFound,
+          409: errorResponse("Conflict: `ALREADY_REPORTED` o `MODERATION_VERSION_CONFLICT`"), 429: forumRateLimited, 503: serviceUnavailable
+        }
+      }
+    },
+    "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/appeals": {
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid())],
+      post: {
+        tags: ["Foro"], summary: "Apelar la moderación de un hilo propio", security: bearerSecurity,
+        description: "Solo el autor, sobre contenido BLOCKED o REMOVED y con la versión vigente. Una apelación pendiente por contenido; reintentar con la misma `idempotencyKey` devuelve la misma apelación. Límite `FORUM_APPEAL_USER_LIMIT` por usuario.",
+        requestBody: jsonBody({
+          type: "object", additionalProperties: false, required: ["statement", "expectedVersion", "idempotencyKey"],
+          properties: { statement: { type: "string", minLength: 20, maxLength: 2000 }, expectedVersion: { type: "integer", minimum: 0 }, idempotencyKey: uuid() }
+        }),
+        responses: {
+          201: created(ref("ForumAppeal")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound,
+          409: errorResponse("Conflict: `INVALID_APPEAL_STATE`, `MODERATION_VERSION_CONFLICT`, `APPEAL_ALREADY_PENDING` o `IDEMPOTENCY_KEY_IN_USE`"),
+          429: forumRateLimited, 503: serviceUnavailable
+        }
+      }
+    },
+    "/barrios/{barrioSlug}/forum/{subforumSlug}/threads/{threadId}/replies/{replyId}/appeals": {
+      parameters: [barrioSlugParam, subforumSlugParam, pathParam("threadId", cuid()), pathParam("replyId", cuid())],
+      post: {
+        tags: ["Foro"], summary: "Apelar la moderación de una respuesta propia", security: bearerSecurity,
+        description: "Solo el autor, sobre contenido BLOCKED o REMOVED y con la versión vigente. Una apelación pendiente por contenido; reintentar con la misma `idempotencyKey` devuelve la misma apelación. Límite `FORUM_APPEAL_USER_LIMIT` por usuario.",
+        requestBody: jsonBody({
+          type: "object", additionalProperties: false, required: ["statement", "expectedVersion", "idempotencyKey"],
+          properties: { statement: { type: "string", minLength: 20, maxLength: 2000 }, expectedVersion: { type: "integer", minimum: 0 }, idempotencyKey: uuid() }
+        }),
+        responses: {
+          201: created(ref("ForumAppeal")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound,
+          409: errorResponse("Conflict: `INVALID_APPEAL_STATE`, `MODERATION_VERSION_CONFLICT`, `APPEAL_ALREADY_PENDING` o `IDEMPOTENCY_KEY_IN_USE`"),
           429: forumRateLimited, 503: serviceUnavailable
         }
       }
@@ -1212,6 +1338,67 @@ export const openapiSpec: OpenAPIV3.Document = {
         tags: ["Admin"], summary: "Verificar o desverificar comercio", security: bearerSecurity,
         requestBody: jsonBody({ type: "object", required: ["verified"], properties: { verified: { type: "boolean" } } }),
         responses: { 200: ok(ref("Business")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
+    },
+    "/moderation/forum": {
+      get: {
+        tags: ["Admin"], summary: "Cola de moderación del foro", security: bearerSecurity,
+        description: "EDITOR queda fijo en su barrio (se ignora `barrioSlug`); ADMIN puede filtrar o ver todos. Excluye hilos borrados.",
+        parameters: [
+          queryParam("target", { type: "string", enum: ["THREAD", "REPLY"], default: "THREAD" }),
+          queryParam("queue", { type: "string", enum: ["PENDING_REVIEW", "REPORTED", "APPEALED", "BLOCKED", "REMOVED"], default: "PENDING_REVIEW" }),
+          queryParam("barrioSlug", { type: "string" }), pageParam, queryParam("limit", { type: "integer", minimum: 1, maximum: 50, default: 20 })
+        ],
+        responses: { 200: ok(ref("PaginatedForumModeration")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
+    },
+    "/moderation/forum/metrics": {
+      get: {
+        tags: ["Admin"], summary: "Overrides humanos por regla automática del foro", security: bearerSecurity,
+        parameters: [queryParam("barrioSlug", { type: "string" })],
+        responses: { 200: ok(ref("ForumModerationMetrics")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
+    },
+    "/moderation/forum/threads/{threadId}/decision": {
+      parameters: [pathParam("threadId", cuid())],
+      post: {
+        tags: ["Admin"], summary: "Moderar hilo del foro", security: bearerSecurity,
+        description: "EDITOR solo en su barrio; ADMIN en todos. Transiciones: APPROVE publica PENDING_REVIEW/BLOCKED (o desestima reportes de algo publicado); BLOCK pasa PENDING_REVIEW a BLOCKED; REMOVE retira cualquier estado; RESTORE publica un REMOVED. Con una apelación pendiente, APPROVE la acepta y BLOCK la rechaza. Aplica CAS con `expectedVersion`, es idempotente por `idempotencyKey`, cierra los reportes abiertos, registra una decisión append-only y, si publica una respuesta por primera vez, notifica una sola vez. Nadie puede publicar su propio contenido.",
+        requestBody: jsonBody({
+          type: "object", additionalProperties: false, required: ["decision", "reasonCode", "expectedVersion", "idempotencyKey"],
+          properties: {
+            decision: { type: "string", enum: ["APPROVE", "BLOCK", "REMOVE", "RESTORE"] },
+            reasonCode: { type: "string", enum: ["POLICY_COMPLIANT", "THREAT", "HARASSMENT", "DISCRIMINATION", "INAPPROPRIATE_CONTENT", "SPAM", "REPORT_REVIEW", "OTHER_POLICY"] },
+            privateNote: { type: "string", maxLength: 2000 }, expectedVersion: { type: "integer", minimum: 0 }, idempotencyKey: uuid()
+          }
+        }),
+        responses: {
+          200: ok(ref("ForumModerationItem")), 400: badRequest, 401: unauthorized,
+          403: errorResponse("Forbidden: otro barrio o `CANNOT_MODERATE_OWN_CONTENT`"), 404: notFound,
+          409: errorResponse("Conflict: `MODERATION_VERSION_CONFLICT`, `INVALID_MODERATION_TRANSITION` o `IDEMPOTENCY_KEY_IN_USE`"),
+          503: serviceUnavailable
+        }
+      }
+    },
+    "/moderation/forum/replies/{replyId}/decision": {
+      parameters: [pathParam("replyId", cuid())],
+      post: {
+        tags: ["Admin"], summary: "Moderar respuesta del foro", security: bearerSecurity,
+        description: "EDITOR solo en su barrio; ADMIN en todos. Transiciones: APPROVE publica PENDING_REVIEW/BLOCKED (o desestima reportes de algo publicado); BLOCK pasa PENDING_REVIEW a BLOCKED; REMOVE retira cualquier estado; RESTORE publica un REMOVED. Con una apelación pendiente, APPROVE la acepta y BLOCK la rechaza. Aplica CAS con `expectedVersion`, es idempotente por `idempotencyKey`, cierra los reportes abiertos, registra una decisión append-only y, si publica una respuesta por primera vez, notifica una sola vez. Nadie puede publicar su propio contenido.",
+        requestBody: jsonBody({
+          type: "object", additionalProperties: false, required: ["decision", "reasonCode", "expectedVersion", "idempotencyKey"],
+          properties: {
+            decision: { type: "string", enum: ["APPROVE", "BLOCK", "REMOVE", "RESTORE"] },
+            reasonCode: { type: "string", enum: ["POLICY_COMPLIANT", "THREAT", "HARASSMENT", "DISCRIMINATION", "INAPPROPRIATE_CONTENT", "SPAM", "REPORT_REVIEW", "OTHER_POLICY"] },
+            privateNote: { type: "string", maxLength: 2000 }, expectedVersion: { type: "integer", minimum: 0 }, idempotencyKey: uuid()
+          }
+        }),
+        responses: {
+          200: ok(ref("ForumModerationItem")), 400: badRequest, 401: unauthorized,
+          403: errorResponse("Forbidden: otro barrio o `CANNOT_MODERATE_OWN_CONTENT`"), 404: notFound,
+          409: errorResponse("Conflict: `MODERATION_VERSION_CONFLICT`, `INVALID_MODERATION_TRANSITION` o `IDEMPOTENCY_KEY_IN_USE`"),
+          503: serviceUnavailable
+        }
       }
     },
     "/moderation/marketplace": {

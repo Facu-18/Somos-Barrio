@@ -9,7 +9,10 @@ import {
   getMarketplaceQueueQuerySchema,
   moderateMarketplaceDecisionSchema,
   getMarketplaceAssetQueueQuerySchema,
-  moderateMarketplaceAssetDecisionSchema
+  moderateMarketplaceAssetDecisionSchema,
+  getForumQueueQuerySchema,
+  getForumMetricsQuerySchema,
+  moderateForumDecisionSchema
 } from "./moderation.schema";
 
 export const moderationRouter = Router();
@@ -46,4 +49,29 @@ moderationRouter.post(
   "/marketplace/assets/:assetId/decision",
   validate({ params: assetIdParamSchema, body: moderateMarketplaceAssetDecisionSchema }),
   asyncHandler(moderationController.moderateMarketplaceAsset)
+);
+
+// ── Forum Moderation ─────────────────────────────────────────────────────────
+moderationRouter.get(
+  "/forum",
+  validate({ query: getForumQueueQuerySchema }),
+  asyncHandler(moderationController.getForumQueue)
+);
+
+moderationRouter.get(
+  "/forum/metrics",
+  validate({ query: getForumMetricsQuerySchema }),
+  asyncHandler(moderationController.getForumMetrics)
+);
+
+moderationRouter.post(
+  "/forum/threads/:threadId/decision",
+  validate({ params: z.object({ threadId: z.string().cuid() }), body: moderateForumDecisionSchema }),
+  asyncHandler(moderationController.moderateForumThread)
+);
+
+moderationRouter.post(
+  "/forum/replies/:replyId/decision",
+  validate({ params: z.object({ replyId: z.string().cuid() }), body: moderateForumDecisionSchema }),
+  asyncHandler(moderationController.moderateForumReply)
 );

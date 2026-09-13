@@ -9,37 +9,11 @@ import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 import { marketplaceAssetService } from "../upload/marketplace-asset.service";
 import { ModerateMarketplaceAssetDecisionInput, ModerateMarketplaceDecisionInput } from "./moderation.schema";
+import { assertBarrioAccess, getModerator, resolveQueueBarrio, serializable } from "./moderation.access";
 
 type QueueName = "PENDING_REVIEW" | "REPORTED" | "REJECTED" | "REMOVED" | "APPEALED" | "DELETED";
 
 const publicAssetSelect = { id: true, status: true, url: true } as const;
-
-async function getModerator(userId: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new ApiError(404, "Usuario no encontrado");
-  if (user.role !== UserRole.EDITOR && user.role !== UserRole.ADMIN) {
-    throw new ApiError(403, "No tenés permisos para moderar");
-  }
-  return user;
-}
-
-function assertBarrioAccess(user: { role: UserRole; barrioId: string | null }, barrioId: string | null) {
-  if (user.role === UserRole.EDITOR && (!user.barrioId || user.barrioId !== barrioId)) {
-    throw new ApiError(403, "No podés moderar contenido de otros barrios");
-  }
-}
-
-async function serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      return await prisma.$transaction(operation, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034" && attempt < 2) continue;
-      throw error;
-    }
-  }
-  throw new ApiError(409, "MODERATION_VERSION_CONFLICT");
-}
 
 function postDecisionMatches(
   decision: {
@@ -131,17 +105,6 @@ function transitionFor(
     return { status: ModerationStatus.APPROVED, action: MarketplaceModerationAction.RESTORE };
   }
   throw new ApiError(409, "INVALID_MODERATION_TRANSITION");
-}
-
-async function resolveQueueBarrio(user: Awaited<ReturnType<typeof getModerator>>, barrioSlug?: string) {
-  if (user.role === UserRole.EDITOR) {
-    if (!user.barrioId) throw new ApiError(403, "Editor sin barrio asignado");
-    return user.barrioId;
-  }
-  if (!barrioSlug) return undefined;
-  const barrio = await prisma.barrio.findUnique({ where: { slug: barrioSlug }, select: { id: true } });
-  if (!barrio) throw new ApiError(404, "Barrio filtrado no encontrado");
-  return barrio.id;
 }
 
 export const moderationService = {

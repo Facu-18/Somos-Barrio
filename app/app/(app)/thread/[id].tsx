@@ -8,7 +8,8 @@ import { ClayTheme } from '../../../constants/ClayTheme';
 import { ClayInput } from '../../../components/ClayInput';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ForumContentStatus, canEditForumContent, forumErrorMessage, forumModerationMessage, forumStatusInfo } from '../../../lib/forum';
+import { ForumAppeal, ForumContentStatus, canAppealForumContent, canEditForumContent, forumErrorMessage, forumModerationMessage, forumStatusInfo } from '../../../lib/forum';
+import { ForumAppealSheet, ForumReportSheet, ForumSheetTarget } from '../../../components/ForumModerationSheets';
 
 interface Reply {
   id: string;
@@ -19,6 +20,8 @@ interface Reply {
   parentReplyId: string | null;
   status: ForumContentStatus;
   moderationReasonCode: string | null;
+  moderationVersion: number;
+  appeals?: ForumAppeal[];
   user: {
     name: string;
     nickname?: string;
@@ -37,8 +40,17 @@ const formatDate = (dateString: string) => {
 
 const getInitials = (name?: string | null) => (name?.trim()?.slice(0, 2) || '?').toUpperCase();
 
+type ModerationNoticeProps = {
+  status: ForumContentStatus;
+  reasonCode: string | null;
+  isOwn: boolean;
+  pendingAppeal?: ForumAppeal;
+  onEdit?: () => void;
+  onAppeal?: () => void;
+};
+
 // Solo el autor (o moderación) recibe contenido no publicado; se marca con su estado.
-const ModerationNotice = ({ status, reasonCode, isOwn, onEdit }: { status: ForumContentStatus; reasonCode: string | null; isOwn: boolean; onEdit?: () => void }) => {
+const ModerationNotice = ({ status, reasonCode, isOwn, pendingAppeal, onEdit, onAppeal }: ModerationNoticeProps) => {
   if (status === 'PUBLISHED') return null;
   const info = forumStatusInfo[status];
   return (
@@ -46,14 +58,27 @@ const ModerationNotice = ({ status, reasonCode, isOwn, onEdit }: { status: Forum
       <View style={styles.moderationNoticeHeader}>
         <MaterialCommunityIcons name={info.icon} size={16} color={info.colors.text} />
         <Text style={[styles.moderationNoticeTitle, { color: info.colors.text }]}>{info.label}</Text>
-        {onEdit && (
-          <TouchableOpacity onPress={onEdit} style={styles.moderationEditBtn} accessibilityRole="button" accessibilityLabel="Editar para corregir">
-            <MaterialCommunityIcons name="pencil-outline" size={14} color={info.colors.text} />
-            <Text style={[styles.moderationNoticeTitle, { color: info.colors.text }]}>Editar</Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.moderationActions}>
+          {onEdit && (
+            <TouchableOpacity onPress={onEdit} style={styles.moderationEditBtn} accessibilityRole="button" accessibilityLabel="Editar para corregir">
+              <MaterialCommunityIcons name="pencil-outline" size={14} color={info.colors.text} />
+              <Text style={[styles.moderationNoticeTitle, { color: info.colors.text }]}>Editar</Text>
+            </TouchableOpacity>
+          )}
+          {onAppeal && !pendingAppeal && (
+            <TouchableOpacity onPress={onAppeal} style={styles.moderationEditBtn} accessibilityRole="button" accessibilityLabel="Apelar la decisión">
+              <MaterialCommunityIcons name="scale-balance" size={14} color={info.colors.text} />
+              <Text style={[styles.moderationNoticeTitle, { color: info.colors.text }]}>Apelar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
       {isOwn && <Text style={[styles.moderationNoticeText, { color: info.colors.text }]}>{forumModerationMessage(status, reasonCode)}</Text>}
+      {isOwn && pendingAppeal && (
+        <Text style={[styles.moderationNoticeText, styles.moderationAppealText, { color: info.colors.text }]}>
+          Tu apelación está en revisión.
+        </Text>
+      )}
     </View>
   );
 };
@@ -64,15 +89,18 @@ type ReplyItemProps = {
   depth?: number;
   onReply: (id: string, name: string) => void;
   onEdit: (reply: Reply) => void;
+  onReport: (reply: Reply) => void;
+  onAppeal: (reply: Reply) => void;
   currentUserId?: string;
   isClosed?: boolean;
 };
 
-const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply, onEdit, currentUserId, isClosed = false }: ReplyItemProps) => {
+const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply, onEdit, onReport, onAppeal, currentUserId, isClosed = false }: ReplyItemProps) => {
   const visualDepth = Math.min(depth, 3);
   const paddingLeft = visualDepth * 16;
   const isPublished = reply.status === 'PUBLISHED';
-  const canEdit = reply.userId === currentUserId && canEditForumContent(reply.status) && !isClosed;
+  const isOwn = reply.userId === currentUserId;
+  const canEdit = isOwn && canEditForumContent(reply.status) && !isClosed;
 
   return (
     <View style={{ paddingLeft, marginBottom: 16 }}>
@@ -94,24 +122,43 @@ const ReplyItem = ({ reply, highlightedReplyId, depth = 0, onReply, onEdit, curr
               <Text style={styles.timeAgo}>{formatDate(reply.createdAt)}</Text>
             </View>
           </View>
-          {!isClosed && isPublished && (
-            <TouchableOpacity
-              style={styles.replyActionBtn}
-              onPress={() => onReply(reply.id, reply.user?.nickname || reply.user?.name)}
-              accessibilityRole="button"
-              accessibilityLabel={`Responder a ${reply.user?.nickname || reply.user?.name}`}
-            >
-              <MaterialCommunityIcons name="reply" size={16} color={ClayTheme.colors.primary} />
-              <Text style={styles.replyActionText}>Responder</Text>
-            </TouchableOpacity>
-          )}
+          <View style={styles.replyActions}>
+            {isPublished && !isOwn && (
+              <TouchableOpacity
+                style={styles.replyReportBtn}
+                onPress={() => onReport(reply)}
+                accessibilityRole="button"
+                accessibilityLabel={`Reportar respuesta de ${reply.user?.nickname || reply.user?.name}`}
+              >
+                <MaterialCommunityIcons name="flag-outline" size={16} color={ClayTheme.colors.textMuted} />
+              </TouchableOpacity>
+            )}
+            {!isClosed && isPublished && (
+              <TouchableOpacity
+                style={styles.replyActionBtn}
+                onPress={() => onReply(reply.id, reply.user?.nickname || reply.user?.name)}
+                accessibilityRole="button"
+                accessibilityLabel={`Responder a ${reply.user?.nickname || reply.user?.name}`}
+              >
+                <MaterialCommunityIcons name="reply" size={16} color={ClayTheme.colors.primary} />
+                <Text style={styles.replyActionText}>Responder</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <Text style={styles.replyContent}>{reply.content}</Text>
-        <ModerationNotice status={reply.status} reasonCode={reply.moderationReasonCode} isOwn={reply.userId === currentUserId} onEdit={canEdit ? () => onEdit(reply) : undefined} />
+        <ModerationNotice
+          status={reply.status}
+          reasonCode={reply.moderationReasonCode}
+          isOwn={isOwn}
+          pendingAppeal={reply.appeals?.[0]}
+          onEdit={canEdit ? () => onEdit(reply) : undefined}
+          onAppeal={isOwn && canAppealForumContent(reply.status) ? () => onAppeal(reply) : undefined}
+        />
       </View>
 
       {reply.children.map(child => (
-        <ReplyItem key={child.id} reply={child} highlightedReplyId={highlightedReplyId} depth={depth + 1} onReply={onReply} onEdit={onEdit} currentUserId={currentUserId} isClosed={isClosed} />
+        <ReplyItem key={child.id} reply={child} highlightedReplyId={highlightedReplyId} depth={depth + 1} onReply={onReply} onEdit={onEdit} onReport={onReport} onAppeal={onAppeal} currentUserId={currentUserId} isClosed={isClosed} />
       ))}
     </View>
   );
@@ -127,6 +174,9 @@ export default function ThreadDetailScreen() {
   const [replyContent, setReplyContent] = useState('');
   const [replyingTo, setReplyingTo] = useState<{id: string, name: string} | null>(null);
   const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [reportTarget, setReportTarget] = useState<ForumSheetTarget | null>(null);
+  const [appealTarget, setAppealTarget] = useState<ForumSheetTarget | null>(null);
+  const threadPath = `/barrios/${barrioSlug}/forum/${subforumSlug}/threads/${id}`;
 
   const { data: thread, isLoading } = useQuery({
     queryKey: ['thread-detail', barrioSlug, subforumSlug, id],
@@ -272,6 +322,16 @@ export default function ThreadDetailScreen() {
           <MaterialCommunityIcons name="arrow-left" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{thread.title}</Text>
+        {threadStatus === 'PUBLISHED' && !isThreadAuthor && (
+          <TouchableOpacity
+            onPress={() => setReportTarget({ kind: 'thread', id: thread.id })}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Reportar hilo"
+          >
+            <MaterialCommunityIcons name="flag-outline" size={22} color={ClayTheme.colors.text} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -298,8 +358,12 @@ export default function ThreadDetailScreen() {
             status={threadStatus}
             reasonCode={thread.moderationReasonCode}
             isOwn={isThreadAuthor}
+            pendingAppeal={thread.appeals?.[0]}
             onEdit={isThreadAuthor && canEditForumContent(threadStatus)
               ? () => router.push({ pathname: '/(app)/create-thread', params: { subforumSlug, threadId: thread.id } })
+              : undefined}
+            onAppeal={isThreadAuthor && canAppealForumContent(threadStatus)
+              ? () => setAppealTarget({ kind: 'thread', id: thread.id, moderationVersion: thread.moderationVersion })
               : undefined}
           />
 
@@ -338,6 +402,8 @@ export default function ThreadDetailScreen() {
               highlightedReplyId={replyId}
               onReply={(replyId, name) => { setEditingReplyId(null); setReplyingTo({id: replyId, name}); }}
               onEdit={startEditingReply}
+              onReport={(reply) => setReportTarget({ kind: 'reply', id: reply.id })}
+              onAppeal={(reply) => setAppealTarget({ kind: 'reply', id: reply.id, moderationVersion: reply.moderationVersion })}
               currentUserId={user?.id}
               isClosed={thread.isClosed}
             />
@@ -395,6 +461,9 @@ export default function ThreadDetailScreen() {
           </View>
         </View>
       )}
+
+      <ForumReportSheet target={reportTarget} basePath={threadPath} onClose={() => setReportTarget(null)} onDone={refreshThread} />
+      <ForumAppealSheet target={appealTarget} basePath={threadPath} onClose={() => setAppealTarget(null)} onDone={refreshThread} />
     </KeyboardAvoidingView>
   );
 }
@@ -671,8 +740,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  moderationEditBtn: {
+  moderationActions: {
     marginLeft: 'auto',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  moderationAppealText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+  },
+  replyActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  replyReportBtn: {
+    padding: 4,
+  },
+  moderationEditBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,

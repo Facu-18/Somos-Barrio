@@ -129,6 +129,41 @@ enum ForumContentStatus {
   REMOVED
 }
 
+enum ForumModerationAction {
+  AUTO_REVIEW
+  OWNER_EDIT
+  OWNER_DELETE
+  REPORT_THRESHOLD
+  APPROVE
+  BLOCK
+  REMOVE
+  RESTORE
+  DISMISS_REPORTS
+  APPEAL_ACCEPT
+  APPEAL_REJECT
+}
+
+enum ForumReportCategory {
+  THREAT
+  HARASSMENT
+  DISCRIMINATION
+  SPAM
+  OTHER
+}
+
+enum ForumReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum ForumAppealStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  SUPERSEDED
+}
+
 enum EventRsvpStatus {
   GOING
   INTERESTED
@@ -136,14 +171,14 @@ enum EventRsvpStatus {
 }
 
 model Barrio {
-  id                String             @id @default(cuid())
+  id                String                    @id @default(cuid())
   name              String
-  slug              String             @unique
+  slug              String                    @unique
   city              String
   province          String
-  country           String             @default("AR")
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  country           String                    @default("AR")
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
   users             User[]
   businesses        Business[]
   news              News[]
@@ -151,6 +186,7 @@ model Barrio {
   marketplaceAssets MarketplaceAsset[]
   forumSubforums    ForumSubforum[]
   forumThreads      ForumThread[]
+  forumDecisions    ForumModerationDecision[]
   events            Event[]
 }
 
@@ -191,6 +227,11 @@ model User {
   marketplaceAppeals         MarketplaceAppeal[]                  @relation("MarketplaceAppealOwner")
   resolvedMarketplaceAppeals MarketplaceAppeal[]                  @relation("MarketplaceAppealResolver")
   assetModerationDecisions   MarketplaceAssetModerationDecision[]
+  forumDecisions             ForumModerationDecision[]            @relation("ForumDecisionActor")
+  forumReports               ForumReport[]                        @relation("ForumReportReporter")
+  resolvedForumReports       ForumReport[]                        @relation("ForumReportResolver")
+  forumAppeals               ForumAppeal[]                        @relation("ForumAppealOwner")
+  resolvedForumAppeals       ForumAppeal[]                        @relation("ForumAppealResolver")
 
   @@index([barrioId])
   @@index([role])
@@ -461,29 +502,36 @@ model ForumSubforum {
 }
 
 model ForumThread {
-  id         String        @id @default(cuid())
-  userId     String
-  barrioId   String
-  subforumId String
-  title      String
-  content    String
-  upVotes    Int           @default(0)
-  downVotes  Int           @default(0)
-  isClosed   Boolean       @default(false)
-  closedAt   DateTime?
-  closedById String?
-  status                  ForumContentStatus @default(PUBLISHED)
+  id                      String                    @id @default(cuid())
+  userId                  String
+  barrioId                String
+  subforumId              String
+  title                   String
+  content                 String
+  upVotes                 Int                       @default(0)
+  downVotes               Int                       @default(0)
+  isClosed                Boolean                   @default(false)
+  closedAt                DateTime?
+  closedById              String?
+  status                  ForumContentStatus        @default(PUBLISHED)
   moderationReasonCode    String?
   moderationRuleId        String?
   moderationPolicyVersion String?
   moderationContentHash   String?
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
-  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  barrio     Barrio        @relation(fields: [barrioId], references: [id], onDelete: Cascade)
-  subforum   ForumSubforum @relation(fields: [subforumId], references: [id], onDelete: Cascade)
-  replies    ForumReply[]
-  votes      ForumVote[]
+  // Versión para CAS: cada transición de moderación la incrementa.
+  moderationVersion       Int                       @default(0)
+  // Borrado lógico: el autor borra sin destruir la evidencia de moderación.
+  deletedAt               DateTime?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  user                    User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  barrio                  Barrio                    @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  subforum                ForumSubforum             @relation(fields: [subforumId], references: [id], onDelete: Cascade)
+  replies                 ForumReply[]
+  votes                   ForumVote[]
+  decisions               ForumModerationDecision[]
+  reports                 ForumReport[]
+  appeals                 ForumAppeal[]
 
   @@index([subforumId, createdAt])
   @@index([barrioId, createdAt])
@@ -492,32 +540,128 @@ model ForumThread {
 }
 
 model ForumReply {
-  id            String       @id @default(cuid())
-  threadId      String
-  userId        String
-  parentReplyId String?
-  content       String
-  upVotes       Int          @default(0)
-  downVotes     Int          @default(0)
-  status                  ForumContentStatus @default(PUBLISHED)
+  id                      String                    @id @default(cuid())
+  threadId                String
+  userId                  String
+  parentReplyId           String?
+  content                 String
+  upVotes                 Int                       @default(0)
+  downVotes               Int                       @default(0)
+  status                  ForumContentStatus        @default(PUBLISHED)
   moderationReasonCode    String?
   moderationRuleId        String?
   moderationPolicyVersion String?
   moderationContentHash   String?
   // Primera vez que quedó publicada; evita notificar dos veces.
-  publishedAt   DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  thread        ForumThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parentReply   ForumReply?  @relation("ReplyHierarchy", fields: [parentReplyId], references: [id], onDelete: SetNull)
-  childReplies  ForumReply[] @relation("ReplyHierarchy")
-  votes         ForumVote[]
+  publishedAt             DateTime?
+  moderationVersion       Int                       @default(0)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  thread                  ForumThread               @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user                    User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentReply             ForumReply?               @relation("ReplyHierarchy", fields: [parentReplyId], references: [id], onDelete: SetNull)
+  childReplies            ForumReply[]              @relation("ReplyHierarchy")
+  votes                   ForumVote[]
+  decisions               ForumModerationDecision[]
+  reports                 ForumReport[]
+  appeals                 ForumAppeal[]
 
   @@index([threadId, createdAt])
   @@index([threadId, status, createdAt])
   @@index([userId])
   @@index([parentReplyId])
+}
+
+// Historial append-only de transiciones de un hilo o una respuesta (exactamente uno).
+model ForumModerationDecision {
+  id               String                @id @default(cuid())
+  threadId         String?
+  replyId          String?
+  barrioId         String
+  actorId          String?
+  action           ForumModerationAction
+  fromStatus       ForumContentStatus?
+  toStatus         ForumContentStatus
+  fromVersion      Int?
+  toVersion        Int
+  reasonCode       String?
+  privateNote      String?
+  ruleId           String?
+  // Regla automática revertida por una aprobación humana; alimenta la métrica de overrides.
+  overriddenRuleId String?
+  policyVersion    String?
+  contentHash      String?
+  categories       String[]              @default([])
+  idempotencyKey   String?               @unique
+  evidence         Json?
+  appealId         String?
+  createdAt        DateTime              @default(now())
+
+  thread          ForumThread?  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  reply           ForumReply?   @relation(fields: [replyId], references: [id], onDelete: Cascade)
+  barrio          Barrio        @relation(fields: [barrioId], references: [id], onDelete: Cascade)
+  actor           User?         @relation("ForumDecisionActor", fields: [actorId], references: [id], onDelete: SetNull)
+  appeal          ForumAppeal?  @relation("ForumAppealOutcome", fields: [appealId], references: [id], onDelete: SetNull)
+  appealsAgainst  ForumAppeal[] @relation("ForumAppealAgainstDecision")
+  resolvedAppeals ForumAppeal[] @relation("ForumAppealResolutionDecision")
+  resolvedReports ForumReport[] @relation("ForumReportResolutionDecision")
+
+  @@unique([threadId, toVersion])
+  @@unique([replyId, toVersion])
+  @@index([barrioId, createdAt])
+  @@index([overriddenRuleId])
+}
+
+model ForumReport {
+  id                   String              @id @default(cuid())
+  threadId             String?
+  replyId              String?
+  reporterId           String
+  category             ForumReportCategory
+  comment              String?
+  status               ForumReportStatus   @default(OPEN)
+  resolvedAt           DateTime?
+  resolvedById         String?
+  resolutionDecisionId String?
+  createdAt            DateTime            @default(now())
+
+  thread             ForumThread?             @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  reply              ForumReply?              @relation(fields: [replyId], references: [id], onDelete: Cascade)
+  reporter           User                     @relation("ForumReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  resolvedBy         User?                    @relation("ForumReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolutionDecision ForumModerationDecision? @relation("ForumReportResolutionDecision", fields: [resolutionDecisionId], references: [id], onDelete: SetNull)
+
+  @@unique([threadId, reporterId])
+  @@unique([replyId, reporterId])
+  @@index([status, createdAt])
+}
+
+model ForumAppeal {
+  id                   String            @id @default(cuid())
+  threadId             String?
+  replyId              String?
+  ownerId              String
+  againstDecisionId    String?
+  statement            String
+  status               ForumAppealStatus @default(PENDING)
+  idempotencyKey       String            @unique
+  contentVersion       Int
+  resolutionDecisionId String?
+  resolvedById         String?
+  resolvedAt           DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  thread             ForumThread?              @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  reply              ForumReply?               @relation(fields: [replyId], references: [id], onDelete: Cascade)
+  owner              User                      @relation("ForumAppealOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  resolvedBy         User?                     @relation("ForumAppealResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  againstDecision    ForumModerationDecision?  @relation("ForumAppealAgainstDecision", fields: [againstDecisionId], references: [id], onDelete: SetNull)
+  resolutionDecision ForumModerationDecision?  @relation("ForumAppealResolutionDecision", fields: [resolutionDecisionId], references: [id], onDelete: SetNull)
+  outcomeDecisions   ForumModerationDecision[] @relation("ForumAppealOutcome")
+
+  @@index([threadId])
+  @@index([replyId])
 }
 
 model ForumVote {

@@ -3,9 +3,11 @@ import { asyncHandler } from "../../utils/async-handler";
 import { validate } from "../../middlewares/validate";
 import { optionalAuth, requireAuth, requireBarrioMember } from "../../middlewares/auth";
 import {
+  forumAppealRateLimiter,
   forumEditRateLimiter,
   forumIpRateLimiter,
   forumReplyRateLimiter,
+  forumReportRateLimiter,
   forumThreadRateLimiter
 } from "../../middlewares/rate-limit";
 import {
@@ -17,7 +19,9 @@ import {
   updateThreadSchema,
   createReplySchema,
   updateReplySchema,
-  voteSchema
+  voteSchema,
+  createForumReportSchema,
+  createForumAppealSchema
 } from "./forum.schema";
 import { forumController } from "./forum.controller";
 
@@ -84,6 +88,46 @@ forumRouter.patch(
   forumEditRateLimiter,
   validate({ params: replyIdParamSchema, body: updateReplySchema }),
   asyncHandler(forumController.updateReply)
+);
+
+// POST /barrios/:barrioSlug/forum/:subforumSlug/threads/:threadId/reports
+forumRouter.post(
+  "/:subforumSlug/threads/:threadId/reports",
+  requireAuth,
+  requireBarrioMember,
+  forumReportRateLimiter,
+  validate({ params: forumThreadParamSchema, body: createForumReportSchema }),
+  asyncHandler(forumController.report)
+);
+
+// POST /barrios/:barrioSlug/forum/:subforumSlug/threads/:threadId/replies/:replyId/reports
+forumRouter.post(
+  "/:subforumSlug/threads/:threadId/replies/:replyId/reports",
+  requireAuth,
+  requireBarrioMember,
+  forumReportRateLimiter,
+  validate({ params: replyIdParamSchema, body: createForumReportSchema }),
+  asyncHandler(forumController.report)
+);
+
+// POST /barrios/:barrioSlug/forum/:subforumSlug/threads/:threadId/appeals
+forumRouter.post(
+  "/:subforumSlug/threads/:threadId/appeals",
+  requireAuth,
+  requireBarrioMember,
+  forumAppealRateLimiter,
+  validate({ params: forumThreadParamSchema, body: createForumAppealSchema }),
+  asyncHandler(forumController.appeal)
+);
+
+// POST /barrios/:barrioSlug/forum/:subforumSlug/threads/:threadId/replies/:replyId/appeals
+forumRouter.post(
+  "/:subforumSlug/threads/:threadId/replies/:replyId/appeals",
+  requireAuth,
+  requireBarrioMember,
+  forumAppealRateLimiter,
+  validate({ params: replyIdParamSchema, body: createForumAppealSchema }),
+  asyncHandler(forumController.appeal)
 );
 
 // DELETE /barrios/:barrioSlug/forum/:subforumSlug/threads/:threadId

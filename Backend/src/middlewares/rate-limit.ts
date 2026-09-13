@@ -136,6 +136,22 @@ export const forumIpRateLimiter = createForumWriteLimiter({
   keyBy: "ip"
 });
 
+export const forumReportRateLimiter = createForumWriteLimiter({
+  code: "FORUM_REPORT_RATE_LIMIT",
+  message: "Alcanzaste el límite de reportes. Intentá nuevamente más tarde.",
+  limit: env.FORUM_REPORT_USER_LIMIT,
+  prefix: "rl:forum-report:",
+  keyBy: "user"
+});
+
+export const forumAppealRateLimiter = createForumWriteLimiter({
+  code: "FORUM_APPEAL_RATE_LIMIT",
+  message: "Alcanzaste el límite de apelaciones. Intentá nuevamente más tarde.",
+  limit: env.FORUM_APPEAL_USER_LIMIT,
+  prefix: "rl:forum-appeal:",
+  keyBy: "user"
+});
+
 export const deviceCleanupRateLimiter = rateLimit({
   passOnStoreError: true,
   windowMs: 60 * 60 * 1000,

@@ -20,6 +20,9 @@ beforeAll(async () => {
   await prisma.$transaction([
     prisma.notificationOutbox.deleteMany(),
     prisma.pushDevice.deleteMany(),
+    prisma.forumReport.deleteMany(),
+    prisma.forumAppeal.deleteMany(),
+    prisma.forumModerationDecision.deleteMany(),
     prisma.forumVote.deleteMany(),
     prisma.forumReply.deleteMany(),
     prisma.forumThread.deleteMany(),

@@ -44,5 +44,38 @@ export const getMarketplaceAssetQueueQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(50).default(20)
 }).strict();
 
+export const forumReasonCodeSchema = z.enum([
+  "POLICY_COMPLIANT",
+  "THREAT",
+  "HARASSMENT",
+  "DISCRIMINATION",
+  "INAPPROPRIATE_CONTENT",
+  "SPAM",
+  "REPORT_REVIEW",
+  "OTHER_POLICY"
+]);
+
+export const moderateForumDecisionSchema = z.object({
+  decision: z.enum(["APPROVE", "BLOCK", "REMOVE", "RESTORE"]),
+  reasonCode: forumReasonCodeSchema,
+  privateNote: z.string().trim().max(2000).optional(),
+  expectedVersion: z.number().int().nonnegative(),
+  idempotencyKey: z.string().uuid()
+}).strict();
+
+export const getForumQueueQuerySchema = z.object({
+  target: z.enum(["THREAD", "REPLY"]).default("THREAD"),
+  queue: z.enum(["PENDING_REVIEW", "REPORTED", "APPEALED", "BLOCKED", "REMOVED"]).default("PENDING_REVIEW"),
+  barrioSlug: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(50).default(20)
+}).strict();
+
+export const getForumMetricsQuerySchema = z.object({
+  barrioSlug: z.string().optional()
+}).strict();
+
+export type ModerateForumDecisionInput = z.infer<typeof moderateForumDecisionSchema>;
+export type ForumQueueQuery = z.infer<typeof getForumQueueQuerySchema>;
 export type ModerateMarketplaceDecisionInput = z.infer<typeof moderateMarketplaceDecisionSchema>;
 export type ModerateMarketplaceAssetDecisionInput = z.infer<typeof moderateMarketplaceAssetDecisionSchema>;
