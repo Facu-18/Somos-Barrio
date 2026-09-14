@@ -1,6 +1,7 @@
 import { ForumAppealStatus, ForumContentStatus, ForumModerationAction, ForumReportCategory, Prisma, UserRole } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { env } from "../../config/env";
+import { moderationMetrics } from "../../lib/metrics";
 import { ApiError } from "../../utils/api-error";
 import { serializable } from "../moderation/moderation.access";
 import {
@@ -446,6 +447,7 @@ export const forumService = {
         }
         if (content.userId === reporterId) throw new ApiError(400, "CANNOT_REPORT_OWN_CONTENT");
 
+        moderationMetrics.reports.inc({ domain: "FORUM", category: input.category });
         await tx.forumReport.create({
           data: { ...targetKey(target), reporterId, category: input.category, comment: input.comment }
         });

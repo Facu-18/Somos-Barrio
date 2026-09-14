@@ -67,5 +67,11 @@ npm run test:integration -- src/modules/auth/auth.integration.test.ts
 
 - Cambios de schema: `npm run prisma:migrate -- --name <nombre>` y luego `npm run prisma:generate`.
 - CI aplica las migraciones con `prisma migrate deploy`.
-- El contrato OpenAPI se mantiene en `src/lib/openapi.ts`; debe cambiar junto con rutas, schemas, DTOs y códigos de respuesta.
+- El contrato OpenAPI se mantiene en `src/lib/openapi.ts`; debe cambiar junto con rutas, schemas, DTOs y códigos de respuesta. `src/lib/openapi.test.ts` falla si una ruta real no está documentada, si se documenta una que no existe o si una ruta con rate limit no declara su 429.
 - Health: `/health/live` comprueba el proceso y `/health/ready` comprueba PostgreSQL y Redis.
+
+## Moderación, IA y observabilidad
+
+Políticas de contenido, versionado, umbrales, shadow mode, métricas (`/moderation/metrics/overview` y `/metrics` para Prometheus), alertas y runbook operativo: [docs/moderacion-ia.md](docs/moderacion-ia.md).
+
+Cada respuesta incluye `X-Request-Id`, que también aparece como `requestId` en los logs.

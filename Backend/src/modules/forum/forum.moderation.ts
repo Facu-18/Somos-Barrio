@@ -67,7 +67,9 @@ export function evaluateForumContent(target: ForumTarget["kind"], text: string, 
       ruleId,
       policyVersion: result.policyVersion,
       contentHash: result.contentHash,
-      categories: keepForHuman ? ["CONTENT_CORRECTED"] : result.categories
+      categories: keepForHuman ? ["CONTENT_CORRECTED"] : result.categories,
+      // Reglas en shadow mode que coincidieron: permiten medir falsos positivos antes de endurecerlas.
+      ...(result.shadowMatches.length ? { evidence: { shadowRuleIds: result.shadowMatches.map((match) => match.ruleId) } } : {})
     }
   };
 }

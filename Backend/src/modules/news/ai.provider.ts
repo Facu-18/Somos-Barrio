@@ -5,6 +5,8 @@ import { ApiError } from '../../utils/api-error';
 import { PromptInjectionGuard } from './prompt-injection.guard';
 import { AI_CODES, AiUsage, aiLimiter } from './ai.limiter';
 import { logger } from '../../config/logger';
+import { METRIC_EVENTS, aiMetrics, metrics } from '../../lib/metrics';
+import { REQUEST_ID_HEADER, getRequestId } from '../../lib/request-context';
 
 // Cambiar prompts, esquemas o límites de salida exige subir la versión: invalida la caché
 // y deja trazado con qué contrato se generó cada sugerencia.
@@ -119,10 +121,15 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
   private async complete(
     systemPrompt: string,
     userPayload: string,
-    options: { maxTokens: number; schemaName: string; jsonSchema: object }
+    options: { operation: 'summarize' | 'improve'; maxTokens: number; schemaName: string; jsonSchema: object }
   ): Promise<{ text: string; usage: AiUsage; finishReason: string }> {
     const baseUrl = env.AI_PROVIDER_URL.replace(/\/$/, '');
     const startedAt = Date.now();
+    const observe = (outcome: string) => {
+      aiMetrics.providerRequests.inc({ operation: options.operation, outcome });
+      aiMetrics.providerDuration.observe({ operation: options.operation }, (Date.now() - startedAt) / 1000);
+    };
+    const requestId = getRequestId();
     let response;
     try {
       // Sin tools, functions ni tool_choice: el modelo solo puede devolver texto.
@@ -143,7 +150,9 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
         {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${env.AI_API_KEY}`
+            'Authorization': `Bearer ${env.AI_API_KEY}`,
+            // Correlación con los logs del proveedor: id opaco, sin datos del usuario.
+            ...(requestId ? { [REQUEST_ID_HEADER]: requestId } : {})
           },
           timeout: 60000
         }
@@ -152,31 +161,37 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
         const code = error.code;
-        const requestId = error.response?.headers?.['x-request-id'];
+        const providerRequestId = error.response?.headers?.['x-request-id'];
         logger.warn({
           provider: 'lm-studio',
           transportCode: code,
           transportStatus: status,
           durationMs: Date.now() - startedAt,
-          ...(typeof requestId === 'string' ? { requestId } : {})
+          ...(typeof providerRequestId === 'string' ? { providerRequestId } : {})
         }, "Fallo del proveedor de IA");
 
         if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') {
+           observe('timeout');
            throw new ApiError(504, "El proveedor de IA no respondió a tiempo.");
         }
         // Sin conexión establecida el proveedor no procesó nada: el limiter devuelve la cuota.
         if (!error.response && (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'EAI_AGAIN')) {
+           observe('unreachable');
            throw new ApiError(502, "El proveedor de IA no pudo completar la solicitud.", { code: AI_CODES.providerUnreachable });
         }
         if (status === 429) {
+           observe('rate_limited');
+           metrics.recordEvent(METRIC_EVENTS.aiProviderRateLimited);
            throw new ApiError(429, "Límite de peticiones alcanzado con el proveedor de IA.");
         }
+        observe('error');
         throw new ApiError(502, "El proveedor de IA no pudo completar la solicitud.");
       }
+      observe('error');
       throw error;
     }
 
-    const requestId = response.headers?.['x-request-id'];
+    const providerRequestId = response.headers?.['x-request-id'];
     const choice = response.data?.choices?.[0];
     const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : 'unknown';
     const tokenCount = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null);
@@ -194,15 +209,27 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
       totalTokens: usage.totalTokens,
-      ...(typeof requestId === 'string' ? { requestId } : {})
+      ...(typeof providerRequestId === 'string' ? { providerRequestId } : {})
     }, "Respuesta del proveedor de IA");
+    if (usage.promptTokens !== null) aiMetrics.tokens.inc({ type: 'prompt' }, usage.promptTokens);
+    if (usage.completionTokens !== null) aiMetrics.tokens.inc({ type: 'completion' }, usage.completionTokens);
 
     const text = typeof choice?.message?.content === 'string' ? choice.message.content.trim() : '';
 
-    if (!text) throw invalidOutput();
+    if (!text) {
+      observe('invalid_output');
+      throw invalidOutput();
+    }
     // Una salida cortada por max_tokens puede ser JSON válido pero incompleto: nunca se publica.
-    if (finishReason === 'length') throw invalidOutput(AI_OUTPUT_TRUNCATED_CODE);
-    if (finishReason !== 'stop') throw invalidOutput();
+    if (finishReason === 'length') {
+      observe('truncated');
+      throw invalidOutput(AI_OUTPUT_TRUNCATED_CODE);
+    }
+    if (finishReason !== 'stop') {
+      observe('invalid_output');
+      throw invalidOutput();
+    }
+    observe('ok');
     return { text, usage, finishReason };
   }
 
@@ -211,6 +238,7 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
     const estimatedCostUsd = usage.promptTokens !== null && usage.completionTokens !== null
       ? Number(((usage.promptTokens * env.AI_COST_PER_1K_INPUT_TOKENS_USD + usage.completionTokens * env.AI_COST_PER_1K_OUTPUT_TOKENS_USD) / 1000).toFixed(6))
       : null;
+    if (estimatedCostUsd) aiMetrics.estimatedCostUsd.inc({}, estimatedCostUsd);
     return {
       provider: AI_PROVIDER_NAME,
       model: env.AI_MODEL,
@@ -241,7 +269,7 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
         const { text, usage, finishReason } = await this.complete(
           SUMMARY_SYSTEM_PROMPT,
           buildUserPayload({ title, content }),
-          { maxTokens, schemaName: 'news_summary', jsonSchema: summaryJsonSchema }
+          { operation: 'summarize', maxTokens, schemaName: 'news_summary', jsonSchema: summaryJsonSchema }
         );
         const output = parseOutput(text, summaryOutputSchema);
         return { result: { summary: output.summary, meta: this.meta(finishReason, usage) }, usage };
@@ -265,7 +293,7 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
         const { text, usage, finishReason } = await this.complete(
           IMPROVE_SYSTEM_PROMPT,
           buildUserPayload({ title, excerpt, content }),
-          { maxTokens, schemaName: 'news_improvement', jsonSchema: improveJsonSchema(maxContentChars) }
+          { operation: 'improve', maxTokens, schemaName: 'news_improvement', jsonSchema: improveJsonSchema(maxContentChars) }
         );
         const output = parseOutput(text, improveOutputSchema(maxContentChars));
         return { result: { ...output, meta: this.meta(finishReason, usage) }, usage };

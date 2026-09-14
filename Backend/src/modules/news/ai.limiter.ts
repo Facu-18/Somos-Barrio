@@ -3,6 +3,7 @@ import { redis as defaultRedis } from "../../lib/redis";
 import { env } from "../../config/env";
 import { logger } from "../../config/logger";
 import { ApiError } from "../../utils/api-error";
+import { aiMetrics } from "../../lib/metrics";
 
 export const AI_CODES = {
   disabled: "AI_DISABLED",
@@ -161,12 +162,14 @@ export class AiLimiter {
 
   private unavailable(error: unknown): never {
     if (error instanceof ApiError) throw error;
+    aiMetrics.limitRejections.inc({ code: AI_CODES.limitsUnavailable });
     logger.error({ code: (error as NodeJS.ErrnoException)?.code }, "No se pudo verificar cuota o presupuesto de IA");
     throw new ApiError(503, "La asistencia de IA no está disponible en este momento. Intentá más tarde.", { code: AI_CODES.limitsUnavailable });
   }
 
   private assertEnabled() {
     if (!this.options.enabled) {
+      aiMetrics.limitRejections.inc({ code: AI_CODES.disabled });
       throw new ApiError(503, "La asistencia de IA está desactivada temporalmente.", { code: AI_CODES.disabled });
     }
   }
@@ -181,6 +184,14 @@ export class AiLimiter {
       content: normalizeForHash(params.content)
     })).digest("hex");
     return { hash, cacheKey: `${this.options.keyPrefix}cache:${hash}`, flightKey: `${this.options.keyPrefix}flight:${hash}` };
+  }
+
+  /** Tokens del presupuesto global reservados o consumidos hoy (para métricas y alertas). */
+  async getBudgetStatus() {
+    const window = quotaWindow(this.options.now(), this.options.timeZone);
+    const spent = Number(await this.redis.get(`${this.options.keyPrefix}budget:${window.day}`) ?? 0);
+    const limit = this.options.globalDailyTokenBudget;
+    return { limit, spent, ratio: limit > 0 ? Number((spent / limit).toFixed(4)) : null, resetsAt: new Date(window.resetsAtMs).toISOString() };
   }
 
   async getQuotaStatus(userId: string): Promise<AiQuotaStatus> {
@@ -220,19 +231,24 @@ export class AiLimiter {
     try {
       for (;;) {
         const cached = await this.redis.get(cacheKey);
-        if (cached) return { result: JSON.parse(cached) as T, cached: true, usage: null };
+        if (cached) {
+          aiMetrics.cacheHits.inc({ operation: params.operation });
+          return { result: JSON.parse(cached) as T, cached: true, usage: null };
+        }
 
         const leader = await this.redis.set(flightKey, token, "PX", this.options.leaseMs, "NX");
         if (leader) {
           // El líder anterior pudo cachear y soltar el lock entre nuestro GET y el SET: se vuelve a mirar.
           const cachedAfterLock = await this.redis.get(cacheKey);
           if (cachedAfterLock) {
+            aiMetrics.cacheHits.inc({ operation: params.operation });
             await this.releaseFlight(flightKey, token);
             return { result: JSON.parse(cachedAfterLock) as T, cached: true, usage: null };
           }
           break;
         }
         if (this.options.now() >= deadline) {
+          aiMetrics.limitRejections.inc({ code: AI_CODES.userBusy });
           throw new ApiError(429, "Ya se está generando una sugerencia para este contenido. Esperá unos segundos.", { code: AI_CODES.userBusy });
         }
         await sleep(this.options.pollIntervalMs);
@@ -262,6 +278,7 @@ export class AiLimiter {
       this.rejectReservation(reservation[0], window.resetsAtMs);
     }
 
+    aiMetrics.generations.inc({ operation: params.operation });
     // 3. Generación y cierre de la reserva con el uso real.
     let outcome: { result: T; usage: AiUsage | null };
     try {
@@ -282,6 +299,8 @@ export class AiLimiter {
 
   private rejectReservation(code: string, resetsAtMs: number): never {
     const resetsAt = new Date(resetsAtMs).toISOString();
+    const metricCode = { QUOTA_EXCEEDED: AI_CODES.quotaExceeded, USER_BUSY: AI_CODES.userBusy, BUDGET_EXCEEDED: AI_CODES.budgetExceeded }[code] ?? AI_CODES.concurrency;
+    aiMetrics.limitRejections.inc({ code: metricCode });
     if (code === "QUOTA_EXCEEDED") {
       throw new ApiError(429, "Alcanzaste el límite diario de mejoras con IA.", { code: AI_CODES.quotaExceeded, remaining: 0, resetsAt });
     }

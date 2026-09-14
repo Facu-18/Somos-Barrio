@@ -20,7 +20,8 @@ export const globalRateLimiter = rateLimit({
   skip: (req) => isTest || req.originalUrl.startsWith(`${env.API_PREFIX}/health`),
   message: {
     success: false,
-    message: "Demasiadas solicitudes, intenta nuevamente en unos minutos."
+    message: "Demasiadas solicitudes, intenta nuevamente en unos minutos.",
+    details: { code: "GLOBAL_RATE_LIMIT" }
   },
   store: new RedisStore({ sendCommand })
 });
@@ -34,7 +35,8 @@ export const authRateLimiter = rateLimit({
   skip: () => isTest,
   message: {
     success: false,
-    message: "Demasiados intentos de autenticacion, espera unos minutos."
+    message: "Demasiados intentos de autenticacion, espera unos minutos.",
+    details: { code: "AUTH_RATE_LIMIT" }
   },
   store: new RedisStore({ sendCommand })
 });
@@ -49,7 +51,8 @@ export const uploadRateLimiter = rateLimit({
   skip: () => isTest,
   message: {
     success: false,
-    message: "Alcanzaste el limite de imagenes por hora."
+    message: "Alcanzaste el limite de imagenes por hora.",
+    details: { code: "UPLOAD_RATE_LIMIT" }
   },
   store: new RedisStore({ sendCommand, prefix: "rl:upload:" })
 });
@@ -62,7 +65,7 @@ export const marketplaceReportRateLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   skip: () => isTest,
-  message: { success: false, message: "Alcanzaste el límite de reportes. Intentá nuevamente más tarde." },
+  message: { success: false, message: "Alcanzaste el límite de reportes. Intentá nuevamente más tarde.", details: { code: "MARKETPLACE_REPORT_RATE_LIMIT" } },
   store: new RedisStore({ sendCommand, prefix: "rl:marketplace-report:" })
 });
 
@@ -74,7 +77,7 @@ export const marketplaceAppealRateLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   skip: () => isTest,
-  message: { success: false, message: "Alcanzaste el límite de apelaciones. Intentá nuevamente más tarde." },
+  message: { success: false, message: "Alcanzaste el límite de apelaciones. Intentá nuevamente más tarde.", details: { code: "MARKETPLACE_APPEAL_RATE_LIMIT" } },
   store: new RedisStore({ sendCommand, prefix: "rl:marketplace-appeal:" })
 });
 
@@ -161,7 +164,8 @@ export const deviceCleanupRateLimiter = rateLimit({
   skip: () => isTest,
   message: {
     success: false,
-    message: "Demasiados intentos de limpieza de dispositivos."
+    message: "Demasiados intentos de limpieza de dispositivos.",
+    details: { code: "DEVICE_CLEANUP_RATE_LIMIT" }
   },
   store: new RedisStore({ sendCommand, prefix: "rl:device-cleanup:" })
 });

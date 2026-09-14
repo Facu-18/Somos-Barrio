@@ -47,6 +47,7 @@ const notFound = errorResponse("Not Found");
 const conflict = errorResponse("Conflict");
 const unprocessable = errorResponse("Unprocessable Entity");
 const serviceUnavailable = errorResponse("Service Unavailable");
+const tooManyRequests = errorResponse("Too Many Requests: `details.code` identifica el límite alcanzado");
 const forumRateLimited = jsonResponse("Too Many Requests: `details.code` es `FORUM_THREAD_RATE_LIMIT`, `FORUM_REPLY_RATE_LIMIT`, `FORUM_EDIT_RATE_LIMIT` o `FORUM_IP_RATE_LIMIT`", {
   type: "object",
   required: ["success", "message", "details"],
@@ -181,6 +182,40 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
       summary: { type: "string", minLength: 1, maxLength: 600 },
       provider: { type: "string" }, model: { type: "string" }, promptVersion: { type: "string" },
       generationId: cuid(), generatedAt: dateTime()
+    }
+  },
+  ModerationMetricsOverview: {
+    type: "object",
+    required: ["scope", "window", "moderation", "queues", "ai", "alerts"],
+    properties: {
+      scope: { type: "string", enum: ["BARRIO", "GLOBAL"] },
+      window: { type: "object", properties: { days: { type: "integer" }, since: dateTime() } },
+      moderation: {
+        type: "object",
+        description: "Por dominio: `automated` (ALLOW/REVIEW/BLOCK), `manual` (por acción) y `policyVersions`. Además `shadowRules`, `forumOverrides` y `automatedBlocksLastHour`.",
+        additionalProperties: true
+      },
+      queues: {
+        type: "object",
+        properties: {
+          forum: { type: "object", additionalProperties: { type: "integer" } },
+          marketplace: { type: "object", additionalProperties: { type: "integer" } },
+          totalPending: { type: "integer" }, oldestPendingAt: dateTime(true), oldestPendingHours: { type: "number" }
+        }
+      },
+      ai: {
+        type: "object",
+        description: "Generaciones, cache hits, tokens, costo estimado, latencia media, desglose por operación, versión de prompt y finish_reason. `budget` es null salvo para ADMIN.",
+        additionalProperties: true
+      },
+      alerts: arrayOf({
+        type: "object", required: ["code", "severity", "message", "value", "threshold"],
+        properties: {
+          code: { type: "string", enum: ["AUTOMATED_BLOCK_SPIKE", "AI_PROVIDER_RATE_LIMITED", "QUEUE_BACKLOG", "QUEUE_STALE", "AI_BUDGET_NEAR_LIMIT"] },
+          severity: { type: "string", enum: ["warning", "critical"] },
+          message: { type: "string" }, value: { type: "number" }, threshold: { type: "number" }
+        }
+      })
     }
   },
   AiQuotaStatus: {
@@ -779,19 +814,19 @@ export const openapiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Auth"], summary: "Registro para navegador", description: "El refresh token se entrega solamente en la cookie httpOnly refresh_token.",
         requestBody: jsonBody(registerBody),
-        responses: { 201: created(ref("BrowserAuth")), 400: badRequest, 409: conflict, 503: serviceUnavailable }
+        responses: { 201: created(ref("BrowserAuth")), 400: badRequest, 409: conflict, 429: tooManyRequests, 503: serviceUnavailable }
       }
     },
     "/auth/login": {
       post: {
         tags: ["Auth"], summary: "Inicio de sesión para navegador", description: "El refresh token se entrega solamente en la cookie httpOnly refresh_token.",
-        requestBody: jsonBody(loginBody), responses: { 200: ok(ref("BrowserAuth")), 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+        requestBody: jsonBody(loginBody), responses: { 200: ok(ref("BrowserAuth")), 400: badRequest, 401: unauthorized, 429: tooManyRequests, 503: serviceUnavailable }
       }
     },
     "/auth/refresh": {
       post: {
         tags: ["Auth"], summary: "Rotar sesión de navegador", description: "Lee y rota la cookie httpOnly refresh_token. No recibe body.",
-        responses: { 200: ok(ref("BrowserAuth")), 401: unauthorized, 503: serviceUnavailable }
+        responses: { 200: ok(ref("BrowserAuth")), 401: unauthorized, 429: tooManyRequests, 503: serviceUnavailable }
       }
     },
     "/auth/logout": {
@@ -810,19 +845,19 @@ export const openapiSpec: OpenAPIV3.Document = {
     "/auth/mobile/register": {
       post: {
         tags: ["Auth"], summary: "Registro para cliente móvil", requestBody: jsonBody(registerBody),
-        responses: { 201: created(ref("MobileAuth")), 400: badRequest, 409: conflict, 503: serviceUnavailable }
+        responses: { 201: created(ref("MobileAuth")), 400: badRequest, 409: conflict, 429: tooManyRequests, 503: serviceUnavailable }
       }
     },
     "/auth/mobile/login": {
       post: {
         tags: ["Auth"], summary: "Inicio de sesión para cliente móvil", requestBody: jsonBody(loginBody),
-        responses: { 200: ok(ref("MobileAuth")), 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+        responses: { 200: ok(ref("MobileAuth")), 400: badRequest, 401: unauthorized, 429: tooManyRequests, 503: serviceUnavailable }
       }
     },
     "/auth/mobile/refresh": {
       post: {
         tags: ["Auth"], summary: "Rotar sesión móvil", requestBody: jsonBody(refreshBody),
-        responses: { 200: ok(ref("MobileAuth")), 400: badRequest, 401: unauthorized, 503: serviceUnavailable }
+        responses: { 200: ok(ref("MobileAuth")), 400: badRequest, 401: unauthorized, 429: tooManyRequests, 503: serviceUnavailable }
       }
     },
     "/auth/mobile/logout": {
@@ -855,7 +890,7 @@ export const openapiSpec: OpenAPIV3.Document = {
       post: {
         tags: ["Notificaciones"], summary: "Eliminar un registro push retenido", description: "Elimina exclusivamente el token Expo indicado. No requiere conservar credenciales de una sesión cerrada y está limitado por IP.",
         requestBody: jsonBody(expoTokenBody),
-        responses: { 204: noContent, 400: badRequest, 429: { description: "Demasiadas solicitudes" }, 503: serviceUnavailable }
+        responses: { 204: noContent, 400: badRequest, 429: tooManyRequests, 503: serviceUnavailable }
       }
     },
     "/upload": {
@@ -1387,6 +1422,14 @@ export const openapiSpec: OpenAPIV3.Document = {
         tags: ["Admin"], summary: "Verificar o desverificar comercio", security: bearerSecurity,
         requestBody: jsonBody({ type: "object", required: ["verified"], properties: { verified: { type: "boolean" } } }),
         responses: { 200: ok(ref("Business")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
+      }
+    },
+    "/moderation/metrics/overview": {
+      get: {
+        tags: ["Admin"], summary: "Métricas y alertas de moderación e IA", security: bearerSecurity,
+        description: "EDITOR ve solo su barrio; ADMIN puede filtrar por `barrioSlug` o ver todo. Incluye decisiones automáticas (ALLOW/REVIEW/BLOCK) y humanas, versiones de política, coincidencias de reglas en shadow mode, overrides por regla, colas, uso y costo de IA, y alertas activas. El presupuesto global de IA solo se incluye para ADMIN. Para scraping continuo existe `GET /metrics` en formato Prometheus (fuera de `/api/v1`, requiere `METRICS_TOKEN`).",
+        parameters: [queryParam("barrioSlug", { type: "string" }), queryParam("days", { type: "integer", minimum: 1, maximum: 90, default: 7 })],
+        responses: { 200: ok(ref("ModerationMetricsOverview")), 400: badRequest, 401: unauthorized, 403: forbidden, 404: notFound, 503: serviceUnavailable }
       }
     },
     "/moderation/forum": {

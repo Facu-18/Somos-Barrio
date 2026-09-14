@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from "axios";
 import { z } from "zod";
 import { env } from "../../config/env";
 import { logger } from "../../config/logger";
+import { imageModerationMetrics } from "../../lib/metrics";
 
 export type SightengineScores = {
   nudity: number;
@@ -92,6 +93,10 @@ export class SightengineProvider {
     }
 
     const startedAt = Date.now();
+    const observe = (outcome: string) => {
+      imageModerationMetrics.requests.inc({ outcome });
+      imageModerationMetrics.duration.observe({}, (Date.now() - startedAt) / 1000);
+    };
     try {
       const formData = new FormData();
       formData.append("media", new Blob([new Uint8Array(buffer)], { type: mimeType }), filename);
@@ -107,8 +112,10 @@ export class SightengineProvider {
       if (!parsed.success) {
         const requestId = typeof response.headers?.["x-request-id"] === "string" ? response.headers["x-request-id"] : undefined;
         logger.warn({ provider: "sightengine", transportStatus: response.status, durationMs: Date.now() - startedAt }, "Respuesta inválida del proveedor de imágenes");
+        observe("invalid_response");
         throw new SightengineProviderError(502, "PROVIDER_INVALID_RESPONSE", requestId);
       }
+      observe("ok");
 
       const data = parsed.data;
       const sexual = Math.max(data.nudity.sexual_activity, data.nudity.sexual_display, data.nudity.erotica);
@@ -136,6 +143,7 @@ export class SightengineProvider {
       const timeout = axios.isAxiosError(error) && (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT");
       const upstreamRateLimited = axios.isAxiosError(error) && error.response?.status === 429;
       const statusCode = timeout ? 504 : upstreamRateLimited ? 429 : 502;
+      observe(timeout ? "timeout" : upstreamRateLimited ? "rate_limited" : "error");
       logger.warn({
         provider: "sightengine",
         transportCode: axios.isAxiosError(error) ? error.code : undefined,

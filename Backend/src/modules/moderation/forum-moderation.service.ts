@@ -7,6 +7,7 @@ import {
   UserRole
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { moderationMetrics } from "../../lib/metrics";
 import { ApiError } from "../../utils/api-error";
 import {
   ForumTarget,
@@ -254,6 +255,8 @@ export const forumModerationService = {
           evidence: { openReports, actorRole: user.role }
         }
       });
+
+      moderationMetrics.manualDecisions.inc({ domain: "FORUM", action: transition.action });
 
       if (openReports > 0) {
         await tx.forumReport.updateMany({

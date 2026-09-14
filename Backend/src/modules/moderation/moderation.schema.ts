@@ -75,6 +75,11 @@ export const getForumMetricsQuerySchema = z.object({
   barrioSlug: z.string().optional()
 }).strict();
 
+export const metricsOverviewQuerySchema = z.object({
+  barrioSlug: z.string().optional(),
+  days: z.coerce.number().int().min(1).max(90).default(7)
+}).strict();
+
 export type ModerateForumDecisionInput = z.infer<typeof moderateForumDecisionSchema>;
 export type ForumQueueQuery = z.infer<typeof getForumQueueQuerySchema>;
 export type ModerateMarketplaceDecisionInput = z.infer<typeof moderateMarketplaceDecisionSchema>;

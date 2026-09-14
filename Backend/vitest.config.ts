@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    setupFiles: ["src/test/no-external-network.ts"],
     // Excluir tests de integración del run de unit tests
     exclude: ["src/**/*.integration.test.ts", "node_modules/**"],
     coverage: {

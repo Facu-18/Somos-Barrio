@@ -53,10 +53,14 @@ jobs:
       JWT_SECRET: ci_secret_for_testing_that_is_long_enough
       JWT_EXPIRES_IN: 15m
       JWT_REFRESH_EXPIRES_DAYS: 30
-      # Cloudinary (CI usa variables de entorno del repositorio)
-      CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-      CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
-      CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+      # Sin credenciales externas: proveedores apagados o apuntando a un puerto cerrado.
+      # Los tests además bloquean cualquier HTTP fuera de localhost (src/test/no-external-network.ts).
+      AI_PROVIDER_URL: http://127.0.0.1:9/v1
+      AI_API_KEY: ci-sin-proveedor
+      SIGHTENGINE_ENABLED: "false"
+      CLOUDINARY_CLOUD_NAME: ci-sin-cloudinary
+      CLOUDINARY_API_KEY: ci-sin-cloudinary
+      CLOUDINARY_API_SECRET: ci-sin-cloudinary
 
     steps:
       - name: Checkout

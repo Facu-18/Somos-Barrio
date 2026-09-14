@@ -1,6 +1,7 @@
 import { env } from "../../config/env";
 import { ApiError } from "../../utils/api-error";
 import { ContentNormalizer } from "../content-moderation/content-normalizer";
+import { moderationMetrics } from "../../lib/metrics";
 
 export const PROMPT_INJECTION_CODE = "PROMPT_INJECTION_DETECTED";
 export const AI_INPUT_TOO_LARGE_CODE = "AI_INPUT_TOO_LARGE";
@@ -56,6 +57,7 @@ export class PromptInjectionGuard {
       if (!input) continue;
       const ruleId = PromptInjectionGuard.detect(input);
       if (ruleId) {
+        moderationMetrics.promptInjectionRejected.inc({ ruleId });
         throw new ApiError(
           400,
           "El contenido no se puede procesar con la asistencia de IA. Revisalo y volvé a intentarlo.",
@@ -77,7 +79,10 @@ export class PromptInjectionGuard {
    * Verifica caracteres por campo, bytes totales y presupuesto estimado de tokens.
    */
   static validateLength(title: string, excerpt: string | null, content: string): number {
-    const tooLarge = (message: string) => new ApiError(400, message, { code: AI_INPUT_TOO_LARGE_CODE, limits: AI_INPUT_LIMITS, maxInputTokens: env.AI_MAX_INPUT_TOKENS });
+    const tooLarge = (message: string) => {
+      moderationMetrics.aiInputTooLarge.inc();
+      return new ApiError(400, message, { code: AI_INPUT_TOO_LARGE_CODE, limits: AI_INPUT_LIMITS, maxInputTokens: env.AI_MAX_INPUT_TOKENS });
+    };
 
     if (title.length > AI_INPUT_LIMITS.titleChars) throw tooLarge("El título excede el límite permitido para la asistencia de IA.");
     if (excerpt && excerpt.length > AI_INPUT_LIMITS.excerptChars) throw tooLarge("La descripción excede el límite permitido para la asistencia de IA.");

@@ -5,6 +5,7 @@ import { contentModerationService } from "../content-moderation/content-moderati
 import { marketplaceAssetService } from "../upload/marketplace-asset.service";
 import { logger } from "../../config/logger";
 import { env } from "../../config/env";
+import { moderationMetrics } from "../../lib/metrics";
 
 type CreatePostInput = {
   title: string;
@@ -149,6 +150,11 @@ async function serializable<T>(operation: (tx: Prisma.TransactionClient) => Prom
 
 function contentForModeration(post: { title: string; description: string; category: string; location?: string | null }) {
   return [post.title, post.description, post.category, post.location].filter(Boolean).join("\n");
+}
+
+// Reglas en shadow mode que coincidieron: quedan en la decisión para medir falsos positivos.
+function shadowEvidence(result: { shadowMatches: { ruleId: string }[] }) {
+  return result.shadowMatches.length ? { evidence: { shadowRuleIds: result.shadowMatches.map((match) => match.ruleId) } } : {};
 }
 
 function initialModerationStatus(decision: "ALLOW" | "REVIEW" | "BLOCK") {
@@ -315,6 +321,7 @@ export const marketplaceService = {
               domain: moderationResult.domain,
               severity: moderationResult.severity,
               contentHash: moderationResult.contentHash,
+              ...shadowEvidence(moderationResult),
               categories: moderationReasonCode === "IMAGE_POLICY"
                 ? ["IMAGE_POLICY"]
                 : moderationResult.categories
@@ -402,6 +409,7 @@ export const marketplaceService = {
         severity: cleanContentRequiresReview ? 'MEDIUM' : result.severity,
         reasonCode: moderationReasonCode,
         contentHash: result.contentHash,
+        ...shadowEvidence(result),
         categories: cleanContentRequiresReview ? [moderationReasonCode] : result.categories
       };
     }
@@ -530,6 +538,7 @@ export const marketplaceService = {
         }
         if (lockedPost.userId === requesterId) throw new ApiError(400, "No podés reportar tu propia publicación");
 
+        moderationMetrics.reports.inc({ domain: "MARKETPLACE", category: input.category });
         await tx.marketplaceReport.create({
           data: { postId, reporterId: requesterId, category: input.category as any, comment: input.comment }
         });

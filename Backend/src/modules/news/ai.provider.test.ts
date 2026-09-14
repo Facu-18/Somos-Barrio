@@ -120,7 +120,7 @@ describe("AI Provider", () => {
         transportCode: providerStatus ? "ERR_BAD_RESPONSE" : "ECONNREFUSED",
         transportStatus: providerStatus,
         durationMs: expect.any(Number),
-        ...(providerStatus ? { requestId: "request-123" } : {})
+        ...(providerStatus ? { providerRequestId: "request-123" } : {})
       }, "Fallo del proveedor de IA");
       expect(JSON.stringify((logger.warn as any).mock.calls)).not.toMatch(/provider-key|private prompt|config|headers/);
     });

@@ -12,8 +12,10 @@ import {
   moderateMarketplaceAssetDecisionSchema,
   getForumQueueQuerySchema,
   getForumMetricsQuerySchema,
-  moderateForumDecisionSchema
+  moderateForumDecisionSchema,
+  metricsOverviewQuerySchema
 } from "./moderation.schema";
+import { metricsService } from "../metrics/metrics.service";
 
 export const moderationRouter = Router();
 
@@ -74,4 +76,14 @@ moderationRouter.post(
   "/forum/replies/:replyId/decision",
   validate({ params: z.object({ replyId: z.string().cuid() }), body: moderateForumDecisionSchema }),
   asyncHandler(moderationController.moderateForumReply)
+);
+
+// ── Métricas y alertas (JSON) ────────────────────────────────────────────────
+moderationRouter.get(
+  "/metrics/overview",
+  validate({ query: metricsOverviewQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const overview = await metricsService.overview(req.user!.id, req.query as unknown as { barrioSlug?: string; days: number });
+    res.json({ success: true, data: overview });
+  })
 );

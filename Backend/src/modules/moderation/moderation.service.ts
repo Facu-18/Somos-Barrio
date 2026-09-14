@@ -6,6 +6,7 @@ import {
   UserRole
 } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { moderationMetrics } from "../../lib/metrics";
 import { ApiError } from "../../utils/api-error";
 import { marketplaceAssetService } from "../upload/marketplace-asset.service";
 import { ModerateMarketplaceAssetDecisionInput, ModerateMarketplaceDecisionInput } from "./moderation.schema";
@@ -135,7 +136,7 @@ export const moderationService = {
       appeals: { where: { status: "PENDING" as const }, select: { id: true, statement: true, createdAt: true } },
       decisions: {
         orderBy: { createdAt: "desc" as const },
-        select: { id: true, action: true, reasonCode: true, privateNote: true, status: true, fromVersion: true, toVersion: true, moderator: { select: { name: true } }, createdAt: true }
+        select: { id: true, action: true, reasonCode: true, privateNote: true, status: true, fromVersion: true, toVersion: true, ruleId: true, ruleVersion: true, policyVersion: true, moderator: { select: { name: true } }, createdAt: true }
       },
       assets: { select: publicAssetSelect, orderBy: [{ createdAt: "asc" as const }, { id: "asc" as const }] }
     };
@@ -211,6 +212,8 @@ export const moderationService = {
           categories: [input.reasonCode]
         }
       });
+
+      moderationMetrics.manualDecisions.inc({ domain: "MARKETPLACE", action: transition.action });
 
       await tx.marketplaceReport.updateMany({
         where: { postId, status: "OPEN" },

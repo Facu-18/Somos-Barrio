@@ -48,6 +48,15 @@ const envSchema = z.object({
   AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(6000),
   AI_JSON_SCHEMA_ENABLED: booleanFromEnv.default(true),
   AI_QUOTA_TIMEZONE: z.string().default("America/Argentina/Buenos_Aires").refine((value) => { try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; } catch { return false; } }, "Zona horaria IANA inválida"),
+  // Ids de reglas de moderación que se evalúan en shadow mode (separados por coma).
+  MODERATION_SHADOW_RULES: z.string().default("").transform((value) => value.split(",").map((id) => id.trim()).filter(Boolean)),
+  // Token para GET /metrics (Prometheus). Sin token el endpoint no existe.
+  METRICS_TOKEN: z.preprocess((value) => value === "" ? undefined : value, z.string().min(24).optional()),
+  ALERT_AUTOMATED_BLOCKS_PER_HOUR: z.coerce.number().int().positive().default(20),
+  ALERT_AI_PROVIDER_429_PER_15_MIN: z.coerce.number().int().positive().default(3),
+  ALERT_QUEUE_BACKLOG: z.coerce.number().int().positive().default(50),
+  ALERT_QUEUE_OLDEST_HOURS: z.coerce.number().positive().default(24),
+  ALERT_AI_BUDGET_RATIO: z.coerce.number().positive().max(1).default(0.8),
   AI_COST_PER_1K_INPUT_TOKENS_USD: z.coerce.number().nonnegative().default(0),
   AI_COST_PER_1K_OUTPUT_TOKENS_USD: z.coerce.number().nonnegative().default(0),
   JWT_SECRET: z.string().min(32, "JWT_SECRET debe tener al menos 32 caracteres"),

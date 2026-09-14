@@ -1,5 +1,6 @@
 import pino, { DestinationStream, LoggerOptions } from "pino";
 import { env } from "./env";
+import { getRequestId } from "../lib/request-context";
 
 const REDACTED = "[Redacted]";
 const providerCredentialNames = new Set([
@@ -110,6 +111,11 @@ export const createLogger = (
 ) => {
   const options: LoggerOptions = {
     level: nodeEnv === "development" ? "debug" : "info",
+    // Correlación: cualquier log emitido dentro de una request incluye su id opaco.
+    mixin() {
+      const requestId = getRequestId();
+      return requestId ? { requestId } : {};
+    },
     redact: {
       paths: [
         "req.headers.authorization",

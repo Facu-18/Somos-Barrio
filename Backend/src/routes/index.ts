@@ -15,28 +15,34 @@ import { uploadRouter }      from "../modules/upload/upload.routes";
 import { notificationsRouter } from "../modules/notifications/notifications.routes";
 import { moderationRouter }    from "../modules/moderation/moderation.routes";
 
+// Montajes explícitos: el test de paridad con OpenAPI recorre esta misma lista.
+export const routeMounts: [path: string, router: Router][] = [
+  ["/upload",   uploadRouter],
+  ["/health",   healthRouter],
+  ["/auth",     authRouter],
+  ["/search",   searchRouter],
+  ["/admin",    adminRouter],
+  ["/moderation", moderationRouter],
+  ["/barrios",  barriosRouter],
+
+  // Recursos anidados bajo barrio
+  ["/barrios/:barrioSlug/news",        newsRouter],
+  ["/barrios/:barrioSlug/businesses",  businessesRouter],
+  ["/barrios/:barrioSlug/marketplace", marketplaceRouter],
+  ["/barrios/:barrioSlug/forum",       forumRouter],
+  ["/barrios/:barrioSlug/events",      eventsRouter],
+
+  // Recursos de usuario
+  ["/messages", messagesRouter],
+  ["/notifications", notificationsRouter],
+
+  // Reseñas anidadas
+  ["/barrios/:barrioSlug/businesses/:businessSlug/reviews", reviewsRouter]
+];
+
 const apiRouter = Router();
-
-apiRouter.use("/upload",   uploadRouter);
-apiRouter.use("/health",   healthRouter);
-apiRouter.use("/auth",     authRouter);
-apiRouter.use("/search",   searchRouter);
-apiRouter.use("/admin",    adminRouter);
-apiRouter.use("/moderation", moderationRouter);
-apiRouter.use("/barrios",  barriosRouter);
-
-// Recursos anidados bajo barrio
-apiRouter.use("/barrios/:barrioSlug/news",        newsRouter);
-apiRouter.use("/barrios/:barrioSlug/businesses",  businessesRouter);
-apiRouter.use("/barrios/:barrioSlug/marketplace", marketplaceRouter);
-apiRouter.use("/barrios/:barrioSlug/forum",       forumRouter);
-apiRouter.use("/barrios/:barrioSlug/events",      eventsRouter);
-
-// Recursos de usuario
-apiRouter.use("/messages", messagesRouter);
-apiRouter.use("/notifications", notificationsRouter);
-
-// Reseñas anidadas
-apiRouter.use("/barrios/:barrioSlug/businesses/:businessSlug/reviews", reviewsRouter);
+for (const [path, router] of routeMounts) {
+  apiRouter.use(path, router);
+}
 
 export { apiRouter };
