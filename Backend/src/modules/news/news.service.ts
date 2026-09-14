@@ -3,6 +3,7 @@ import { prisma } from "../../lib/prisma";
 import { ApiError } from "../../utils/api-error";
 import { notificationsService } from "../notifications/notifications.service";
 import { newsSummaryProvider } from "./ai.provider";
+import { aiLimiter } from "./ai.limiter";
 import { claimNewsAiGeneration, recordNewsAiGeneration } from "./news-ai";
 
 export type CreateNewsInput = {
@@ -447,6 +448,11 @@ export const newsService = {
       output: { excerpt: draft.excerpt, content: draft.content, summary: draft.summary },
       meta: draft.meta
     });
+  },
+
+  async aiQuota(barrioSlug: string, userId: string) {
+    await resolveBarrio(barrioSlug);
+    return aiLimiter.getQuotaStatus(userId);
   },
 
   async assist(barrioSlug: string, userId: string, input: { title: string; excerpt?: string; content: string }) {

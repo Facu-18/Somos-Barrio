@@ -11,6 +11,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AiSuggestionField } from '../../components/AiSuggestionField';
 import { AiGeneration, aiErrorCode, aiErrorMessage } from '../../lib/ai';
+import { AiQuotaNotice } from '../../components/AiQuotaNotice';
+import { useAiQuota } from '../../hooks/useAiQuota';
 
 interface PendingNews {
   id: string;
@@ -106,6 +108,8 @@ export default function NewsInboxScreen() {
     );
   };
 
+  const aiQuota = useAiQuota(barrioSlug);
+
   const summarizeMutation = useMutation({
     mutationFn: async (slug: string) => {
       const response = await api.post(`/barrios/${barrioSlug}/news/editorial/${slug}/improve`);
@@ -120,13 +124,17 @@ export default function NewsInboxScreen() {
     onError: (error: any) => {
       Alert.alert("Error de IA", aiErrorMessage(error, "No se pudo generar la propuesta."));
       setSummarizingNews(null);
-    }
+    },
+    onSettled: () => aiQuota.refresh(),
   });
 
   const handleSummarize = (slug: string) => {
+    // Con una generación en curso ningún otro "Mejorar" dispara pedidos.
+    if (summarizeMutation.isPending || !aiQuota.canRequest) return;
     setSummarizingNews(slug);
     summarizeMutation.mutate(slug);
   };
+  const improveDisabled = summarizeMutation.isPending || !aiQuota.canRequest;
 
   const handleApproveWithSummary = () => {
     if (!summarizingNews || !aiGeneration) return;
@@ -188,6 +196,7 @@ export default function NewsInboxScreen() {
         contentContainerStyle={styles.content}
         refreshing={isRefetching}
         onRefresh={refetch}
+        ListHeaderComponent={<AiQuotaNotice quota={aiQuota.quota} isLoading={aiQuota.isLoading} isPending={summarizeMutation.isPending} />}
         ListEmptyComponent={<Text style={styles.emptyText}>No hay noticias pendientes de revisión.</Text>}
         renderItem={({ item }) => (
           <ClayCard>
@@ -215,9 +224,13 @@ export default function NewsInboxScreen() {
                   <MaterialCommunityIcons name="close" size={20} color={ClayTheme.colors.error} />
                 </TouchableOpacity>
                 
-                <TouchableOpacity 
-                  style={styles.summarizeBtn} 
+                <TouchableOpacity
+                  style={[styles.summarizeBtn, improveDisabled && { opacity: 0.45 }]}
                   onPress={() => handleSummarize(item.slug)}
+                  disabled={improveDisabled}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: improveDisabled, busy: summarizeMutation.isPending && summarizingNews === item.slug }}
+                  accessibilityLabel={`Mejorar con IA: ${item.title}`}
                 >
                   <MaterialCommunityIcons name="auto-fix" size={20} color={ClayTheme.categories.MUNICIPIO.text} />
                   <Text style={styles.summarizeBtnText}>Mejorar</Text>

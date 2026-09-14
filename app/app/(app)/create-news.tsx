@@ -14,6 +14,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AiSuggestionField } from '../../components/AiSuggestionField';
 import { AiGeneration, aiErrorMessage } from '../../lib/ai';
+import { AiQuotaNotice } from '../../components/AiQuotaNotice';
+import { useAiQuota } from '../../hooks/useAiQuota';
 
 const newsSchema = z.object({
   title: z.string().min(3, 'El título es muy corto').max(255),
@@ -78,6 +80,8 @@ export default function CreateNewsScreen() {
   const currentTitle = watch('title');
   const currentContent = watch('content');
 
+  const aiQuota = useAiQuota(barrioSlug);
+
   const improveMutation = useMutation({
     mutationFn: async (data: NewsForm) => {
       const sent = { title: data.title, excerpt: data.excerpt, content: data.content };
@@ -93,6 +97,8 @@ export default function CreateNewsScreen() {
     onError: (error: any) => {
       Alert.alert('No se pudo mejorar', aiErrorMessage(error, 'No se pudo conectar con el modelo de IA.'));
     },
+    // Éxito, caché o rechazo cambian la cuota: siempre se vuelve a consultar.
+    onSettled: () => aiQuota.refresh(),
   });
 
   const closeAssistReview = () => {
@@ -117,7 +123,12 @@ export default function CreateNewsScreen() {
     closeAssistReview();
   };
 
-  const improveWithAi = handleSubmit((data) => improveMutation.mutate(data));
+  const improveWithAi = handleSubmit((data) => {
+    // Un segundo tap mientras hay un pedido activo no dispara otra generación.
+    if (improveMutation.isPending) return;
+    improveMutation.mutate(data);
+  });
+  const aiButtonDisabled = improveMutation.isPending || !aiQuota.canRequest || currentTitle.length < 3 || currentContent.length < 10;
 
   const createMutation = useMutation({
     mutationFn: async (data: NewsForm) => {
@@ -254,11 +265,14 @@ export default function CreateNewsScreen() {
             )}
           />
 
+          <AiQuotaNotice quota={aiQuota.quota} isLoading={aiQuota.isLoading} isPending={improveMutation.isPending} />
+
           <TouchableOpacity
-            style={[styles.aiButton, (improveMutation.isPending || currentTitle.length < 3 || currentContent.length < 10) && styles.aiButtonDisabled]}
+            style={[styles.aiButton, aiButtonDisabled && styles.aiButtonDisabled]}
             onPress={improveWithAi}
-            disabled={improveMutation.isPending || currentTitle.length < 3 || currentContent.length < 10}
+            disabled={aiButtonDisabled}
             accessibilityRole="button"
+            accessibilityState={{ disabled: aiButtonDisabled, busy: improveMutation.isPending }}
             accessibilityLabel="Mejorar descripción y cuerpo con inteligencia artificial"
           >
             {improveMutation.isPending ? (

@@ -308,20 +308,27 @@ model News {
 // Sugerencia de IA guardada del lado servidor. Aplicarla exige que el contenido fuente no haya
 // cambiado (`sourceHash`) y que no se haya aplicado antes; proveedor y modelo nunca vienen del cliente.
 model NewsAiGeneration {
-  id            String          @id @default(cuid())
-  newsId        String?
-  barrioId      String
-  requestedById String?
-  operation     NewsAiOperation
-  promptVersion String
-  provider      String
-  model         String
-  finishReason  String
-  sourceHash    String
-  output        Json
-  appliedAt     DateTime?
-  appliedById   String?
-  createdAt     DateTime        @default(now())
+  id               String          @id @default(cuid())
+  newsId           String?
+  barrioId         String
+  requestedById    String?
+  operation        NewsAiOperation
+  promptVersion    String
+  provider         String
+  model            String
+  finishReason     String
+  sourceHash       String
+  output           Json
+  // Uso informado por el proveedor; en resultados de caché no hay consumo nuevo.
+  cached           Boolean         @default(false)
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  durationMs       Int?
+  estimatedCostUsd Decimal?        @db.Decimal(12, 6)
+  appliedAt        DateTime?
+  appliedById      String?
+  createdAt        DateTime        @default(now())
 
   news        News?  @relation(fields: [newsId], references: [id], onDelete: Cascade)
   barrio      Barrio @relation(fields: [barrioId], references: [id], onDelete: Cascade)

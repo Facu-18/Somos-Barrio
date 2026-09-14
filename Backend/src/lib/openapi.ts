@@ -183,14 +183,27 @@ const schemas: Record<string, OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject
       generationId: cuid(), generatedAt: dateTime()
     }
   },
+  AiQuotaStatus: {
+    type: "object",
+    required: ["enabled", "dailyLimit", "used", "remaining", "resetsAt", "requestInProgress"],
+    properties: {
+      enabled: { type: "boolean", description: "false cuando AI_ENABLED está apagado" },
+      dailyLimit: { type: "integer", minimum: 0 },
+      used: { type: "integer", minimum: 0 },
+      remaining: { type: "integer", minimum: 0 },
+      resetsAt: { ...dateTime(), description: "Próxima medianoche en AI_QUOTA_TIMEZONE, en UTC" },
+      requestInProgress: { type: "boolean", description: "Hay una generación en curso para este usuario" }
+    }
+  },
   NewsAiGeneration: {
     type: "object",
     description: "Sugerencia guardada del lado servidor. La app debe mostrar el diff entre `original` y `suggestion` y pedir confirmación antes de aplicarla.",
-    required: ["generationId", "operation", "promptVersion", "provider", "model", "generatedAt", "sourceHash", "original", "suggestion"],
+    required: ["generationId", "operation", "promptVersion", "provider", "model", "generatedAt", "cached", "sourceHash", "original", "suggestion"],
     properties: {
       generationId: cuid(),
       operation: { type: "string", enum: ["SUMMARIZE", "IMPROVE", "ASSIST"] },
       promptVersion: { type: "string" }, provider: { type: "string" }, model: { type: "string" }, generatedAt: dateTime(),
+      cached: { type: "boolean", description: "true si se sirvió de la caché: no consumió cuota ni llamó al proveedor" },
       sourceHash: { type: "string", pattern: "^[a-f0-9]{64}$", description: "SHA-256 del título, descripción y cuerpo sobre los que se generó" },
       original: {
         type: "object", required: ["title", "excerpt", "content"],
@@ -616,13 +629,13 @@ const newsAssistBody: OpenAPIV3.SchemaObject = {
     content: { type: "string", minLength: 10, maxLength: 12000 }
   }
 };
-const aiAssistDescription = "Los campos se envían al modelo como datos JSON delimitados, nunca como instrucciones, y sin tools. Antes de llamar al proveedor se aplican límites (título 255, descripción 500, cuerpo 12.000 caracteres, 48 KB y `AI_MAX_INPUT_TOKENS` estimados) y un detector determinista de inyección de prompt. La salida se valida con JSON Schema estricto y se rechaza si está truncada, tiene claves extra o tamaños fuera de rango.";
+const aiAssistDescription = "Cuota atómica de `AI_DAILY_USER_LIMIT` generaciones diarias por usuario (reinicio a medianoche de `AI_QUOTA_TIMEZONE`), una generación en curso por usuario, concurrencia global `AI_MAX_CONCURRENCY` y presupuesto diario de tokens `AI_GLOBAL_DAILY_TOKEN_BUDGET` reservado antes de llamar al proveedor. El contenido idéntico (normalizado, mismo modelo y versión de prompt) se sirve de la caché sin consumir cuota, y los pedidos idénticos simultáneos comparten una sola llamada. Si Redis no permite verificar cuota o presupuesto, se rechaza. Los campos se envían al modelo como datos JSON delimitados, nunca como instrucciones, y sin tools. Antes de llamar al proveedor se aplican límites (título 255, descripción 500, cuerpo 12.000 caracteres, 48 KB y `AI_MAX_INPUT_TOKENS` estimados) y un detector determinista de inyección de prompt. La salida se valida con JSON Schema estricto y se rechaza si está truncada, tiene claves extra o tamaños fuera de rango.";
 const aiErrorResponses = {
   400: errorResponse("Bad Request: validación, `details.code` = `PROMPT_INJECTION_DETECTED` (mensaje genérico) o `AI_INPUT_TOO_LARGE`"),
   401: unauthorized, 403: forbidden, 404: notFound,
-  429: errorResponse("Too Many Requests: cuota diaria, solicitud en curso o límite del proveedor"),
+  429: errorResponse("Too Many Requests: `details.code` = `AI_DAILY_QUOTA_EXCEEDED` (con `remaining` y `resetsAt`) o `AI_REQUEST_IN_PROGRESS`; sin código si limita el proveedor"),
   502: errorResponse("Bad Gateway: proveedor caído o `details.code` = `AI_OUTPUT_INVALID` / `AI_OUTPUT_TRUNCATED`"),
-  503: serviceUnavailable,
+  503: errorResponse("Service Unavailable: `details.code` = `AI_DISABLED`, `AI_GLOBAL_BUDGET_EXCEEDED`, `AI_CONCURRENCY_LIMIT` o `AI_LIMITS_UNAVAILABLE` (Redis no disponible: falla cerrado)"),
   504: errorResponse("Gateway Timeout")
 };
 const approveNewsBody: OpenAPIV3.SchemaObject = {
@@ -935,6 +948,13 @@ export const openapiSpec: OpenAPIV3.Document = {
     "/barrios/{barrioSlug}/news/assist": {
       parameters: [barrioSlugParam],
       post: { tags: ["Noticias"], summary: "Mejorar un borrador con IA antes de enviarlo", description: aiAssistDescription, security: bearerSecurity, requestBody: jsonBody(newsAssistBody), responses: { 200: ok(ref("NewsAiGeneration")), ...aiErrorResponses } }
+    },
+    "/barrios/{barrioSlug}/news/ai/quota": {
+      parameters: [barrioSlugParam],
+      get: {
+        tags: ["Noticias"], summary: "Consultar mi cuota diaria de asistencia con IA", security: bearerSecurity,
+        responses: { 200: ok(ref("AiQuotaStatus")), 401: unauthorized, 403: forbidden, 404: notFound, 503: errorResponse("Service Unavailable: `AI_LIMITS_UNAVAILABLE`") }
+      }
     },
     "/barrios/{barrioSlug}/news/manage/{newsSlug}": {
       parameters: [barrioSlugParam, newsSlugParam],

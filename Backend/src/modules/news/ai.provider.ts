@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { env } from '../../config/env';
 import { ApiError } from '../../utils/api-error';
 import { PromptInjectionGuard } from './prompt-injection.guard';
-import { AiLimiter } from './ai.limiter';
+import { AI_CODES, AiUsage, aiLimiter } from './ai.limiter';
 import { logger } from '../../config/logger';
 
 // Cambiar prompts, esquemas o límites de salida exige subir la versión: invalida la caché
@@ -23,6 +23,10 @@ export interface AiGenerationMeta {
   promptVersion: string;
   finishReason: string;
   generatedAt: string;
+  // true si vino de la caché: no consumió cuota, presupuesto ni proveedor.
+  cached: boolean;
+  usage: AiUsage | null;
+  estimatedCostUsd: number | null;
 }
 
 export interface NewsSummaryResult {
@@ -116,7 +120,7 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
     systemPrompt: string,
     userPayload: string,
     options: { maxTokens: number; schemaName: string; jsonSchema: object }
-  ): Promise<{ text: string; tokens: number; finishReason: string }> {
+  ): Promise<{ text: string; usage: AiUsage; finishReason: string }> {
     const baseUrl = env.AI_PROVIDER_URL.replace(/\/$/, '');
     const startedAt = Date.now();
     let response;
@@ -160,6 +164,10 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
         if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') {
            throw new ApiError(504, "El proveedor de IA no respondió a tiempo.");
         }
+        // Sin conexión establecida el proveedor no procesó nada: el limiter devuelve la cuota.
+        if (!error.response && (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'EAI_AGAIN')) {
+           throw new ApiError(502, "El proveedor de IA no pudo completar la solicitud.", { code: AI_CODES.providerUnreachable });
+        }
         if (status === 429) {
            throw new ApiError(429, "Límite de peticiones alcanzado con el proveedor de IA.");
         }
@@ -171,51 +179,75 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
     const requestId = response.headers?.['x-request-id'];
     const choice = response.data?.choices?.[0];
     const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : 'unknown';
+    const tokenCount = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null);
+    const usage: AiUsage = {
+      promptTokens: tokenCount(response.data?.usage?.prompt_tokens),
+      completionTokens: tokenCount(response.data?.usage?.completion_tokens),
+      totalTokens: tokenCount(response.data?.usage?.total_tokens),
+      durationMs: Date.now() - startedAt
+    };
     logger.info({
       provider: 'lm-studio',
       transportStatus: response.status,
-      durationMs: Date.now() - startedAt,
+      durationMs: usage.durationMs,
       finishReason,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
       ...(typeof requestId === 'string' ? { requestId } : {})
     }, "Respuesta del proveedor de IA");
 
     const text = typeof choice?.message?.content === 'string' ? choice.message.content.trim() : '';
-    const tokens = typeof response.data?.usage?.total_tokens === 'number' ? response.data.usage.total_tokens : 0;
 
     if (!text) throw invalidOutput();
     // Una salida cortada por max_tokens puede ser JSON válido pero incompleto: nunca se publica.
     if (finishReason === 'length') throw invalidOutput(AI_OUTPUT_TRUNCATED_CODE);
     if (finishReason !== 'stop') throw invalidOutput();
-    return { text, tokens, finishReason };
+    return { text, usage, finishReason };
   }
 
-  private meta(finishReason: string): AiGenerationMeta {
+  private meta(finishReason: string, usage: AiUsage): AiGenerationMeta {
+    // Costo estimado solo cuando el proveedor informa el uso y hay tarifas configuradas.
+    const estimatedCostUsd = usage.promptTokens !== null && usage.completionTokens !== null
+      ? Number(((usage.promptTokens * env.AI_COST_PER_1K_INPUT_TOKENS_USD + usage.completionTokens * env.AI_COST_PER_1K_OUTPUT_TOKENS_USD) / 1000).toFixed(6))
+      : null;
     return {
       provider: AI_PROVIDER_NAME,
       model: env.AI_MODEL,
       promptVersion: NEWS_PROMPT_VERSION,
       finishReason,
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      cached: false,
+      usage,
+      estimatedCostUsd
     };
   }
 
-  async summarizeNews(userId: string, title: string, content: string): Promise<NewsSummaryResult> {
-    PromptInjectionGuard.validateLength(title, null, content);
-    PromptInjectionGuard.validate(title, content);
+  // Un resultado cacheado conserva su contenido, pero no representa consumo nuevo.
+  private withCacheFlag<T extends { meta: AiGenerationMeta }>(execution: { result: T; cached: boolean }): T {
+    if (!execution.cached) return execution.result;
+    return { ...execution.result, meta: { ...execution.result.meta, cached: true, usage: null, estimatedCostUsd: null } };
+  }
 
-    return AiLimiter.executeWithLimits(
+  async summarizeNews(userId: string, title: string, content: string): Promise<NewsSummaryResult> {
+    const estimatedInputTokens = PromptInjectionGuard.validateLength(title, null, content);
+    PromptInjectionGuard.validate(title, content);
+    const maxTokens = 300;
+
+    const execution = await aiLimiter.executeWithLimits(
       userId,
-      { operation: 'summarize', promptVersion: NEWS_PROMPT_VERSION, title, content },
+      { operation: 'summarize', promptVersion: NEWS_PROMPT_VERSION, model: env.AI_MODEL, title, content, estimatedTokens: estimatedInputTokens + maxTokens },
       async () => {
-        const { text, tokens, finishReason } = await this.complete(
+        const { text, usage, finishReason } = await this.complete(
           SUMMARY_SYSTEM_PROMPT,
           buildUserPayload({ title, content }),
-          { maxTokens: 300, schemaName: 'news_summary', jsonSchema: summaryJsonSchema }
+          { maxTokens, schemaName: 'news_summary', jsonSchema: summaryJsonSchema }
         );
         const output = parseOutput(text, summaryOutputSchema);
-        return { result: { summary: output.summary, meta: this.meta(finishReason) }, tokens };
+        return { result: { summary: output.summary, meta: this.meta(finishReason, usage) }, usage };
       }
     );
+    return this.withCacheFlag(execution);
   }
 
   async improveNews(userId: string, title: string, excerpt: string | null, content: string): Promise<NewsEditorialDraftResult> {
@@ -226,19 +258,20 @@ export class OpenAiNewsSummaryProvider implements NewsSummaryProvider {
     const maxContentChars = Math.min(CONTENT_MAX_CHARS, Math.max(content.length * 2, content.length + 2000));
     const maxTokens = Math.min(env.AI_MAX_OUTPUT_TOKENS, estimatedInputTokens * 2 + 400);
 
-    return AiLimiter.executeWithLimits(
+    const execution = await aiLimiter.executeWithLimits(
       userId,
-      { operation: 'improve', promptVersion: NEWS_PROMPT_VERSION, title, excerpt, content },
+      { operation: 'improve', promptVersion: NEWS_PROMPT_VERSION, model: env.AI_MODEL, title, excerpt, content, estimatedTokens: estimatedInputTokens + maxTokens },
       async () => {
-        const { text, tokens, finishReason } = await this.complete(
+        const { text, usage, finishReason } = await this.complete(
           IMPROVE_SYSTEM_PROMPT,
           buildUserPayload({ title, excerpt, content }),
           { maxTokens, schemaName: 'news_improvement', jsonSchema: improveJsonSchema(maxContentChars) }
         );
         const output = parseOutput(text, improveOutputSchema(maxContentChars));
-        return { result: { ...output, meta: this.meta(finishReason) }, tokens };
+        return { result: { ...output, meta: this.meta(finishReason, usage) }, usage };
       }
     );
+    return this.withCacheFlag(execution);
   }
 }
 

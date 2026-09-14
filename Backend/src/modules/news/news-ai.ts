@@ -38,7 +38,13 @@ export async function recordNewsAiGeneration(params: {
       model: params.meta.model,
       finishReason: params.meta.finishReason,
       sourceHash,
-      output: params.output
+      output: params.output,
+      cached: params.meta.cached,
+      promptTokens: params.meta.usage?.promptTokens ?? null,
+      completionTokens: params.meta.usage?.completionTokens ?? null,
+      totalTokens: params.meta.usage?.totalTokens ?? null,
+      durationMs: params.meta.usage?.durationMs ?? null,
+      estimatedCostUsd: params.meta.estimatedCostUsd
     }
   });
 
@@ -49,6 +55,8 @@ export async function recordNewsAiGeneration(params: {
     provider: generation.provider,
     model: generation.model,
     generatedAt: generation.createdAt,
+    // Si vino de la caché no consumió cuota; el uso de tokens y el costo quedan solo del lado servidor.
+    cached: generation.cached,
     sourceHash,
     // El original viaja junto a la sugerencia para que la app muestre el diff antes de aplicarla.
     original: { title: params.source.title, excerpt: params.source.excerpt || null, content: params.source.content },

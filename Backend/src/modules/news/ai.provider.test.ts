@@ -11,7 +11,7 @@ import {
 } from "./ai.provider";
 import { ApiError } from "../../utils/api-error";
 import { logger } from "../../config/logger";
-import { AiLimiter } from "./ai.limiter";
+import { AI_CODES, aiLimiter } from "./ai.limiter";
 import { AI_INPUT_TOO_LARGE_CODE, PROMPT_INJECTION_CODE } from "./prompt-injection.guard";
 
 vi.mock("axios");
@@ -19,9 +19,15 @@ vi.mock("../../config/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn() }
 }));
 // Aísla los tests de Redis: cuota, lock y caché se prueban por separado.
-vi.mock("./ai.limiter", () => ({
-  AiLimiter: {
-    executeWithLimits: vi.fn(async (_userId: string, _params: unknown, generate: () => Promise<{ result: unknown }>) => (await generate()).result)
+const limiterState = vi.hoisted(() => ({ cachedResult: null as unknown }));
+vi.mock("./ai.limiter", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ai.limiter")>()),
+  aiLimiter: {
+    executeWithLimits: vi.fn(async (_userId: string, _params: unknown, generate: () => Promise<{ result: unknown; usage: unknown }>) => {
+      if (limiterState.cachedResult) return { result: limiterState.cachedResult, cached: true, usage: null };
+      const outcome = await generate();
+      return { ...outcome, cached: false };
+    })
   }
 }));
 const mockedAxios = axios as Mocked<typeof axios>;
@@ -52,6 +58,7 @@ describe("AI Provider", () => {
   beforeEach(() => {
     mockedAxios.post.mockReset();
     vi.clearAllMocks();
+    limiterState.cachedResult = null;
     mockedAxios.isAxiosError.mockImplementation((error: unknown) => (
       typeof error === "object" && error !== null && "isAxiosError" in error
     ));
@@ -172,7 +179,7 @@ describe("AI Provider", () => {
       )).rejects.toMatchObject({ statusCode: 400, details: { code: PROMPT_INJECTION_CODE } });
 
       expect(mockedAxios.post).not.toHaveBeenCalled();
-      expect(AiLimiter.executeWithLimits).not.toHaveBeenCalled();
+      expect(aiLimiter.executeWithLimits).not.toHaveBeenCalled();
     });
 
     it("rechaza entradas fuera de presupuesto antes de consumir el proveedor", async () => {
@@ -186,11 +193,57 @@ describe("AI Provider", () => {
       await newsSummaryProvider.improveNews("user-1", "Corte de agua", null, "El lunes habrá un corte de agua programado en la zona.");
 
       expect(sentRequest().max_tokens).toBeGreaterThan(400);
-      expect(AiLimiter.executeWithLimits).toHaveBeenCalledWith(
+      expect(aiLimiter.executeWithLimits).toHaveBeenCalledWith(
         "user-1",
-        expect.objectContaining({ operation: "improve", promptVersion: NEWS_PROMPT_VERSION }),
+        expect.objectContaining({ operation: "improve", promptVersion: NEWS_PROMPT_VERSION, estimatedTokens: expect.any(Number) }),
         expect.any(Function)
       );
+    });
+  });
+
+  describe("uso y caché", () => {
+    it("informa usage, duración y costo estimado cuando el proveedor los reporta", async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        headers: {},
+        data: {
+          choices: [{ message: { content: JSON.stringify(validImprovement) }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 80, completion_tokens: 40, total_tokens: 120 }
+        }
+      });
+
+      const result = await newsSummaryProvider.improveNews("user-1", "Corte de agua", null, "El lunes habrá un corte de agua programado.");
+      expect(result.meta).toMatchObject({
+        cached: false,
+        usage: { promptTokens: 80, completionTokens: 40, totalTokens: 120, durationMs: expect.any(Number) },
+        estimatedCostUsd: 0
+      });
+    });
+
+    it("deja usage en null cuando el proveedor no lo informa", async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        headers: {},
+        data: { choices: [{ message: { content: JSON.stringify({ summary: "Resumen." }) }, finish_reason: "stop" }] }
+      });
+
+      const result = await newsSummaryProvider.summarizeNews("user-1", "Corte de agua", "El lunes no habrá agua.");
+      expect(result.meta.usage).toMatchObject({ promptTokens: null, completionTokens: null, totalTokens: null });
+      expect(result.meta.estimatedCostUsd).toBeNull();
+    });
+
+    it("marca los resultados cacheados sin atribuirles consumo", async () => {
+      limiterState.cachedResult = { ...validImprovement, meta: { provider: "OpenAI-Compatible", model: "m", promptVersion: NEWS_PROMPT_VERSION, finishReason: "stop", generatedAt: new Date().toISOString(), cached: false, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2, durationMs: 5 }, estimatedCostUsd: 0.01 } };
+
+      const result = await newsSummaryProvider.improveNews("user-1", "Corte de agua", null, "El lunes habrá un corte de agua programado.");
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+      expect(result.meta).toMatchObject({ cached: true, usage: null, estimatedCostUsd: null });
+    });
+
+    it("distingue un proveedor inalcanzable para que el limiter devuelva la cuota", async () => {
+      mockedAxios.post.mockRejectedValue({ isAxiosError: true, code: "ECONNREFUSED" });
+      await expect(newsSummaryProvider.summarizeNews("user-1", "Corte", "Contenido de prueba"))
+        .rejects.toMatchObject({ statusCode: 502, details: { code: AI_CODES.providerUnreachable } });
     });
   });
 

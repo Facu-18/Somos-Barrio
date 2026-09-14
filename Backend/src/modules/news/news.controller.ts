@@ -89,6 +89,11 @@ export const newsController = {
     res.json({ success: true, data: draft });
   },
 
+  async aiQuota(req: Request, res: Response): Promise<void> {
+    const quota = await newsService.aiQuota(req.params.barrioSlug, req.user!.id);
+    res.json({ success: true, data: quota });
+  },
+
   async assist(req: Request, res: Response): Promise<void> {
     const draft = await newsService.assist(req.params.barrioSlug, req.user!.id, req.body);
     res.json({ success: true, data: draft });

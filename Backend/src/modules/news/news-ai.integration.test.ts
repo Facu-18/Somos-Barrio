@@ -209,6 +209,89 @@ describe("Asistencia de noticias con IA — integration", () => {
     expect(await prisma.newsAiGeneration.count({ where: { newsId: pending.id } })).toBe(0);
   });
 
+  describe("cuota, caché y estado", () => {
+    it("expone cuota restante y próximo reinicio sin detalles internos", async () => {
+      const author = await registerAndLogin({ name: "Autor cuota", barrioSlug });
+      const res = await request(app).get(news("/ai/quota")).set(auth(author.token));
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual({
+        enabled: true,
+        dailyLimit: env.AI_DAILY_USER_LIMIT,
+        used: 0,
+        remaining: env.AI_DAILY_USER_LIMIT,
+        resetsAt: expect.any(String),
+        requestInProgress: false
+      });
+      expect(new Date(res.body.data.resetsAt).getTime()).toBeGreaterThan(Date.now());
+      expect((await request(app).get(news("/ai/quota"))).status).toBe(401);
+    });
+
+    it("la cuarta mejora diaria devuelve 429 sin llamar al proveedor", async () => {
+      const author = await registerAndLogin({ name: "Autor límite", barrioSlug });
+      const assist = (index: number) => request(app).post(news("/assist")).set(auth(author.token)).send({
+        title: "Feria del sábado",
+        content: `Se realizará una feria de artesanos en la plaza, edición ${index} (${Date.now()}).`
+      });
+
+      for (let index = 0; index < env.AI_DAILY_USER_LIMIT; index += 1) {
+        providerReturns(suggestionFor(`Contenido ${index}`));
+        expect((await assist(index)).status).toBe(200);
+      }
+      mockedAxios.post.mockClear();
+
+      const fourth = await assist(99);
+      expect(fourth.status).toBe(429);
+      expect(fourth.body.details).toMatchObject({ code: "AI_DAILY_QUOTA_EXCEEDED", remaining: 0, resetsAt: expect.any(String) });
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+
+      const quota = await request(app).get(news("/ai/quota")).set(auth(author.token));
+      expect(quota.body.data).toMatchObject({ used: env.AI_DAILY_USER_LIMIT, remaining: 0 });
+    });
+
+    it("repetir exactamente el contenido usa caché y no consume cuota", async () => {
+      const author = await registerAndLogin({ name: "Autor caché", barrioSlug });
+      const body = { title: "Corte de luz", content: `Mañana cortan la luz de 9 a 12 en la manzana (${Date.now()}).` };
+      providerReturns(suggestionFor(body.content));
+
+      const first = await request(app).post(news("/assist")).set(auth(author.token)).send(body);
+      const second = await request(app).post(news("/assist")).set(auth(author.token)).send({ ...body, content: `  ${body.content}  ` });
+
+      expect(first.body.data.cached).toBe(false);
+      expect(second.status).toBe(200);
+      expect(second.body.data).toMatchObject({ cached: true, suggestion: first.body.data.suggestion });
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+      expect((await request(app).get(news("/ai/quota")).set(auth(author.token))).body.data.used).toBe(1);
+      // Cada pedido queda registrado, pero solo el primero con consumo del proveedor.
+      expect(await prisma.newsAiGeneration.findUniqueOrThrow({ where: { id: second.body.data.generationId } }))
+        .toMatchObject({ cached: true, totalTokens: null });
+      expect(await prisma.newsAiGeneration.findUniqueOrThrow({ where: { id: first.body.data.generationId } }))
+        .toMatchObject({ cached: false, totalTokens: 90, durationMs: expect.any(Number) });
+    });
+
+    it("dos taps simultáneos generan una sola llamada al proveedor", async () => {
+      const author = await registerAndLogin({ name: "Autor doble tap", barrioSlug });
+      const body = { title: "Vacunación", content: `Vacunación antigripal el jueves en la escuela 12 (${Date.now()}).` };
+      mockedAxios.post.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return {
+          status: 200,
+          headers: {},
+          data: { choices: [{ message: { content: JSON.stringify(suggestionFor(body.content)) }, finish_reason: "stop" }], usage: { total_tokens: 90 } }
+        };
+      });
+
+      const [first, second] = await Promise.all([
+        request(app).post(news("/assist")).set(auth(author.token)).send(body),
+        request(app).post(news("/assist")).set(auth(author.token)).send(body)
+      ]);
+
+      expect([first.status, second.status]).toEqual([200, 200]);
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+      expect([first.body.data.cached, second.body.data.cached].sort()).toEqual([false, true]);
+    });
+  });
+
   it("la asistencia del autor devuelve la generación sin asociarla a una noticia", async () => {
     const author = await registerAndLogin({ name: "Autor asistencia", barrioSlug });
     const content = `Se realizará una feria de artesanos en la plaza central el sábado (${Date.now()}).`;

@@ -39,6 +39,14 @@ newsRouter.get(
   asyncHandler(newsController.getManagedBySlug)
 );
 
+// GET /barrios/:barrioSlug/news/ai/quota — antes de /:newsSlug para que no la capture
+newsRouter.get(
+  "/ai/quota",
+  requireAuth,
+  requireBarrioMember,
+  asyncHandler(newsController.aiQuota)
+);
+
 newsRouter.get(
   "/editorial/pending",
   requireAuth,
