@@ -11,6 +11,7 @@ import { api, setAccessToken } from '../../lib/api';
 import { authStorage } from '../../lib/auth';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFormBottomPadding } from '../../hooks/useTabBarSpace';
 
 const loginSchema = z.object({
   email: z.string().email('Ese correo no parece válido'),
@@ -20,6 +21,7 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginScreen() {
+const formBottomPadding = useFormBottomPadding();
   const [globalError, setGlobalError] = useState('');
   const queryClient = useQueryClient();
 
@@ -58,7 +60,7 @@ export default function LoginScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: formBottomPadding }]} keyboardShouldPersistTaps="handled">
         
         {/* Clay Header */}
         <View style={styles.header}>

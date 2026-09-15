@@ -2,12 +2,10 @@ import { Tabs } from 'expo-router';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { View, StyleSheet, Text } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TAB_BAR_HEIGHT, useTabBarSpace } from '../../../hooks/useTabBarSpace';
 
 export default function TabsLayout() {
-  const insets = useSafeAreaInsets();
-
-  const bottomOffset = Math.max(24, insets.bottom + 8);
+  const { barBottom } = useTabBarSpace();
 
   return (
     <Tabs
@@ -17,14 +15,25 @@ export default function TabsLayout() {
           position: 'absolute',
           left: 16,
           right: 16,
-          bottom: bottomOffset,
-          height: 70,
+          bottom: barBottom,
+          height: TAB_BAR_HEIGHT,
           backgroundColor: ClayTheme.colors.surface,
           borderRadius: 28,
+          // React Navigation agrega una línea superior que se nota sobre la barra redondeada.
+          borderTopWidth: 0,
           paddingHorizontal: 4,
           paddingTop: 0,
           paddingBottom: 0,
           ...ClayTheme.shadows.elevated,
+        },
+        // El ítem por defecto trae padding y un alto de ícono fijo que descentran el ícono con etiqueta.
+        tabBarItemStyle: {
+          height: TAB_BAR_HEIGHT,
+          paddingVertical: 0,
+        },
+        tabBarIconStyle: {
+          width: '100%',
+          height: '100%',
         },
         tabBarShowLabel: false, // We'll render custom labels in tabBarIcon for precise control
         sceneStyle: {
@@ -45,7 +54,7 @@ export default function TabsLayout() {
                   color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
                 />
               </View>
-              <Text style={focused ? styles.labelActive : styles.labelInactive}>Inicio</Text>
+              <Text style={focused ? styles.labelActive : styles.labelInactive} numberOfLines={1} maxFontSizeMultiplier={1.1}>Inicio</Text>
             </View>
           ),
         }}
@@ -63,7 +72,7 @@ export default function TabsLayout() {
                   color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
                 />
               </View>
-              <Text style={focused ? styles.labelActive : styles.labelInactive}>Mercado</Text>
+              <Text style={focused ? styles.labelActive : styles.labelInactive} numberOfLines={1} maxFontSizeMultiplier={1.1}>Mercado</Text>
             </View>
           ),
         }}
@@ -81,7 +90,7 @@ export default function TabsLayout() {
                   color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
                 />
               </View>
-              <Text style={focused ? styles.labelActive : styles.labelInactive}>Comercios</Text>
+              <Text style={focused ? styles.labelActive : styles.labelInactive} numberOfLines={1} maxFontSizeMultiplier={1.1}>Comercios</Text>
             </View>
           ),
         }}
@@ -99,7 +108,7 @@ export default function TabsLayout() {
                   color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
                 />
               </View>
-              <Text style={focused ? styles.labelActive : styles.labelInactive}>Foro</Text>
+              <Text style={focused ? styles.labelActive : styles.labelInactive} numberOfLines={1} maxFontSizeMultiplier={1.1}>Foro</Text>
             </View>
           ),
         }}
@@ -117,7 +126,7 @@ export default function TabsLayout() {
                   color={focused ? ClayTheme.colors.primaryText : ClayTheme.colors.textFaint} 
                 />
               </View>
-              <Text style={focused ? styles.labelActive : styles.labelInactive}>Eventos</Text>
+              <Text style={focused ? styles.labelActive : styles.labelInactive} numberOfLines={1} maxFontSizeMultiplier={1.1}>Eventos</Text>
             </View>
           ),
         }}
@@ -132,23 +141,24 @@ const styles = StyleSheet.create({
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    height: 70,
+    gap: 3,
+    height: TAB_BAR_HEIGHT,
+    width: '100%',
     paddingHorizontal: 2,
   },
   // Pill, no un rectangulo de radio 13: es el lenguaje del sistema para
   // "chip activo", y es el mismo radio que los chips de categoria.
   iconActiveBg: {
     backgroundColor: ClayTheme.colors.primary,
-    width: 48,
-    height: 34,
+    width: 46,
+    height: 32,
     borderRadius: ClayTheme.borders.radiusPill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconInactiveBg: {
-    width: 48,
-    height: 34,
+    width: 46,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -11,6 +11,7 @@ import { api, setAccessToken } from '../../lib/api';
 import { authStorage } from '../../lib/auth';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFormBottomPadding } from '../../hooks/useTabBarSpace';
 
 const registerSchema = z.object({
   name: z.string().min(2, 'El nombre es muy corto'),
@@ -21,6 +22,7 @@ const registerSchema = z.object({
 type RegisterForm = z.infer<typeof registerSchema>;
 
 export default function RegisterScreen() {
+const formBottomPadding = useFormBottomPadding();
   const [globalError, setGlobalError] = useState('');
   const queryClient = useQueryClient();
 
@@ -60,7 +62,7 @@ export default function RegisterScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: formBottomPadding }]} keyboardShouldPersistTaps="handled">
         
         <View style={styles.header}>
           <View style={styles.logoContainer}>

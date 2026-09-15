@@ -38,6 +38,33 @@ export const adminService = {
 
   // ── Negocios ───────────────────────────────────────────────────────────────
 
+  async createBusiness(input: any) {
+    const existing = await prisma.business.findUnique({ where: { slug: input.slug } });
+    if (existing) throw new ApiError(409, "Ya existe un comercio con ese slug");
+
+    return prisma.business.create({
+      data: input,
+      include: { owner: { select: { id: true, name: true, email: true } } }
+    });
+  },
+
+  async updateBusiness(businessId: string, input: any) {
+    const business = await prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw new ApiError(404, "Comercio no encontrado");
+
+    return prisma.business.update({
+      where: { id: businessId },
+      data: input,
+      include: { owner: { select: { id: true, name: true, email: true } } }
+    });
+  },
+
+  async deleteBusiness(businessId: string) {
+    const business = await prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw new ApiError(404, "Comercio no encontrado");
+
+    await prisma.business.delete({ where: { id: businessId } });
+  },
   async verifyBusiness(businessId: string, verified: boolean) {
     const business = await prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw new ApiError(404, "Comercio no encontrado");

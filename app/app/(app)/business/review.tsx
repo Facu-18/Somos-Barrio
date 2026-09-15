@@ -10,6 +10,7 @@ import { ClayInput } from '../../../components/ClayInput';
 import { ClayButton } from '../../../components/ClayButton';
 import { StarRating } from '../../../components/StarRating';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFormBottomPadding } from '../../../hooks/useTabBarSpace';
 
 export default function CreateReviewScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
@@ -17,6 +18,7 @@ export default function CreateReviewScreen() {
   const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
+  const formBottomPadding = useFormBottomPadding();
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -54,7 +56,7 @@ export default function CreateReviewScreen() {
         <Text style={styles.headerTitle}>Calificar comercio</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: formBottomPadding }]} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <Text style={styles.title}>¿Qué te pareció?</Text>
           <Text style={styles.subtitle}>Tu opinión ayuda a otros vecinos a conocer más sobre este comercio.</Text>

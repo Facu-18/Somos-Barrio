@@ -29,3 +29,12 @@ export const adminNewsQuerySchema = z.object({
 export const verifyBusinessSchema = z.object({
   verified: z.boolean()
 });
+
+import { createBusinessSchema } from "../businesses/businesses.schema";
+
+export const adminCreateBusinessSchema = createBusinessSchema.extend({
+  barrioId: z.string().cuid("ID de barrio inválido"),
+  ownerId: z.string().cuid("ID de dueño inválido")
+});
+
+export const adminUpdateBusinessSchema = adminCreateBusinessSchema.partial().omit({ slug: true });

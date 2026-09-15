@@ -9,6 +9,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MarketplacePost } from '../../types/api';
+import { useMarketplacePostActions } from '../../hooks/useMarketplacePostActions';
 
 const moderationReasonLabels: Record<string, string> = {
   PROHIBITED_ITEM: 'producto prohibido',
@@ -26,6 +27,7 @@ export default function MyPostsScreen() {
   const barrioSlug = user!.barrio!.slug;
   const insets = useSafeAreaInsets();
   const [page, setPage] = useState(1);
+  const { toggleSold, confirmDelete, pendingPostId } = useMarketplacePostActions(barrioSlug);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['market', barrioSlug, 'me', page],
@@ -35,9 +37,13 @@ export default function MyPostsScreen() {
     }
   });
 
-  const renderItem = ({ item }: { item: MarketplacePost }) => (
-    <TouchableOpacity 
-      style={styles.card}
+  const renderItem = ({ item }: { item: MarketplacePost }) => {
+    const busy = pendingPostId === item.id;
+    const canToggleSold = item.moderationStatus !== 'REMOVED';
+    return (
+    <View style={styles.card}>
+    <TouchableOpacity
+      style={styles.cardMain}
       onPress={() => router.push(`/(app)/market/${item.id}`)}
     >
       <View style={styles.imageContainer}>
@@ -79,16 +85,44 @@ export default function MyPostsScreen() {
           </Text>
         </View>
       </View>
-      <TouchableOpacity
-        style={styles.editButton}
-        onPress={() => router.push(`/(app)/create-market?postId=${item.id}`)}
-        accessibilityRole="button"
-        accessibilityLabel={`Editar ${item.title}`}
-      >
-        <MaterialCommunityIcons name="pencil-outline" size={21} color={ClayTheme.colors.primaryText} />
-      </TouchableOpacity>
     </TouchableOpacity>
-  );
+      <View style={styles.actions}>
+        {canToggleSold && (
+          <TouchableOpacity
+            style={[styles.actionButton, busy && styles.disabled]}
+            onPress={() => toggleSold(item)}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel={item.availability === 'SOLD' ? `Volver a publicar ${item.title}` : `Marcar ${item.title} como vendido`}
+          >
+            <MaterialCommunityIcons name={item.availability === 'SOLD' ? 'refresh' : 'check-circle-outline'} size={17} color={ClayTheme.states.positive.text} />
+            <Text style={[styles.actionText, { color: ClayTheme.states.positive.text }]}>{item.availability === 'SOLD' ? 'Volver a publicar' : 'Vendido'}</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.actionButton, busy && styles.disabled]}
+          onPress={() => router.push(`/(app)/create-market?postId=${item.id}`)}
+          disabled={busy}
+          accessibilityRole="button"
+          accessibilityLabel={`Editar ${item.title}`}
+        >
+          <MaterialCommunityIcons name="pencil-outline" size={17} color={ClayTheme.colors.primaryText} />
+          <Text style={styles.actionText}>Editar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, busy && styles.disabled]}
+          onPress={() => confirmDelete(item)}
+          disabled={busy}
+          accessibilityRole="button"
+          accessibilityLabel={`Eliminar ${item.title}`}
+        >
+          <MaterialCommunityIcons name="trash-can-outline" size={17} color={ClayTheme.states.danger.text} />
+          <Text style={[styles.actionText, { color: ClayTheme.states.danger.text }]}>Eliminar</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -172,12 +206,35 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: ClayTheme.colors.surface,
     borderRadius: 20,
     padding: 12,
+    gap: 10,
     ...ClayTheme.shadows.elevated,
+  },
+  cardMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: 40,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    backgroundColor: ClayTheme.colors.inputBg,
+  },
+  actionText: {
+    fontFamily: ClayTheme.typography.fontFamily.bold,
+    fontSize: 12,
+    color: ClayTheme.colors.primaryText,
   },
   imageContainer: {
     width: 70,
@@ -193,14 +250,6 @@ const styles = StyleSheet.create({
   },
   noImage: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: ClayTheme.colors.inputBg,
     alignItems: 'center',
     justifyContent: 'center',
   },

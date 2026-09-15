@@ -10,6 +10,8 @@ import { ClayInput } from '../../../components/ClayInput';
 import { ClayButton } from '../../../components/ClayButton';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
+import { useFormBottomPadding } from '../../../hooks/useTabBarSpace';
+import { TimePickerModal, TimeValue, formatTime } from '../../../components/TimePickerModal';
 
 // Configurar calendario en español
 LocaleConfig.locales['es'] = {
@@ -26,13 +28,15 @@ export default function CreateEventScreen() {
   const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
+  const formBottomPadding = useFormBottomPadding();
 
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
   const [selectedDate, setSelectedDate] = useState(''); // YYYY-MM-DD
-  const [timeStr, setTimeStr] = useState(''); // HH:MM
+  const [time, setTime] = useState<TimeValue | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   const formatDateString = (dateString: string) => {
     if (!dateString) return '';
@@ -41,15 +45,10 @@ export default function CreateEventScreen() {
   };
 
   const parseDateTime = () => {
-    if (!selectedDate || !timeStr) return null;
+    if (!selectedDate || !time) return null;
     const [year, month, day] = selectedDate.split('-').map(Number);
-    const timeParts = timeStr.split(':');
-    if (timeParts.length !== 2) return null;
 
-    const hour = parseInt(timeParts[0], 10);
-    const min = parseInt(timeParts[1], 10);
-
-    const d = new Date(year, month - 1, day, hour, min);
+    const d = new Date(year, month - 1, day, time.hour, time.minute);
     if (isNaN(d.getTime())) return null;
     return d;
   };
@@ -62,7 +61,7 @@ export default function CreateEventScreen() {
       
       const parsedDate = parseDateTime();
       if (!parsedDate) {
-        throw new Error('Debés seleccionar una fecha y escribir una hora válida (HH:MM).');
+        throw new Error('Elegí la fecha y la hora del evento.');
       }
 
       if (parsedDate.getTime() < Date.now()) {
@@ -97,7 +96,7 @@ export default function CreateEventScreen() {
         <Text style={styles.headerTitle}>Nuevo evento</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: formBottomPadding }]} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <ClayInput
             label="Título"
@@ -130,15 +129,21 @@ export default function CreateEventScreen() {
               </TouchableOpacity>
             </View>
 
-            <ClayInput
-              label="Hora (HH:MM)"
-              placeholder="Ej. 18:30"
-              value={timeStr}
-              onChangeText={setTimeStr}
-              containerStyle={[styles.inputSpacing, { flex: 1 }]}
-              keyboardType="number-pad"
-              maxLength={5}
-            />
+            <View style={[styles.inputSpacing, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>Hora</Text>
+              <TouchableOpacity
+                style={styles.dateButton}
+                onPress={() => setShowTimePicker(true)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={time ? `Hora del evento: ${formatTime(time)}` : 'Elegir hora del evento'}
+              >
+                <Text style={time ? styles.dateText : styles.datePlaceholder}>
+                  {time ? formatTime(time) : 'Elegir'}
+                </Text>
+                <MaterialCommunityIcons name="clock-outline" size={20} color={ClayTheme.colors.primary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ClayInput
@@ -160,6 +165,16 @@ export default function CreateEventScreen() {
           />
         </View>
       </ScrollView>
+
+      <TimePickerModal
+        visible={showTimePicker}
+        value={time}
+        onConfirm={(value) => {
+          setTime(value);
+          setShowTimePicker(false);
+        }}
+        onClose={() => setShowTimePicker(false)}
+      />
 
       <Modal visible={showCalendar} transparent animationType="fade">
         <View style={styles.modalOverlay}>

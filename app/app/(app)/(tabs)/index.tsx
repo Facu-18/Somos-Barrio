@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTabBarSpace } from '../../../hooks/useTabBarSpace';
 import { useQuery } from '@tanstack/react-query';
 import { ClayTheme, categoryLabel, categoryStyle } from '../../../constants/ClayTheme';
 import { ClayCard } from '../../../components/ClayCard';
@@ -30,7 +30,8 @@ interface NewsItem {
 }
 
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
+  // Antes de cualquier return temprano: el FAB "Proponer" mide 54 de alto.
+  const { fabBottom, listPaddingBottom } = useTabBarSpace(54);
   const { data: user, isLoading: isLoadingUser } = useAuth();
 
   const barrioSlug = user!.barrio!.slug;
@@ -57,15 +58,13 @@ export default function HomeScreen() {
   }
 
   // El FAB se apoya sobre la tab bar flotante (alto 70 + su separación inferior).
-  const fabBottom = Math.max(24, insets.bottom + 8) + 70 + 14;
-
   return (
     <View style={styles.container}>
       <FlatList
         {...listPerf}
         data={data ?? []}
         keyExtractor={(news) => news.id}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: listPaddingBottom }]}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         ListHeaderComponent={
@@ -197,7 +196,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 22,
     paddingTop: ClayTheme.spacing.xl,
-    paddingBottom: 170,
+
   },
   header: {
     marginBottom: ClayTheme.spacing.lg,

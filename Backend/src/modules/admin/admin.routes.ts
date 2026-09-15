@@ -9,7 +9,9 @@ import {
   adminNewsQuerySchema,
   createBarrioSchema,
   updateBarrioSchema,
-  verifyBusinessSchema
+  verifyBusinessSchema,
+  adminCreateBusinessSchema,
+  adminUpdateBusinessSchema
 } from "./admin.schema";
 import { adminController } from "./admin.controller";
 
@@ -47,6 +49,24 @@ adminRouter.delete(
 );
 
 // ── Negocios ───────────────────────────────────────────────────────────────
+adminRouter.post(
+  "/businesses",
+  validate({ body: adminCreateBusinessSchema }),
+  asyncHandler(adminController.createBusiness)
+);
+
+adminRouter.patch(
+  "/businesses/:businessId",
+  validate({ params: adminBusinessIdParamSchema, body: adminUpdateBusinessSchema }),
+  asyncHandler(adminController.updateBusiness)
+);
+
+adminRouter.delete(
+  "/businesses/:businessId",
+  validate({ params: adminBusinessIdParamSchema }),
+  asyncHandler(adminController.deleteBusiness)
+);
+
 adminRouter.patch(
   "/businesses/:businessId/verify",
   validate({ params: adminBusinessIdParamSchema, body: verifyBusinessSchema }),

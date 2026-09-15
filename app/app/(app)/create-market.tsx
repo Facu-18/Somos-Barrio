@@ -14,6 +14,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MarketplaceAssetStatus, MarketplaceAssetUpload, MarketplacePost } from '../../types/api';
+import { useFormBottomPadding } from '../../hooks/useTabBarSpace';
 
 const marketSchema = z.object({
   title: z.string().min(3, 'El título es muy corto').max(255),
@@ -56,6 +57,7 @@ export default function CreateMarketScreen() {
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const insets = useSafeAreaInsets();
+  const formBottomPadding = useFormBottomPadding();
 
   const { data: postToEdit, isLoading: isLoadingPost, refetch: refetchPost } = useQuery<MarketplacePost>({
     queryKey: ['market', barrioSlug, postId],
@@ -254,7 +256,7 @@ export default function CreateMarketScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: formBottomPadding }]} keyboardShouldPersistTaps="handled">
         <View style={styles.form}>
           {globalError ? <Text style={styles.globalError}>{globalError}</Text> : null}
 

@@ -6,6 +6,7 @@ import { ClayTheme } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
+import { useTabBarSpace } from '../../../hooks/useTabBarSpace';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { EmptyState } from '../../../components/EmptyState';
 
@@ -26,6 +27,7 @@ interface EventItem {
 
 export default function EventsScreen() {
   const { data: user, isLoading: isLoadingUser } = useAuth();
+  const { fabBottom, listPaddingBottom } = useTabBarSpace(64);
   const barrioSlug = user!.barrio!.slug;
   const [upcoming, setUpcoming] = useState(true);
 
@@ -75,7 +77,7 @@ export default function EventsScreen() {
         {...listPerf}
         data={data ?? []}
         keyExtractor={(event) => event.id}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: listPaddingBottom }]}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         ListHeaderComponent={(
           <>
@@ -157,7 +159,7 @@ export default function EventsScreen() {
       />
 
       <TouchableOpacity
-        style={[styles.fab, { bottom: 100 }]} // Above the tab bar
+        style={[styles.fab, { bottom: fabBottom }]}
         activeOpacity={0.8}
         onPress={() => router.push('/(app)/event/create')}
         accessibilityRole="button"
@@ -182,7 +184,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 60,
-    paddingBottom: 120, // space for absolute tab bar
     paddingHorizontal: 22,
   },
   header: {

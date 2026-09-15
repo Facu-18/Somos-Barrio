@@ -6,6 +6,7 @@ import { ClayTheme } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
+import { useTabBarSpace } from '../../../hooks/useTabBarSpace';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { EmptyState } from '../../../components/EmptyState';
 
@@ -24,6 +25,7 @@ interface MarketItem {
 
 export default function MarketScreen() {
   const { data: user, isLoading: isLoadingUser } = useAuth();
+  const { fabBottom, listPaddingBottom } = useTabBarSpace(62);
   const barrioSlug = user!.barrio!.slug;
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
@@ -67,7 +69,7 @@ export default function MarketScreen() {
         keyExtractor={(item) => item.id}
         numColumns={2}
         columnWrapperStyle={styles.grid}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: listPaddingBottom }]}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         ListHeaderComponent={(
           <>
@@ -137,7 +139,7 @@ export default function MarketScreen() {
       <TouchableOpacity 
         activeOpacity={0.8}
         onPress={() => router.push('/(app)/create-market')}
-        style={styles.fab}
+        style={[styles.fab, { bottom: fabBottom }]}
         accessibilityRole="button"
         accessibilityLabel="Publicar producto"
       >
@@ -160,7 +162,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 60,
-    paddingBottom: 120, // space for tab bar
     paddingHorizontal: 22,
   },
   headerContainer: {
@@ -275,7 +276,6 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 24,
-    bottom: 110, // space for tab bar
     width: 62,
     height: 62,
     borderRadius: 31,

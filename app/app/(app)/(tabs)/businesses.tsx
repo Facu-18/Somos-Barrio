@@ -6,6 +6,7 @@ import { ClayTheme, categoryStyle } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
+import { useTabBarSpace } from '../../../hooks/useTabBarSpace';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { EmptyState } from '../../../components/EmptyState';
 
@@ -25,6 +26,7 @@ interface BusinessItem {
 
 export default function BusinessesScreen() {
   const { data: user, isLoading: isLoadingUser } = useAuth();
+  const { listPaddingBottom } = useTabBarSpace();
   const barrioSlug = user!.barrio!.slug;
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
@@ -59,7 +61,7 @@ export default function BusinessesScreen() {
       style={styles.container} 
       data={data ?? []}
       keyExtractor={(business) => business.id}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: listPaddingBottom }]}
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       ListHeaderComponent={(
         <>
@@ -155,7 +157,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingTop: 60,
-    paddingBottom: 120, // space for absolute tab bar
     paddingHorizontal: 22,
   },
   header: {

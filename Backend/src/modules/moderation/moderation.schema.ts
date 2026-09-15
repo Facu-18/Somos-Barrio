@@ -23,7 +23,7 @@ export const moderateMarketplaceDecisionSchema = z.object({
 }).strict();
 
 export const getMarketplaceQueueQuerySchema = z.object({
-  queue: z.enum(["PENDING_REVIEW", "REPORTED", "REJECTED", "REMOVED", "APPEALED", "DELETED"]).optional(),
+  queue: z.enum(["PENDING_REVIEW", "REPORTED", "REJECTED", "REMOVED", "APPEALED", "DELETED", "APPROVED"]).optional(),
   barrioSlug: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(50).default(20)

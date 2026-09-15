@@ -6,6 +6,7 @@ import { ClayTheme } from '../../../constants/ClayTheme';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../hooks/useAuth';
+import { useTabBarSpace } from '../../../hooks/useTabBarSpace';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { EmptyState } from '../../../components/EmptyState';
 import { ForumContentStatus, forumStatusInfo } from '../../../lib/forum';
@@ -34,6 +35,7 @@ interface Thread {
 
 export default function ForumScreen() {
   const { data: user, isLoading: isLoadingUser } = useAuth();
+  const { fabBottom, listPaddingBottom } = useTabBarSpace(62);
   const barrioSlug = user!.barrio!.slug;
 
   const [selectedSubforum, setSelectedSubforum] = useState<string | null>(null);
@@ -122,7 +124,7 @@ export default function ForumScreen() {
         {...listPerf}
         data={threads ?? []}
         keyExtractor={(thread) => thread.id}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: listPaddingBottom }]}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         renderItem={({ item: thread, index }) => {
               const avatarStyle = getAvatarStyle(index);
@@ -187,7 +189,7 @@ export default function ForumScreen() {
       <TouchableOpacity 
         activeOpacity={0.8}
         onPress={() => router.push({ pathname: '/(app)/create-thread', params: { subforumSlug: selectedSubforum || '' }})}
-        style={styles.fab}
+        style={[styles.fab, { bottom: fabBottom }]}
         accessibilityRole="button"
         accessibilityLabel="Crear hilo"
       >
@@ -258,7 +260,6 @@ const styles = StyleSheet.create({
     color: ClayTheme.colors.textInput,
   },
   content: {
-    paddingBottom: 120, // space for tab bar
     paddingHorizontal: 22,
     paddingTop: 10,
   },
@@ -339,7 +340,6 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 24,
-    bottom: 110, // space for tab bar
     width: 62,
     height: 62,
     borderRadius: 31,

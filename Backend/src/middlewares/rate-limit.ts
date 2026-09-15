@@ -23,7 +23,8 @@ export const globalRateLimiter = rateLimit({
     message: "Demasiadas solicitudes, intenta nuevamente en unos minutos.",
     details: { code: "GLOBAL_RATE_LIMIT" }
   },
-  store: new RedisStore({ sendCommand })
+  // Prefijo propio: si dos limiters comparten clave, cada request cuenta doble (ERR_ERL_DOUBLE_COUNT).
+  store: new RedisStore({ sendCommand, prefix: "rl:global:" })
 });
 
 export const authRateLimiter = rateLimit({
@@ -38,7 +39,7 @@ export const authRateLimiter = rateLimit({
     message: "Demasiados intentos de autenticacion, espera unos minutos.",
     details: { code: "AUTH_RATE_LIMIT" }
   },
-  store: new RedisStore({ sendCommand })
+  store: new RedisStore({ sendCommand, prefix: "rl:auth:" })
 });
 
 export const uploadRateLimiter = rateLimit({

@@ -16,6 +16,7 @@ import { AiSuggestionField } from '../../components/AiSuggestionField';
 import { AiGeneration, aiErrorMessage } from '../../lib/ai';
 import { AiQuotaNotice } from '../../components/AiQuotaNotice';
 import { useAiQuota } from '../../hooks/useAiQuota';
+import { useFormBottomPadding } from '../../hooks/useTabBarSpace';
 
 const newsSchema = z.object({
   title: z.string().min(3, 'El título es muy corto').max(255),
@@ -46,6 +47,7 @@ export default function CreateNewsScreen() {
   const queryClient = useQueryClient();
   const [globalError, setGlobalError] = useState('');
   const insets = useSafeAreaInsets();
+  const formBottomPadding = useFormBottomPadding();
 
   const { data: newsToEdit, isLoading: isLoadingNews } = useQuery({
     queryKey: ['news-manage', barrioSlug, existingSlug],
@@ -177,7 +179,7 @@ export default function CreateNewsScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: formBottomPadding }]} keyboardShouldPersistTaps="handled">
         <View style={styles.form}>
           {newsToEdit?.editorObservation && (
             <View style={styles.observationBanner}>

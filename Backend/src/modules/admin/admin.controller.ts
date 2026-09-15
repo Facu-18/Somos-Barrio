@@ -19,6 +19,21 @@ export const adminController = {
   },
 
   // ── Negocios ───────────────────────────────────────────────────────────────
+  async createBusiness(req: Request, res: Response): Promise<void> {
+    const business = await adminService.createBusiness(req.body);
+    res.status(201).json({ success: true, data: business });
+  },
+
+  async updateBusiness(req: Request, res: Response): Promise<void> {
+    const business = await adminService.updateBusiness(req.params.businessId, req.body);
+    res.json({ success: true, data: business });
+  },
+
+  async deleteBusiness(req: Request, res: Response): Promise<void> {
+    await adminService.deleteBusiness(req.params.businessId);
+    res.status(204).send();
+  },
+
   async verifyBusiness(req: Request, res: Response): Promise<void> {
     const business = await adminService.verifyBusiness(req.params.businessId, req.body.verified);
     res.json({ success: true, data: business });

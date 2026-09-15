@@ -14,6 +14,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { ApiResponse, UploadResult } from '../../types/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFormBottomPadding } from '../../hooks/useTabBarSpace';
 
 const profileSchema = z.object({
   nickname: z.string().min(2, "El apodo es muy corto").max(30, "El apodo es muy largo").optional().or(z.literal("")),
@@ -29,6 +30,7 @@ export default function EditProfileScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(user?.avatarUrl || null);
   const [isUploading, setIsUploading] = useState(false);
   const insets = useSafeAreaInsets();
+  const formBottomPadding = useFormBottomPadding();
 
   const { control, handleSubmit, formState: { errors } } = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -118,7 +120,7 @@ export default function EditProfileScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: formBottomPadding }]} keyboardShouldPersistTaps="handled">
         <View style={styles.form}>
           {globalError ? <Text style={styles.globalError}>{globalError}</Text> : null}
 

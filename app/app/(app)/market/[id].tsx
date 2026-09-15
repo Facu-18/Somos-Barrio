@@ -4,6 +4,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../lib/api';
 import { uuidV4 } from '../../../lib/uuid';
+import { useMarketplacePostActions } from '../../../hooks/useMarketplacePostActions';
 import { useAuth } from '../../../hooks/useAuth';
 import { ClayTheme } from '../../../constants/ClayTheme';
 import { ClayButton } from '../../../components/ClayButton';
@@ -28,6 +29,7 @@ export default function MarketDetailScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
+  const { toggleSold, confirmDelete, pendingPostId } = useMarketplacePostActions(barrioSlug);
 
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportCategory, setReportCategory] = useState<string>('');
@@ -144,7 +146,7 @@ export default function MarketDetailScreen() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: 100 + insets.bottom }]}>
         <View style={styles.imageContainer}>
           {item.images && item.images.length > 0 ? (
             <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={styles.imageCarousel}>
@@ -225,10 +227,34 @@ export default function MarketDetailScreen() {
               style={{ marginTop: 16 }}
             />
           )}
+          {user?.id === item.user?.id && (
+            <View style={styles.ownerActions}>
+              {item.availability === 'SOLD' && (
+                <Text style={styles.soldNotice}>Marcaste esta publicación como vendida: no aparece en el marketplace.</Text>
+              )}
+              {item.moderationStatus !== 'REMOVED' && (
+                <ClayButton
+                  title={item.availability === 'SOLD' ? 'Volver a publicar' : 'Marcar como vendido'}
+                  icon={item.availability === 'SOLD' ? 'refresh' : 'check-circle-outline'}
+                  onPress={() => toggleSold(item)}
+                  loading={pendingPostId === item.id}
+                  disabled={pendingPostId === item.id}
+                  variant="secondary"
+                />
+              )}
+              <ClayButton
+                title="Eliminar publicación"
+                icon="trash-can-outline"
+                onPress={() => confirmDelete(item, () => router.back())}
+                disabled={pendingPostId === item.id}
+                variant="destructive"
+              />
+            </View>
+          )}
         </View>
       </ScrollView>
 
-      {item.moderationStatus === 'APPROVED' && item.availability === 'AVAILABLE' && (
+      {item.moderationStatus === 'APPROVED' && item.availability === 'AVAILABLE' && user?.id !== item.user?.id && (
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           <TouchableOpacity
             style={styles.contactBtn}
@@ -441,6 +467,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: ClayTheme.colors.textInput,
     lineHeight: 22,
+  },
+  ownerActions: {
+    marginTop: 16,
+    gap: 10,
+  },
+  soldNotice: {
+    fontFamily: ClayTheme.typography.fontFamily.semiBold,
+    fontSize: 13,
+    color: ClayTheme.colors.textMuted,
+    textAlign: 'center',
   },
   footer: {
     position: 'absolute',

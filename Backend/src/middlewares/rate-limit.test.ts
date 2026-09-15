@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/redis", () => ({ redis: { call: vi.fn() } }));
 // Los limiters del módulo se instancian al importarlo; un store inerte evita conectar a Redis.
+const storePrefixes = vi.hoisted(() => [] as (string | undefined)[]);
 vi.mock("rate-limit-redis", () => ({
   RedisStore: class {
+    constructor(options: { prefix?: string }) { storePrefixes.push(options.prefix); }
     async increment() { return { totalHits: 1, resetTime: undefined }; }
     async decrement() {}
     async resetKey() {}
@@ -68,5 +70,15 @@ describe("createForumWriteLimiter", () => {
 
     expect((await request(app).post("/threads").set("x-user", "u1")).status).toBe(201);
     expect((await request(app).post("/threads").set("x-user", "u2")).status).toBe(429);
+  });
+});
+
+describe("stores de rate limit", () => {
+  it("cada limiter usa un prefijo propio en Redis", () => {
+    // Dos limiters con la misma clave cuentan cada request dos veces (ERR_ERL_DOUBLE_COUNT):
+    // p. ej. el tráfico general agotaba el límite de login.
+    expect(storePrefixes.length).toBeGreaterThan(5);
+    expect(storePrefixes).not.toContain(undefined);
+    expect(new Set(storePrefixes).size).toBe(storePrefixes.length);
   });
 });

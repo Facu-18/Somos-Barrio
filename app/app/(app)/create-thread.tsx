@@ -12,6 +12,8 @@ import { ForumContentStatus, forumErrorMessage, forumModerationMessage } from '.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFormBottomPadding } from '../../hooks/useTabBarSpace';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const threadSchema = z.object({
   title: z.string().trim().min(3, 'El título debe tener al menos 3 caracteres').max(255),
@@ -28,6 +30,8 @@ export default function CreateThreadScreen() {
   const { data: user } = useAuth();
   const barrioSlug = user!.barrio!.slug;
   const queryClient = useQueryClient();
+  const formBottomPadding = useFormBottomPadding();
+  const insets = useSafeAreaInsets();
   const [globalError, setGlobalError] = useState('');
 
   const { data: existingThread, isLoading: isLoadingThread } = useQuery({
@@ -86,7 +90,7 @@ export default function CreateThreadScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
           <MaterialCommunityIcons name="close" size={24} color={ClayTheme.colors.text} />
         </TouchableOpacity>
@@ -97,7 +101,7 @@ export default function CreateThreadScreen() {
       {isEditing && isLoadingThread ? (
         <ActivityIndicator size="large" color={ClayTheme.colors.primary} style={{ marginTop: 40 }} />
       ) : (
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: formBottomPadding }]} keyboardShouldPersistTaps="handled">
         <Text style={styles.subtitle}>
           {isEditing ? 'Editando en ' : 'Estás publicando en '}<Text style={{ color: ClayTheme.colors.primaryText }}>{subforumSlug}</Text>
         </Text>
@@ -165,7 +169,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 22,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 20,
     backgroundColor: ClayTheme.colors.surface,
     ...ClayTheme.shadows.elevated,
