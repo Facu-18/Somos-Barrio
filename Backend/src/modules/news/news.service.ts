@@ -171,9 +171,6 @@ export const newsService = {
     if (!isEditor && news.status !== NewsStatus.DRAFT) {
       throw new ApiError(409, "Solo puedes editar propuestas en borrador");
     }
-    if (news.status === NewsStatus.PUBLISHED || news.status === NewsStatus.ARCHIVED) {
-      throw new ApiError(409, "Una noticia publicada o archivada no puede editarse desde este flujo");
-    }
     if (input.status && input.status !== NewsStatus.DRAFT && input.status !== NewsStatus.PENDING_REVIEW) {
       throw new ApiError(400, "Usa el flujo editorial para publicar o archivar noticias");
     }

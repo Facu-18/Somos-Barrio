@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  --background: #F2F0EB;
+  --foreground: #3B3733;
+  --text: #3B3733;
+  --surface: #FAF8F5;
+  --surface-flat: #EBE8E1;
+  
+  --primary: #7BC47F;
+  --primary-text: #1F4A26;
+  --primary-dark: #3B7A41;
+  --primary-soft: #E1EFE2;
+  
+  --secondary: #F0A868;
+  --accent: #8FB8DE;
+  
+  --text-body: #4A443E;
+  --text-input: #756C63;
+  --text-muted: #8A827A;
+  --text-faint: #9A9188;
+  
+  --input-bg: #EDEAE3;
+  --divider: #E3DED4;
+  
+  --error: #B4553F;
+  --error-bg: #F4E7E2;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-flat: var(--surface-flat);
+  
+  --color-primary: var(--primary);
+  --color-primary-text: var(--primary-text);
+  --color-primary-dark: var(--primary-dark);
+  --color-primary-soft: var(--primary-soft);
+  
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  
+  --color-text-body: var(--text-body);
+  --color-text-input: var(--text-input);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+  
+  --color-input-bg: var(--input-bg);
+  --color-divider: var(--divider);
+  
+  --color-error: var(--error);
+  --color-error-bg: var(--error-bg);
+  
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
